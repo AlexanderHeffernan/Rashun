@@ -12,8 +12,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Swift 6.2
-        uses: swiftlang/setup-swift@v2
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2"
 
