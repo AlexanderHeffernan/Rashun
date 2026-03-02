@@ -253,16 +253,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func shouldSend(event: NotificationEvent, state: NotificationRuleState?) -> Bool {
-        if let cycleKey = event.cycleKey, state?.lastFiredCycleKey == cycleKey {
+        shouldSendNotification(event: event, state: state)
+    }
+}
+
+func shouldSendNotification(event: NotificationEvent, state: NotificationRuleState?) -> Bool {
+    if let cycleKey = event.cycleKey, state?.lastFiredCycleKey == cycleKey {
+        return false
+    }
+    if let cooldown = event.cooldownSeconds, let last = state?.lastFiredAt {
+        if Date().timeIntervalSince(last) < cooldown {
             return false
         }
-        if let cooldown = event.cooldownSeconds, let last = state?.lastFiredAt {
-            if Date().timeIntervalSince(last) < cooldown {
-                return false
-            }
-        }
-        return true
     }
+    return true
 }
 
 @main

@@ -68,7 +68,7 @@ struct AmpSource: AISource {
         )
     }
 
-    private func parseUsage(from output: String) -> UsageResult? {
+    func parseUsage(from output: String) -> UsageResult? {
         let pattern = #"Amp Free: \$([\d.]+)/\$([\d.]+) remaining"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
 
