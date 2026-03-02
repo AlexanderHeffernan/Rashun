@@ -169,10 +169,11 @@ This project is licensed under the [MIT License](LICENSE).
 ## TODO
 - [X] Add app icon
 - [X] Add launch-at-login support
-- [X] Need to fix start-up alert (“Rashun.app” would like to access files on a network volume.) – Likely fix is just to move the app bundle to /Applications instead of running from the project directory
+- [ ] Need to fix start-up alert (“Rashun.app” would like to access files on a network volume.) – Likely fix is just to move the app bundle to /Applications instead of running from the project directory. Edit: Just installed to /Applications and it doesn't seem to have fixed the issue. Will need to investigate further.
 - [X] Set up a testing framework and add unit tests
 - [X] Set up a CI/CD pipeline (GitHub Actions)
 - [X] Add an easier install path (no clone/build required), with optional auto-update support
+- [X] Auto-update support
 - [ ] Evaluate AppKit vs SwiftUI trade-offs (AppKit currently gives better menu bar/notification control)
 - [ ] Add macOS widgets
 - [ ] Improve data management (export/import usage data, delete stored data)

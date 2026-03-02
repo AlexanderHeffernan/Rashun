@@ -40,6 +40,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             _ = await NotificationManager.shared.requestAuthorization()
             await refresh()
+            UpdateManager.shared.startPeriodicChecks()
         }
 
         pollTimer = Timer.scheduledTimer(withTimeInterval: SettingsStore.shared.pollInterval(), repeats: true) { [weak self] _ in

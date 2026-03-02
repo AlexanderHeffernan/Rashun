@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="alexanderheffernan/rashun"
 APP_NAME="Rashun.app"
 INSTALL_DIR="/Applications"
-DOWNLOAD_URL="https://github.com/$REPO/releases/download/latest/Rashun.zip"
+DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/Rashun.zip"
 
 echo "Installing Rashun..."
 echo ""
@@ -36,6 +36,13 @@ xattr -cr "$INSTALL_DIR/$APP_NAME"
 
 echo ""
 echo "✅ Rashun installed successfully!"
-echo "   Run it with: open /Applications/Rashun.app"
-echo "   To update later, just run this command again."
-echo "   Better update support coming soon!"
+
+# If --update flag is passed, quit the running app and relaunch
+if [ "${1:-}" = "--update" ]; then
+    osascript -e 'quit app "Rashun"' 2>/dev/null || true
+    sleep 1
+    open "$INSTALL_DIR/$APP_NAME"
+    echo "   Rashun has been updated and relaunched."
+else
+    echo "   Run it with: open /Applications/Rashun.app"
+fi

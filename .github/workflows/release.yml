@@ -15,6 +15,43 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          # Read base version from Info.plist
+          PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
+
+          # Get the latest release tag (if any)
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+
+          if [ -z "$LATEST_TAG" ]; then
+            # No previous release — use the plist version as-is
+            VERSION="$PLIST_VERSION"
+          else
+            LATEST_VERSION="${LATEST_TAG#v}"
+            # Compare plist version to latest tag
+            # If plist is higher (manual bump), use it; otherwise auto-bump patch
+            HIGHER=$(printf '%s\n%s' "$PLIST_VERSION" "$LATEST_VERSION" | sort -V | tail -1)
+            if [ "$PLIST_VERSION" != "$LATEST_VERSION" ] && [ "$HIGHER" = "$PLIST_VERSION" ]; then
+              # Manual bump in Info.plist takes priority
+              VERSION="$PLIST_VERSION"
+            else
+              # Auto-bump patch from the latest tag
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+              PATCH=$((PATCH + 1))
+              VERSION="$MAJOR.$MINOR.$PATCH"
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
+
+      - name: Stamp version into Info.plist
+        run: |
+          /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString ${{ steps.version.outputs.version }}" Info.plist
 
       - name: Setup Swift
         uses: swift-actions/setup-swift@v3
@@ -27,18 +64,19 @@ jobs:
       - name: Zip app bundle
         run: zip -r Rashun.zip Rashun.app
 
-      - name: Delete existing latest release
+      - name: Clean up old latest tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release delete latest --cleanup-tag --yes 2>/dev/null || true
 
-      - name: Create latest release
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create latest Rashun.zip \
-            --title "Latest Build" \
-            --notes "Latest build from the \`main\` branch.
+          gh release create "v${{ steps.version.outputs.version }}" Rashun.zip \
+            --title "v${{ steps.version.outputs.version }}" \
+            --latest \
+            --notes "## v${{ steps.version.outputs.version }}
 
           **Install with one command:**
           \`\`\`bash

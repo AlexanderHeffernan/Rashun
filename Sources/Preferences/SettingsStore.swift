@@ -9,11 +9,13 @@ final class SettingsStore {
     private let notificationDefaultsKey = "ai.notificationSettings.v1"
     private let notificationStateKey = "ai.notificationState.v1"
     private let pollIntervalKey = "ai.pollIntervalSeconds.v1"
+    private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
     private var enabledMap: [String: Bool] = [:]
     private var notificationSettings: [String: [NotificationRuleSetting]] = [:]
     private var notificationState: [String: NotificationRuleState] = [:]
 
     private(set) var pollIntervalSeconds: TimeInterval = 120
+    private(set) var autoUpdateCheckEnabled: Bool = true
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else { return }
@@ -34,6 +36,10 @@ final class SettingsStore {
         let poll = UserDefaults.standard.double(forKey: pollIntervalKey)
         if poll > 0 {
             pollIntervalSeconds = poll
+        }
+
+        if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
+            autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
         }
     }
 
@@ -77,6 +83,16 @@ final class SettingsStore {
         pollIntervalSeconds = max(30, seconds)
         UserDefaults.standard.set(pollIntervalSeconds, forKey: pollIntervalKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setAutoUpdateCheckEnabled(_ enabled: Bool) {
+        autoUpdateCheckEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: autoUpdateCheckKey)
+        if enabled {
+            UpdateManager.shared.startPeriodicChecks()
+        } else {
+            UpdateManager.shared.stopPeriodicChecks()
+        }
     }
 
     func ruleSettings(for sourceName: String) -> [NotificationRuleSetting] {

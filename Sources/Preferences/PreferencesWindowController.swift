@@ -7,6 +7,9 @@ final class PreferencesWindowController: NSWindowController {
 
     private var currentSources: [AISource] = []
     private var expandedSources: Set<String> = []
+    private weak var updateStatusLabel: NSTextField?
+    private weak var installButton: NSButton?
+    private weak var checkNowButton: NSButton?
 
     private init() {
         let vc = NSViewController()
@@ -20,6 +23,7 @@ final class PreferencesWindowController: NSWindowController {
         super.init(window: window)
 
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: .aiSettingsChanged, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(updateStatusChanged(_:)), name: .updateStatusChanged, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -211,6 +215,52 @@ final class PreferencesWindowController: NSWindowController {
         pollRow.addArrangedSubview(pollUnit)
         stack.addArrangedSubview(pollRow)
 
+        // MARK: Updates section
+        let updateHeader = NSTextField(labelWithString: "Updates")
+        updateHeader.font = NSFont.boldSystemFont(ofSize: 14)
+        stack.addArrangedSubview(updateHeader)
+
+        let versionLabel = NSTextField(labelWithString: "Current version: \(UpdateManager.shared.currentVersion)")
+        versionLabel.font = NSFont.systemFont(ofSize: 12)
+        versionLabel.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(versionLabel)
+
+        let autoCheckbox = NSButton(checkboxWithTitle: "Check for updates automatically", target: self, action: #selector(autoUpdateToggled(_:)))
+        autoCheckbox.state = SettingsStore.shared.autoUpdateCheckEnabled ? .on : .off
+        stack.addArrangedSubview(autoCheckbox)
+
+        let updateRow = NSStackView()
+        updateRow.orientation = .horizontal
+        updateRow.spacing = 8
+        updateRow.alignment = .centerY
+
+        let checkBtn = NSButton(title: "Check Now", target: self, action: #selector(checkForUpdateClicked(_:)))
+        checkBtn.bezelStyle = .rounded
+        checkBtn.controlSize = .regular
+        updateRow.addArrangedSubview(checkBtn)
+        self.checkNowButton = checkBtn
+
+        let statusLabel = NSTextField(labelWithString: "")
+        statusLabel.font = NSFont.systemFont(ofSize: 12)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.isEditable = false
+        statusLabel.isBordered = false
+        statusLabel.backgroundColor = .clear
+        updateRow.addArrangedSubview(statusLabel)
+        self.updateStatusLabel = statusLabel
+
+        stack.addArrangedSubview(updateRow)
+
+        if UpdateManager.shared.updateAvailable {
+            let installBtn = NSButton(title: "Install & Restart", target: self, action: #selector(installUpdateClicked(_:)))
+            installBtn.bezelStyle = .rounded
+            installBtn.controlSize = .regular
+            stack.addArrangedSubview(installBtn)
+            self.installButton = installBtn
+        }
+
+        refreshUpdateStatus()
+
         documentView.addSubview(stack)
         vc.view.addSubview(scrollView)
 
@@ -293,6 +343,57 @@ final class PreferencesWindowController: NSWindowController {
             }
         } catch {
             sender.state = (sender.state == .on) ? .off : .on
+        }
+    }
+
+    @objc private func autoUpdateToggled(_ sender: NSButton) {
+        SettingsStore.shared.setAutoUpdateCheckEnabled(sender.state == .on)
+    }
+
+    @objc private func checkForUpdateClicked(_ sender: NSButton) {
+        Task {
+            let found = await UpdateManager.shared.checkForUpdate(notify: false)
+            if found {
+                configure(withSources: currentSources)
+            }
+        }
+    }
+
+    @objc private func installUpdateClicked(_ sender: NSButton) {
+        let alert = NSAlert()
+        alert.messageText = "Install Update?"
+        alert.informativeText = "Rashun will download version \(UpdateManager.shared.availableVersion ?? ""), install it, and restart."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Install & Restart")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            UpdateManager.shared.installUpdate()
+        }
+    }
+
+    @objc private func updateStatusChanged(_ note: Notification) {
+        refreshUpdateStatus()
+    }
+
+    private func refreshUpdateStatus() {
+        if UpdateManager.shared.isInstalling {
+            updateStatusLabel?.stringValue = "Installing..."
+            checkNowButton?.isEnabled = false
+            installButton?.isEnabled = false
+        } else if UpdateManager.shared.isChecking {
+            updateStatusLabel?.stringValue = "Checking..."
+            checkNowButton?.isEnabled = false
+        } else if UpdateManager.shared.updateAvailable {
+            updateStatusLabel?.stringValue = "Version \(UpdateManager.shared.availableVersion ?? "") available!"
+            updateStatusLabel?.textColor = .systemGreen
+            checkNowButton?.isEnabled = true
+        } else if UpdateManager.shared.availableVersion != nil {
+            updateStatusLabel?.stringValue = "Up to date"
+            checkNowButton?.isEnabled = true
+        } else {
+            updateStatusLabel?.stringValue = ""
+            checkNowButton?.isEnabled = true
         }
     }
 
