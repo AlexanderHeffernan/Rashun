@@ -153,7 +153,7 @@ Some ideas for contributions:
 This project is licensed under the [MIT License](LICENSE).
 
 ## TODO
-- [ ] Add app icon
+- [X] Add app icon
 - [ ] Add launch-at-login support
 - [ ] Set up a testing framework and add unit tests
 - [ ] Set up a CI/CD pipeline (GitHub Actions)
