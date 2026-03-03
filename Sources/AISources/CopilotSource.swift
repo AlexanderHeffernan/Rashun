@@ -69,9 +69,8 @@ struct CopilotSource: AISource {
         let elapsedSinceCycleStart = max(now.timeIntervalSince(cycleStart), 1)
         let burnRatePerSecond = usedPercentSoFar > 0 ? (usedPercentSoFar / elapsedSinceCycleStart) : 0
 
-        let resetFormatter = DateFormatter()
-        resetFormatter.timeZone = utc
-        resetFormatter.dateFormat = "MMM d, HH:mm 'UTC'"
+        let displayFormatter = DateFormatter()
+        displayFormatter.dateFormat = "MMM d, h:mm a"
 
         let preReset = resetDate.addingTimeInterval(-1)
         var points: [ForecastPoint] = [ForecastPoint(date: now, value: currentPercent)]
@@ -110,12 +109,12 @@ struct CopilotSource: AISource {
             let secondsToZero = currentPercent / burnRatePerSecond
             let zeroDate = now.addingTimeInterval(secondsToZero)
             if secondsToZero.isFinite, zeroDate > now, zeroDate < resetDate {
-                summary = "Copilot: projected 0% by \(resetFormatter.string(from: zeroDate)); resets \(resetFormatter.string(from: resetDate))"
+                summary = "Copilot: projected 0% by \(displayFormatter.string(from: zeroDate)); resets \(displayFormatter.string(from: resetDate))"
             } else {
-                summary = "Copilot: projected \(String(format: "%.0f", projectedPreReset))% at reset (\(resetFormatter.string(from: resetDate)))"
+                summary = "Copilot: projected \(String(format: "%.0f", projectedPreReset))% at reset (\(displayFormatter.string(from: resetDate)))"
             }
         } else {
-            summary = "Copilot: resets \(resetFormatter.string(from: resetDate))"
+            summary = "Copilot: resets \(displayFormatter.string(from: resetDate))"
         }
 
         return ForecastResult(points: points, summary: summary)

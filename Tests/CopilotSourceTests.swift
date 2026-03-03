@@ -9,6 +9,7 @@ final class CopilotSourceTests: XCTestCase {
         let result = source.forecast(current: usage, history: [])
         XCTAssertNotNil(result)
         XCTAssertTrue(result!.summary.contains("resets"))
+        XCTAssertFalse(result!.summary.contains("UTC"))
     }
 
     func testForecast_activeBurnRate_lastPointIs100() {
