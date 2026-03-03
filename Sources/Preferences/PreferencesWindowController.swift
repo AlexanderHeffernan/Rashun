@@ -13,7 +13,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Preferences"
-        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.setContentSize(NSSize(width: 520, height: 480))
 
         super.init(window: window)

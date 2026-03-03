@@ -13,7 +13,9 @@ final class ChartWindowController: NSWindowController, NSWindowDelegate {
 
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Usage History"
-        window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
         window.setContentSize(NSSize(width: 980, height: 760))
         window.minSize = NSSize(width: 860, height: 560)
 
