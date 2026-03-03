@@ -20,7 +20,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
         try await super.tearDown()
     }
 
-    func testAppend_skipsDuplicateUsageState() {
+    func testAppend_keepsFirstAndLatestWhenUsageStateIsUnchanged() {
         let usage = UsageResult(
             remaining: 80,
             limit: 100,
@@ -31,7 +31,24 @@ final class NotificationHistoryStoreTests: XCTestCase {
         store.append(sourceName: source, usage: usage)
         store.append(sourceName: source, usage: usage)
 
-        XCTAssertEqual(store.history(for: source).count, 1)
+        let history = store.history(for: source)
+        XCTAssertEqual(history.count, 2)
+        XCTAssertLessThan(history[0].timestamp, history[1].timestamp)
+    }
+
+    func testAppend_replacesLatestDuplicateSnapshotWhenStateRemainsUnchanged() {
+        let usage = baseUsage()
+
+        store.append(sourceName: source, usage: usage)
+        store.append(sourceName: source, usage: usage)
+        let secondTimestamp = store.history(for: source)[1].timestamp
+
+        Thread.sleep(forTimeInterval: 0.01)
+        store.append(sourceName: source, usage: usage)
+
+        let history = store.history(for: source)
+        XCTAssertEqual(history.count, 2)
+        XCTAssertGreaterThan(history[1].timestamp, secondTimestamp)
     }
 
     func testAppend_keepsSnapshotWhenRemainingChanges() {

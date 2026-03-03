@@ -79,10 +79,23 @@ final class NotificationHistoryStore {
 
     func append(sourceName: String, usage: UsageResult) {
         var history = historyBySource[sourceName] ?? []
+        let now = Date()
         if let last = history.last, hasSameUsageState(lhs: last.usage, rhs: usage) {
+            if history.count >= 2,
+               let secondLast = history.dropLast().last,
+               hasSameUsageState(lhs: secondLast.usage, rhs: usage) {
+                history[history.count - 1] = UsageSnapshot(timestamp: now, usage: usage)
+            } else {
+                history.append(UsageSnapshot(timestamp: now, usage: usage))
+            }
+            if history.count > maxSnapshots {
+                history.removeFirst(history.count - maxSnapshots)
+            }
+            historyBySource[sourceName] = history
+            save()
             return
         }
-        history.append(UsageSnapshot(timestamp: Date(), usage: usage))
+        history.append(UsageSnapshot(timestamp: now, usage: usage))
         if history.count > maxSnapshots {
             history.removeFirst(history.count - maxSnapshots)
         }
