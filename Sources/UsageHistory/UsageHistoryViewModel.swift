@@ -11,12 +11,29 @@ final class UsageHistoryViewModel: ObservableObject {
     @Published private(set) var visibleStartDate: Date?
     @Published private(set) var visibleEndDate: Date?
     @Published private(set) var hasEnabledSources = false
+    @Published private(set) var hiddenSeriesLabels: Set<String> = []
 
     private var currentSources: [AISource] = []
 
     private static let palette: [NSColor] = [
         .systemBlue, .systemGreen, .systemOrange, .systemPurple, .systemRed
     ]
+
+    var visibleSeries: [ChartSeries] {
+        series.filter { !hiddenSeriesLabels.contains($0.label) }
+    }
+
+    func isSeriesVisible(_ label: String) -> Bool {
+        !hiddenSeriesLabels.contains(label)
+    }
+
+    func toggleSeriesVisibility(_ label: String) {
+        if hiddenSeriesLabels.contains(label) {
+            hiddenSeriesLabels.remove(label)
+        } else {
+            hiddenSeriesLabels.insert(label)
+        }
+    }
 
     func configure(withSources sources: [AISource]) {
         currentSources = sources
@@ -73,6 +90,8 @@ final class UsageHistoryViewModel: ObservableObject {
         }
 
         series = chartSeries
+        let availableLabels = Set(chartSeries.map(\.label))
+        hiddenSeriesLabels = hiddenSeriesLabels.intersection(availableLabels)
         summaryLines = summaries
         visibleStartDate = bounds.start
         visibleEndDate = bounds.end

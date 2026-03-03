@@ -1,7 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct UsageHistoryRootView: View {
     @ObservedObject var model: UsageHistoryViewModel
+    @State private var hoveredLegendLabel: String?
 
     var body: some View {
         ZStack {
@@ -46,12 +48,16 @@ struct UsageHistoryRootView: View {
         BrandCard(title: "Remaining Quota") {
             if !model.hasEnabledSources {
                 emptyState("No enabled sources. Enable one in Preferences.")
-            } else if model.series.allSatisfy({ $0.points.isEmpty && $0.forecast.isEmpty }) {
-                emptyState("Not enough data yet. Refresh a source to build history.")
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     legend
-                    chartView
+                    if model.visibleSeries.isEmpty {
+                        emptyState("All sources are hidden. Click a legend item to show it.")
+                    } else if model.visibleSeries.allSatisfy({ $0.points.isEmpty && $0.forecast.isEmpty }) {
+                        emptyState("Not enough data yet. Refresh a source to build history.")
+                    } else {
+                        chartView
+                    }
                 }
             }
         }
@@ -75,13 +81,31 @@ struct UsageHistoryRootView: View {
     private var legend: some View {
         HStack(spacing: 14) {
             ForEach(model.series) { series in
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(series.swiftUIColor)
-                        .frame(width: 8, height: 8)
-                    Text(series.label)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(BrandPalette.textPrimary)
+                Button(action: { model.toggleSeriesVisibility(series.label) }) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(series.swiftUIColor)
+                            .frame(width: 8, height: 8)
+                        Text(series.label)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(BrandPalette.textPrimary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(BrandPalette.primary.opacity(hoveredLegendLabel == series.label ? 0.14 : 0))
+                    )
+                }
+                .buttonStyle(.plain)
+                .opacity(model.isSeriesVisible(series.label) ? 1 : 0.38)
+                .onHover { isHovered in
+                    hoveredLegendLabel = isHovered ? series.label : (hoveredLegendLabel == series.label ? nil : hoveredLegendLabel)
+                    if isHovered {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
                 }
             }
             Spacer()
@@ -93,7 +117,7 @@ struct UsageHistoryRootView: View {
 
     private var chartView: some View {
         UsageChartRepresentable(
-            series: model.series,
+            series: model.visibleSeries,
             visibleStartDate: model.visibleStartDate,
             visibleEndDate: model.visibleEndDate
         )
