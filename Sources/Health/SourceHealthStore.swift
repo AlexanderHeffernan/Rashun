@@ -20,6 +20,15 @@ final class SourceHealthStore {
         load()
     }
 
+    private func scopedName(sourceName: String, metricId: String?) -> String {
+        guard let metricId else { return sourceName }
+        return "\(sourceName)::\(metricId)"
+    }
+
+    func recordSuccess(sourceName: String, metricId: String, usage: UsageResult) {
+        recordSuccess(sourceName: scopedName(sourceName: sourceName, metricId: metricId), usage: usage)
+    }
+
     func recordSuccess(sourceName: String, usage: UsageResult) {
         var record = recordsBySource[sourceName] ?? SourceHealthRecord(
             lastSuccessfulUsage: nil,
@@ -36,6 +45,10 @@ final class SourceHealthStore {
         record.detailedErrorMessage = nil
         recordsBySource[sourceName] = record
         persistAndNotify()
+    }
+
+    func recordFailure(sourceName: String, metricId: String, presentation: SourceFetchErrorPresentation) {
+        recordFailure(sourceName: scopedName(sourceName: sourceName, metricId: metricId), presentation: presentation)
     }
 
     func recordFailure(sourceName: String, presentation: SourceFetchErrorPresentation) {
@@ -57,6 +70,10 @@ final class SourceHealthStore {
 
     func health(for sourceName: String) -> SourceHealthRecord? {
         recordsBySource[sourceName]
+    }
+
+    func health(for sourceName: String, metricId: String) -> SourceHealthRecord? {
+        recordsBySource[scopedName(sourceName: sourceName, metricId: metricId)]
     }
 
     private func load() {

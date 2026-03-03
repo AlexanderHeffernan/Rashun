@@ -2,9 +2,15 @@ import Cocoa
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    private struct MetricFetchResult {
+        let usages: [String: UsageResult]
+        let errorsByMetric: [String: Error]
+    }
+
     private struct SourceMetricFetchError: Error {
         let metricId: String
         let underlying: Error
+        let errorsByMetric: [String: Error]
     }
 
     var statusItem: NSStatusItem?
@@ -42,9 +48,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         SettingsStore.shared.ensureSources(sources.map { $0.name })
         for source in sources {
             SettingsStore.shared.ensureSourceMetrics(source: source)
-            if let usage = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
-                let metricId = source.metrics.first?.id ?? "default"
-                results[source.name] = [metricId: usage.formatted]
+            if source.metrics.count <= 1 {
+                if let usage = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+                    let metricId = source.metrics.first?.id ?? "default"
+                    results[source.name] = [metricId: usage.formatted]
+                }
+                continue
+            }
+
+            var metricDisplays: [String: String] = [:]
+            for metric in source.metrics {
+                if let usage = SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage {
+                    metricDisplays[metric.id] = usage.formatted
+                }
+            }
+            if !metricDisplays.isEmpty {
+                results[source.name] = metricDisplays
             }
         }
         updateMenu()
@@ -77,8 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             var hasWarnings = false
             for source in enabled {
-                let health = SourceHealthStore.shared.health(for: source.name)
-                let hasWarning = !loadingSources.contains(source.name) && health?.shortErrorMessage != nil
+                let hasWarning = !loadingSources.contains(source.name) && sourceHasWarning(source)
                 if hasWarning { hasWarnings = true }
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 item.view = sourceMenuView(source: source, hasWarning: hasWarning)
@@ -142,10 +160,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             labels.append(noMetricsLabel)
         } else {
             for metric in metrics {
+                let metricWarningSuffix = metricHasWarning(source: source, metricId: metric.id) ? "  ⚠" : ""
                 let display = loadingSources.contains(source.name)
                     ? loadingIndicator
-                    : (currentResults[metric.id] ?? "N/A")
-                let metricLabel = NSTextField(labelWithString: "\(metric.title) Remaining: \(display)")
+                    : (currentResults[metric.id] ?? SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage?.formatted ?? "N/A")
+                let metricLabel = NSTextField(labelWithString: "\(metric.title) Remaining: \(display)\(metricWarningSuffix)")
                 metricLabel.font = NSFont.menuFont(ofSize: 0)
                 metricLabel.textColor = .labelColor
                 labels.append(metricLabel)
@@ -189,12 +208,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var percentValues: [Double] = []
         var usageResultsBySource: [String: [String: UsageResult]] = [:]
 
-        await withTaskGroup(of: (String, Result<[String: UsageResult], Error>).self) { group in
+        await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
             for source in enabled {
                 group.addTask {
                     do {
-                        let usage = try await self.fetchUsageByMetric(for: source)
-                        return (source.name, .success(usage))
+                        let fetchResult = try await self.fetchUsageByMetric(for: source)
+                        return (source.name, .success(fetchResult))
                     } catch {
                         return (source.name, .failure(error))
                     }
@@ -208,7 +227,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     continue
                 }
                 switch result {
-                case let .success(metricUsages):
+                case let .success(fetchResult):
+                    let metricUsages = fetchResult.usages
                     let metricDisplays = metricUsages.mapValues { $0.formatted }
                     results[name] = metricDisplays
                     usageResultsBySource[name] = metricUsages
@@ -223,6 +243,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         }
                     }
 
+                    recordMetricHealth(source: source, metricUsages: metricUsages, errorsByMetric: fetchResult.errorsByMetric)
+
                     let enabledMetricSet = Set(enabledMetrics(for: source).map(\.id))
                     let usableMetricIds: [String]
                     if enabledMetricSet.isEmpty {
@@ -236,30 +258,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let p = min(max(metricUsage.percentRemaining, 0), 100)
                         percentValues.append(p)
                     }
-
-                    if let primaryUsage = sourcePrimaryUsage(source: source, metricUsages: metricUsages) {
-                        SourceHealthStore.shared.recordSuccess(sourceName: name, usage: primaryUsage)
-                    }
                 case let .failure(error):
                     let mappedMetricId: String
                     let mappedError: Error
                     if let scoped = error as? SourceMetricFetchError {
                         mappedMetricId = scoped.metricId
                         mappedError = scoped.underlying
+                        recordMetricHealth(source: source, metricUsages: [:], errorsByMetric: scoped.errorsByMetric)
                     } else {
                         mappedMetricId = source.metrics.first?.id ?? "default"
                         mappedError = error
+                        let presentation = source.mapFetchError(for: mappedMetricId, mappedError)
+                        if source.metrics.count <= 1 {
+                            SourceHealthStore.shared.recordFailure(sourceName: name, presentation: presentation)
+                        } else {
+                            SourceHealthStore.shared.recordFailure(sourceName: name, metricId: mappedMetricId, presentation: presentation)
+                        }
                     }
-                    let presentation = source.mapFetchError(for: mappedMetricId, mappedError)
-                    SourceHealthStore.shared.recordFailure(sourceName: name, presentation: presentation)
-                    if let previous = SourceHealthStore.shared.health(for: name)?.lastSuccessfulUsage {
-                        let primaryMetricId = source.metrics.first?.id ?? "default"
-                        results[name] = [primaryMetricId: previous.formatted]
-                        let p = min(max(previous.percentRemaining, 0), 100)
-                        percentValues.append(p)
-                    } else {
-                        results[name] = [:]
-                    }
+                    results[name] = fallbackDisplays(source: source, currentDisplays: results[name] ?? [:])
+                    appendFallbackPercents(source: source, into: &percentValues)
                 }
                 loadingSources.remove(name)
                 updateMenu()
@@ -296,24 +313,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func enabledMetrics(for source: AISource) -> [AISourceMetric] {
         source.metrics.filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
-    }
-
-    private func sourcePrimaryUsage(source: AISource, metricUsages: [String: UsageResult]) -> UsageResult? {
-        let enabledMetricIds = Set(enabledMetrics(for: source).map(\.id))
-        for metric in source.metrics {
-            if !enabledMetricIds.isEmpty, !enabledMetricIds.contains(metric.id) {
-                continue
-            }
-            if let usage = metricUsages[metric.id] {
-                return usage
-            }
-        }
-        for metric in source.metrics {
-            if let usage = metricUsages[metric.id] {
-                return usage
-            }
-        }
-        return metricUsages.values.first
     }
 
     private func metricHistorySeriesName(source: AISource, metric: AISourceMetric) -> String {
@@ -428,22 +427,108 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return "\(source.name)::\(metric.id)"
     }
 
-    private func fetchUsageByMetric(for source: AISource) async throws -> [String: UsageResult] {
+    private func sourceHasWarning(_ source: AISource) -> Bool {
+        if source.metrics.count <= 1 {
+            return SourceHealthStore.shared.health(for: source.name)?.shortErrorMessage != nil
+        }
+        let metrics = enabledMetrics(for: source)
+        return metrics.contains { metric in
+            metricHasWarning(source: source, metricId: metric.id)
+        }
+    }
+
+    private func metricHasWarning(source: AISource, metricId: String) -> Bool {
+        if source.metrics.count <= 1 {
+            return SourceHealthStore.shared.health(for: source.name)?.shortErrorMessage != nil
+        }
+        return SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.shortErrorMessage != nil
+    }
+
+    private func recordMetricHealth(source: AISource, metricUsages: [String: UsageResult], errorsByMetric: [String: Error]) {
+        if source.metrics.count <= 1 {
+            guard let metric = source.metrics.first else { return }
+            if let usage = metricUsages[metric.id] {
+                SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
+                return
+            }
+            if let error = errorsByMetric[metric.id] {
+                let presentation = source.mapFetchError(for: metric.id, error)
+                SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+            }
+            return
+        }
+
+        for metric in source.metrics {
+            if let usage = metricUsages[metric.id] {
+                SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+            } else if let error = errorsByMetric[metric.id] {
+                let presentation = source.mapFetchError(for: metric.id, error)
+                SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+            }
+        }
+    }
+
+    private func fallbackDisplays(source: AISource, currentDisplays: [String: String]) -> [String: String] {
+        if source.metrics.count <= 1 {
+            guard let metricId = source.metrics.first?.id else { return [:] }
+            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+                return [metricId: previous.formatted]
+            }
+            return [:]
+        }
+
+        var fallback = currentDisplays
+        for metric in source.metrics {
+            if fallback[metric.id] != nil { continue }
+            if let previous = SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage {
+                fallback[metric.id] = previous.formatted
+            }
+        }
+        return fallback
+    }
+
+    private func appendFallbackPercents(source: AISource, into percents: inout [Double]) {
+        let enabledMetricSet = Set(enabledMetrics(for: source).map(\.id))
+        let usableMetricIds: [String]
+        if enabledMetricSet.isEmpty {
+            usableMetricIds = source.metrics.map(\.id)
+        } else {
+            usableMetricIds = source.metrics.map(\.id).filter { enabledMetricSet.contains($0) }
+        }
+
+        if source.metrics.count <= 1 {
+            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+                let p = min(max(previous.percentRemaining, 0), 100)
+                percents.append(p)
+            }
+            return
+        }
+
+        for metricId in usableMetricIds {
+            guard let previous = SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.lastSuccessfulUsage else { continue }
+            let p = min(max(previous.percentRemaining, 0), 100)
+            percents.append(p)
+        }
+    }
+
+    private func fetchUsageByMetric(for source: AISource) async throws -> MetricFetchResult {
         var usages: [String: UsageResult] = [:]
+        var errorsByMetric: [String: Error] = [:]
         var firstError: (metricId: String, error: Error)?
         for metric in source.metrics {
             do {
                 usages[metric.id] = try await source.fetchUsage(for: metric.id)
             } catch {
+                errorsByMetric[metric.id] = error
                 if firstError == nil {
                     firstError = (metric.id, error)
                 }
             }
         }
         if usages.isEmpty, let firstError {
-            throw SourceMetricFetchError(metricId: firstError.metricId, underlying: firstError.error)
+            throw SourceMetricFetchError(metricId: firstError.metricId, underlying: firstError.error, errorsByMetric: errorsByMetric)
         }
-        return usages
+        return MetricFetchResult(usages: usages, errorsByMetric: errorsByMetric)
     }
 
 }

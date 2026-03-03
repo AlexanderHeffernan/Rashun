@@ -95,12 +95,29 @@ final class PreferencesViewModel: ObservableObject {
         SourceHealthStore.shared.health(for: sourceName)?.shortErrorMessage != nil
     }
 
+    func sourceHasAnyMetricWarning(_ source: AISource) -> Bool {
+        if source.metrics.count <= 1 {
+            return sourceHasWarning(source.name)
+        }
+        return source.metrics.contains { metric in
+            metricWarningSummary(sourceName: source.name, metricId: metric.id) != nil
+        }
+    }
+
     func sourceWarningSummary(_ sourceName: String) -> String? {
         SourceHealthStore.shared.health(for: sourceName)?.shortErrorMessage
     }
 
     func sourceWarningDetail(_ sourceName: String) -> String? {
         SourceHealthStore.shared.health(for: sourceName)?.detailedErrorMessage
+    }
+
+    func metricWarningSummary(sourceName: String, metricId: String) -> String? {
+        SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.shortErrorMessage
+    }
+
+    func metricWarningDetail(sourceName: String, metricId: String) -> String? {
+        SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.detailedErrorMessage
     }
 
     func toggleNotificationsSection(_ sourceName: String) {
@@ -237,12 +254,20 @@ final class PreferencesViewModel: ObservableObject {
                 throw source.unsupportedMetricError("default")
             }
             let usage = try await source.fetchUsage(for: metricId)
-            SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
+            if source.metrics.count <= 1 {
+                SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
+            } else {
+                SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metricId, usage: usage)
+            }
             settings.setEnabled(true, for: source.name)
         } catch {
             let metricId = source.metrics.first?.id ?? "default"
             let presentation = source.mapFetchError(for: metricId, error)
-            SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+            if source.metrics.count <= 1 {
+                SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+            } else {
+                SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metricId, presentation: presentation)
+            }
             sourceHealthCheckErrorMessage = "Could not enable \(source.name).\n\n\(presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
         }

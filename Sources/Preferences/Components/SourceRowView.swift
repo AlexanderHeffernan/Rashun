@@ -15,9 +15,11 @@ struct SourceRowView: View {
             model.isMetricNotificationsExpanded(sourceName: source.name, metricId: $0.id)
         }
         let isCheckingHealth = model.isSourceHealthCheckInProgress(source.name)
-        let warningSummary = model.sourceWarningSummary(source.name)
-        let warningDetail = model.sourceWarningDetail(source.name)
-        let hasWarning = warningSummary != nil
+        let warningSummary = isSingleMetric ? model.sourceWarningSummary(source.name) : nil
+        let warningDetail = isSingleMetric ? model.sourceWarningDetail(source.name) : nil
+        let hasWarning = isSingleMetric
+            ? (warningSummary != nil)
+            : model.sourceHasAnyMetricWarning(source)
         let showExpandedStyle = isSingleMetric ? isExpanded : anyMetricExpanded
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -187,6 +189,18 @@ private struct MetricNotificationsRowView: View {
         "\(source.name)::\(metric.id)"
     }
 
+    private var warningSummary: String? {
+        model.metricWarningSummary(sourceName: source.name, metricId: metric.id)
+    }
+
+    private var warningDetail: String? {
+        model.metricWarningDetail(sourceName: source.name, metricId: metric.id)
+    }
+
+    private var hasWarning: Bool {
+        warningSummary != nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
@@ -197,6 +211,12 @@ private struct MetricNotificationsRowView: View {
                 .toggleStyle(.checkbox)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(BrandPalette.textPrimary)
+
+                if hasWarning {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(BrandPalette.warning)
+                }
 
                 Spacer(minLength: 0)
 
@@ -224,6 +244,36 @@ private struct MetricNotificationsRowView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+
+            if let warningDetail {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(BrandPalette.warning)
+                        .padding(.top, 2)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let warningSummary {
+                            Text(warningSummary)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(BrandPalette.warning)
+                        }
+                        Text(warningDetail)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(BrandPalette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(BrandPalette.warning.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(BrandPalette.warning.opacity(0.26), lineWidth: 1)
+                        )
+                )
             }
 
             if metricEnabled, metricExpanded, metricHasNotifications {
