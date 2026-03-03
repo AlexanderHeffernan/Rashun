@@ -196,30 +196,94 @@ final class NotificationTests: XCTestCase {
         XCTAssertNil(rule.evaluate(ctx))
     }
 
+    func testGenericDefinitions_includePacingOnlyWhenEnabled() {
+        let without = NotificationDefinitions.generic(sourceName: "Test")
+        XCTAssertNil(without.first(where: { $0.id == "pacingAlert" }))
+
+        let with = NotificationDefinitions.generic(sourceName: "Test", supportsPacingAlert: true)
+        let pacing = with.first(where: { $0.id == "pacingAlert" })
+        XCTAssertNotNil(pacing)
+        XCTAssertTrue(pacing!.inputs.isEmpty)
+    }
+
     // MARK: - Helpers
 
     private func genericRule(id: String) -> NotificationDefinition {
         NotificationDefinitions.generic(sourceName: "Test").first { $0.id == id }!
     }
 
+    private func pacingRule() -> NotificationDefinition {
+        NotificationDefinitions.generic(sourceName: "Test", supportsPacingAlert: true).first { $0.id == "pacingAlert" }!
+    }
+
     private func makeContext(
         remaining: Double = 50,
         limit: Double = 100,
+        resetDate: Date? = nil,
         history: [UsageSnapshot] = []
     ) -> NotificationContext {
         NotificationContext(
             sourceName: "Test",
-            current: UsageResult(remaining: remaining, limit: limit),
+            current: UsageResult(remaining: remaining, limit: limit, resetDate: resetDate),
             previous: nil,
             history: history,
             inputValue: { _, def in def }
         )
     }
 
-    private func snapshot(minutesAgo: Double, remaining: Double) -> UsageSnapshot {
+    private func snapshot(minutesAgo: Double, remaining: Double, resetDate: Date? = nil) -> UsageSnapshot {
         UsageSnapshot(
             timestamp: Date().addingTimeInterval(-minutesAgo * 60),
-            usage: UsageResult(remaining: remaining, limit: 100)
+            usage: UsageResult(remaining: remaining, limit: 100, resetDate: resetDate)
         )
+    }
+
+    // MARK: - pacingAlert rule
+
+    func testPacingAlert_firesWhenProjectedZeroBeforeReset() {
+        let reset = Date().addingTimeInterval(6 * 3600)
+        let rule = pacingRule()
+
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            current: UsageResult(remaining: 50, limit: 100, resetDate: reset),
+            previous: nil,
+            history: [
+                snapshot(minutesAgo: 120, remaining: 80, resetDate: reset),
+                snapshot(minutesAgo: 60, remaining: 60, resetDate: reset),
+            ],
+            inputValue: { _, def in def }
+        )
+
+        let event = rule.evaluate(ctx)
+        XCTAssertNotNil(event)
+        XCTAssertNotNil(event?.cycleKey)
+    }
+
+    func testPacingAlert_doesNotFireWithoutResetDate() {
+        let rule = pacingRule()
+        let ctx = makeContext(history: [
+            snapshot(minutesAgo: 120, remaining: 80),
+            snapshot(minutesAgo: 60, remaining: 60),
+        ])
+
+        XCTAssertNil(rule.evaluate(ctx))
+    }
+
+    func testPacingAlert_doesNotFireIfTrendIsNotDepleting() {
+        let reset = Date().addingTimeInterval(6 * 3600)
+        let rule = pacingRule()
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            current: UsageResult(remaining: 60, limit: 100, resetDate: reset),
+            previous: nil,
+            history: [
+                snapshot(minutesAgo: 120, remaining: 58, resetDate: reset),
+                snapshot(minutesAgo: 60, remaining: 59, resetDate: reset),
+            ],
+            inputValue: { _, def in def }
+        )
+
+        XCTAssertNil(rule.evaluate(ctx))
     }
 }

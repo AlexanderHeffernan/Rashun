@@ -3,6 +3,15 @@ import Foundation
 struct UsageResult: Codable {
     let remaining: Double
     let limit: Double
+    let resetDate: Date?
+    let cycleStartDate: Date?
+
+    init(remaining: Double, limit: Double, resetDate: Date? = nil, cycleStartDate: Date? = nil) {
+        self.remaining = remaining
+        self.limit = limit
+        self.resetDate = resetDate
+        self.cycleStartDate = cycleStartDate
+    }
 
     var percentRemaining: Double {
         guard limit > 0 else { return 0 }
@@ -19,6 +28,8 @@ protocol AISource: Sendable {
     var name: String { get }
     /// Human-readable requirements or hints for using this source (shown in Preferences)
     var requirements: String { get }
+    var supportsPacingAlert: Bool { get }
+    func pacingLookbackStart(current: UsageResult, history: [UsageSnapshot], now: Date) -> Date?
     func fetchUsage() async throws -> UsageResult
     var notificationDefinitions: [NotificationDefinition] { get }
     var customNotificationDefinitions: [NotificationDefinition] { get }
@@ -27,9 +38,19 @@ protocol AISource: Sendable {
 
 extension AISource {
     var requirements: String { "" }
+    var supportsPacingAlert: Bool { false }
+    func pacingLookbackStart(current: UsageResult, history: [UsageSnapshot], now: Date) -> Date? {
+        current.cycleStartDate
+    }
     var customNotificationDefinitions: [NotificationDefinition] { [] }
     var notificationDefinitions: [NotificationDefinition] {
-        NotificationDefinitions.generic(sourceName: name) + customNotificationDefinitions
+        NotificationDefinitions.generic(
+            sourceName: name,
+            supportsPacingAlert: supportsPacingAlert,
+            pacingLookbackStart: { context, now in
+                self.pacingLookbackStart(current: context.current, history: context.history, now: now)
+            }
+        ) + customNotificationDefinitions
     }
     func forecast(current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? { nil }
 }

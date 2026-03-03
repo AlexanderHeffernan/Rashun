@@ -33,6 +33,8 @@ final class SettingsStore {
             notificationState = decodedState
         }
 
+        let migrated = migrateLegacyCopilotPacingRuleIfNeeded()
+
         let poll = UserDefaults.standard.double(forKey: pollIntervalKey)
         if poll > 0 {
             pollIntervalSeconds = poll
@@ -40,6 +42,10 @@ final class SettingsStore {
 
         if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
             autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
+        }
+
+        if migrated {
+            save()
         }
     }
 
@@ -163,6 +169,34 @@ final class SettingsStore {
     func setRuleState(_ state: NotificationRuleState, sourceName: String, ruleId: String) {
         notificationState[ruleStateKey(sourceName: sourceName, ruleId: ruleId)] = state
         save()
+    }
+
+    @discardableResult
+    private func migrateLegacyCopilotPacingRuleIfNeeded() -> Bool {
+        let sourceName = "Copilot"
+        let legacyRuleId = "behindPace"
+        let newRuleId = "pacingAlert"
+        guard var rules = notificationSettings[sourceName],
+              let legacyIndex = rules.firstIndex(where: { $0.ruleId == legacyRuleId }) else {
+            return false
+        }
+
+        let legacy = rules.remove(at: legacyIndex)
+        if let existing = rules.firstIndex(where: { $0.ruleId == newRuleId }) {
+            rules[existing].isEnabled = rules[existing].isEnabled || legacy.isEnabled
+        } else {
+            rules.append(NotificationRuleSetting(ruleId: newRuleId, isEnabled: legacy.isEnabled, inputValues: [:]))
+        }
+        notificationSettings[sourceName] = rules
+
+        let oldStateKey = ruleStateKey(sourceName: sourceName, ruleId: legacyRuleId)
+        let newStateKey = ruleStateKey(sourceName: sourceName, ruleId: newRuleId)
+        if notificationState[newStateKey] == nil, let old = notificationState[oldStateKey] {
+            notificationState[newStateKey] = old
+        }
+        notificationState.removeValue(forKey: oldStateKey)
+
+        return true
     }
 }
 

@@ -3,9 +3,9 @@ import Foundation
 struct CopilotSource: AISource {
     let name = "Copilot"
     let requirements = "Requires GitHub CLI 'gh' configured and authenticated (used to fetch auth token)."
-
-    var customNotificationDefinitions: [NotificationDefinition] {
-        [behindPaceRule()]
+    let supportsPacingAlert = true
+    func pacingLookbackStart(current: UsageResult, history: [UsageSnapshot], now: Date) -> Date? {
+        current.cycleStartDate
     }
 
     func fetchUsage() async throws -> UsageResult {
@@ -31,11 +31,24 @@ struct CopilotSource: AISource {
             throw NSError(domain: "GitHubAPI", code: -2, userInfo: [NSLocalizedDescriptionKey: "Missing/invalid fields"])
         }
 
-        return UsageResult(remaining: Double(remaining), limit: Double(entitlement))
+        guard let resetDate = monthlyResetDate(),
+              let cycleStartDate = monthlyCycleStartDate() else {
+            throw NSError(domain: "GitHubAPI", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to compute Copilot cycle dates"])
+        }
+
+        return UsageResult(
+            remaining: Double(remaining),
+            limit: Double(entitlement),
+            resetDate: resetDate,
+            cycleStartDate: cycleStartDate
+        )
     }
 
     func forecast(current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
         let now = Date()
+        guard let resetDate = current.resetDate ?? monthlyResetDate(reference: now) else {
+            return nil
+        }
         let utc = TimeZone(secondsFromGMT: 0)!
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = utc
@@ -49,10 +62,7 @@ struct CopilotSource: AISource {
             hour: 0,
             minute: 0,
             second: 0
-        )),
-        let resetDate = calendar.date(byAdding: .month, value: 1, to: cycleStart) else {
-            return nil
-        }
+        )) else { return nil }
 
         let currentPercent = min(max(current.percentRemaining, 0), 100)
         let usedPercentSoFar = 100 - currentPercent
@@ -133,49 +143,28 @@ struct CopilotSource: AISource {
         return token
     }
 
-    private func behindPaceRule() -> NotificationDefinition {
-        NotificationDefinition(
-            id: "behindPace",
-            title: "Monthly pacing alert",
-            detail: "Notifies if your usage is on track to run out before the month ends. Tolerance sets how many extra percentage points over the ideal pace are allowed.",
-            inputs: [
-                NotificationInputSpec(
-                    id: "drift",
-                    label: "Tolerance",
-                    unit: "%",
-                    defaultValue: 5,
-                    min: 0,
-                    max: 50,
-                    step: 1
-                )
-            ],
-            evaluate: { context in
-                let drift = context.value(for: "drift", defaultValue: 5)
+    private func monthlyCycleStartDate(reference: Date = Date()) -> Date? {
+        let utc = TimeZone(secondsFromGMT: 0)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
 
-                let calendar = Calendar.current
-                let now = Date()
-                let day = calendar.component(.day, from: now)
-                guard let range = calendar.range(of: .day, in: .month, for: now) else { return nil }
-                let daysInMonth = range.count
+        let yearMonth = calendar.dateComponents([.year, .month], from: reference)
+        return calendar.date(from: DateComponents(
+            timeZone: utc,
+            year: yearMonth.year,
+            month: yearMonth.month,
+            day: 1,
+            hour: 0,
+            minute: 0,
+            second: 0
+        ))
+    }
 
-                let used = 100 - context.current.percentRemaining
-                let expectedUsed = 100 * (Double(day) / Double(daysInMonth))
-
-                let isBehind = used > (expectedUsed + drift)
-                let wasBehind: Bool
-                if let prev = context.previous?.usage.percentRemaining {
-                    let prevUsed = 100 - prev
-                    wasBehind = prevUsed > (expectedUsed + drift)
-                } else {
-                    wasBehind = false
-                }
-
-                guard isBehind, !wasBehind else { return nil }
-
-                let title = "Copilot pacing alert"
-                let body = "You're using Copilot faster than your monthly allowance. \(String(format: "%.0f", used))% used by day \(day)/\(daysInMonth) — ideally you'd be at \(String(format: "%.0f", expectedUsed))%."
-                return NotificationEvent(title: title, body: body, cooldownSeconds: 86400, cycleKey: nil)
-            }
-        )
+    private func monthlyResetDate(reference: Date = Date()) -> Date? {
+        let utc = TimeZone(secondsFromGMT: 0)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        guard let cycleStart = monthlyCycleStartDate(reference: reference) else { return nil }
+        return calendar.date(byAdding: .month, value: 1, to: cycleStart)
     }
 }

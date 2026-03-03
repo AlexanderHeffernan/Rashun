@@ -1,7 +1,11 @@
 import Foundation
 
 enum NotificationDefinitions {
-    static func generic(sourceName: String) -> [NotificationDefinition] {
+    static func generic(
+        sourceName: String,
+        supportsPacingAlert: Bool = false,
+        pacingLookbackStart: ((NotificationContext, Date) -> Date?)? = nil
+    ) -> [NotificationDefinition] {
         let percentRemainingBelow = NotificationDefinition(
             id: "percentRemainingBelow",
             title: "Percent remaining below",
@@ -73,6 +77,67 @@ enum NotificationDefinitions {
             }
         )
 
-        return [percentRemainingBelow, recentSpike]
+        var definitions = [percentRemainingBelow, recentSpike]
+        if supportsPacingAlert {
+            definitions.append(pacingAlert(sourceName: sourceName, pacingLookbackStart: pacingLookbackStart))
+        }
+        return definitions
+    }
+
+    private static func pacingAlert(
+        sourceName: String,
+        pacingLookbackStart: ((NotificationContext, Date) -> Date?)?
+    ) -> NotificationDefinition {
+        NotificationDefinition(
+            id: "pacingAlert",
+            title: "Pacing alert",
+            detail: "Notifies if current usage trend is projected to hit 0% before reset.",
+            inputs: [],
+            evaluate: { context in
+                let now = Date()
+                guard let resetDate = context.current.resetDate, resetDate > now else {
+                    return nil
+                }
+                let defaultStart = context.current.cycleStartDate ?? now.addingTimeInterval(-24 * 3600)
+                let lookbackStart = pacingLookbackStart?(context, now) ?? defaultStart
+                let recent = context.history.filter { $0.timestamp >= lookbackStart && $0.timestamp <= now }
+
+                var xs = recent.map(\.timestamp).map(\.timeIntervalSinceReferenceDate)
+                var ys = recent.map { min(max($0.usage.percentRemaining, 0), 100) }
+
+                let currentPercent = min(max(context.current.percentRemaining, 0), 100)
+                if xs.isEmpty || xs.last != now.timeIntervalSinceReferenceDate {
+                    xs.append(now.timeIntervalSinceReferenceDate)
+                    ys.append(currentPercent)
+                }
+                guard xs.count >= 3,
+                      let minX = xs.min(),
+                      let maxX = xs.max(),
+                      (maxX - minX) >= (15 * 60) else {
+                    return nil
+                }
+
+                guard let slope = LinearRegression.slope(xs: xs, ys: ys) else {
+                    return nil
+                }
+                let burnRate = max(0, -slope)
+                guard burnRate > 0 else { return nil }
+
+                let secondsToZero = currentPercent / burnRate
+                guard secondsToZero.isFinite else { return nil }
+                let projectedZeroDate = now.addingTimeInterval(secondsToZero)
+                guard projectedZeroDate < resetDate else { return nil }
+
+                let formatter = DateFormatter()
+                formatter.dateFormat = "MMM d, h:mm a"
+
+                let title = "\(sourceName) pacing alert"
+                let body = "At current pace, projected 0% by \(formatter.string(from: projectedZeroDate)) before reset at \(formatter.string(from: resetDate))."
+
+                let cycleFormatter = ISO8601DateFormatter()
+                let cycleKey = cycleFormatter.string(from: resetDate)
+                return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
+            }
+        )
     }
 }

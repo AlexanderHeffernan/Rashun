@@ -79,7 +79,12 @@ final class ChartWindowController: NSWindowController {
 
         summaryLabel.font = .systemFont(ofSize: 11)
         summaryLabel.textColor = .secondaryLabelColor
-        summaryLabel.lineBreakMode = .byTruncatingTail
+        if let cell = summaryLabel.cell as? NSTextFieldCell {
+            cell.usesSingleLineMode = false
+            cell.wraps = true
+            cell.lineBreakMode = .byWordWrapping
+        }
+        summaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         summaryLabel.translatesAutoresizingMaskIntoConstraints = false
 
         container.addSubview(segmented)
@@ -157,6 +162,6 @@ final class ChartWindowController: NSWindowController {
         }
 
         chartView.series = chartSeries
-        summaryLabel.stringValue = summaryParts.joined(separator: "  ·  ")
+        summaryLabel.stringValue = summaryParts.joined(separator: "\n")
     }
 }

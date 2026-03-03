@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/inst
 ## Features
 
 - **Menu bar at a glance** — A brain icon fills up (or empties out) to reflect your average remaining quota, with a percentage right next to it.
-- **Multiple sources** — Ships with support for **Amp Free** and **GitHub Copilot**. Enable whichever ones you use.
+- **Multiple sources** — Ships with support for **Amp Free**, **GitHub Copilot**, **Codex**, and **Gemini CLI**. Enable whichever ones you use.
 - **Smart notifications** — Get alerted when your remaining usage drops below a threshold, when you're burning through tokens unusually fast, or when you're on pace to run out before the month ends.
 - **Configurable polling** — Set how often Rashun checks your usage (default: every 2 minutes).
 - **Preferences UI** — Toggle sources on/off, expand notification rules, and tune thresholds — all from a native settings window.
@@ -29,6 +29,8 @@ Rashun polls each enabled source on a timer. For each source, it fetches the cur
 |---|---|
 | **Amp** | Runs `~/.amp/bin/amp usage` and parses the output |
 | **Copilot** | Uses `gh auth token` to authenticate, then hits the GitHub Copilot internal API |
+| **Codex** | Reads recent `~/.codex/sessions/*.jsonl` token-count events and converts `used_percent` to percent remaining |
+| **Gemini CLI** | Uses local `~/.gemini/oauth_creds.json` auth to call Gemini Code Assist quota APIs (`loadCodeAssist` + `retrieveUserQuota`) and tracks `gemini-3-pro-preview` remaining usage |
 
 ---
 
@@ -38,6 +40,8 @@ Rashun polls each enabled source on a timer. For each source, it fetches the cur
 - **Swift 6.2+** toolchain (ships with recent Xcode versions)
 - For **Amp** monitoring: the [Amp CLI](https://ampcode.com) installed at `~/.amp/bin/amp`
 - For **Copilot** monitoring: the [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated (`gh auth login`)
+- For **Codex** monitoring: Codex app/CLI installed with local session logs in `~/.codex/sessions`
+- For **Gemini CLI** monitoring: Gemini CLI installed and authenticated (local credentials stored in `~/.gemini/oauth_creds.json`)
 
 ---
 
@@ -86,7 +90,7 @@ Each source comes with built-in notification rules you can toggle on:
 |---|---|
 | **Percent remaining below** | Fires when your remaining usage drops below a threshold (e.g., 50%) |
 | **Recent usage spike** | Fires when you burn through a large chunk of quota in a short time window |
-| **Monthly pacing alert** *(Copilot only)* | Fires when your usage rate is on track to exhaust your quota before month-end |
+| **Pacing alert** *(reset-window sources)* | Fires when your current trend is projected to hit 0% before the source reset |
 
 All thresholds and time windows are configurable in Settings.
 
@@ -117,7 +121,7 @@ struct ClaudeSource: AISource {
 
 ### Custom Notification Rules
 
-Sources can also define their own notification rules by implementing `customNotificationDefinitions`. See `CopilotSource.swift` for an example of the monthly pacing alert.
+Sources can also define their own notification rules by implementing `customNotificationDefinitions`.
 
 ---
 
@@ -174,6 +178,7 @@ This project is licensed under the [MIT License](LICENSE).
 - [X] Set up a CI/CD pipeline (GitHub Actions)
 - [X] Add an easier install path (no clone/build required), with optional auto-update support
 - [X] Auto-update support 
+- [ ] Better timezone handling, don't show UTC times to users in other timezones
 - [ ] Evaluate AppKit vs SwiftUI trade-offs (AppKit currently gives better menu bar/notification control)
 - [ ] Add macOS widgets
 - [ ] Improve data management (export/import usage data, delete stored data)

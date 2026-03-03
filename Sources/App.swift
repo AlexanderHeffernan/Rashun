@@ -117,22 +117,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var percentValues: [Double] = []
         var usageResults: [String: UsageResult] = [:]
 
-        await withTaskGroup(of: (String, UsageResult?).self) { group in
+        await withTaskGroup(of: (String, Result<UsageResult, Error>).self) { group in
             for source in enabled {
                 group.addTask {
-                    let res = try? await source.fetchUsage()
-                    return (source.name, res)
+                    do {
+                        let usage = try await source.fetchUsage()
+                        return (source.name, .success(usage))
+                    } catch {
+                        return (source.name, .failure(error))
+                    }
                 }
             }
 
-            for await (name, res) in group {
-                if let usage = res {
+            for await (name, result) in group {
+                switch result {
+                case let .success(usage):
                     results[name] = usage.formatted
                     usageResults[name] = usage
                     let p = min(max(usage.percentRemaining, 0), 100)
                     percentValues.append(p)
-                } else {
-                    results[name] = "Error"
+                case let .failure(error):
+                    results[name] = "Error: \(shortErrorMessage(from: error))"
                 }
                 loadingSources.remove(name)
                 updateMenu()
@@ -255,6 +260,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func shouldSend(event: NotificationEvent, state: NotificationRuleState?) -> Bool {
         shouldSendNotification(event: event, state: state)
+    }
+
+    private func shortErrorMessage(from error: Error) -> String {
+        let message = (error as NSError).localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return "Unknown error" }
+
+        let singleLine = message.replacingOccurrences(of: "\n", with: " ")
+        if singleLine.count > 90 {
+            return String(singleLine.prefix(87)) + "..."
+        }
+        return singleLine
     }
 }
 
