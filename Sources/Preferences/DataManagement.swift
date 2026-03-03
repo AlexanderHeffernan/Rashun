@@ -9,7 +9,7 @@ struct UsageHistoryExportFile: Codable {
     static let currentSchemaVersion = 1
 }
 
-enum UsageHistoryTransferError: LocalizedError {
+enum UsageHistoryTransferError: LocalizedError, Equatable {
     case unsupportedSchema(Int)
     case invalidFile
 

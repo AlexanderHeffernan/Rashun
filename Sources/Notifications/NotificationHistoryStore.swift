@@ -79,6 +79,9 @@ final class NotificationHistoryStore {
 
     func append(sourceName: String, usage: UsageResult) {
         var history = historyBySource[sourceName] ?? []
+        if let last = history.last, hasSameUsageState(lhs: last.usage, rhs: usage) {
+            return
+        }
         history.append(UsageSnapshot(timestamp: Date(), usage: usage))
         if history.count > maxSnapshots {
             history.removeFirst(history.count - maxSnapshots)
@@ -145,5 +148,12 @@ final class NotificationHistoryStore {
             normalized[source] = Array(sorted.suffix(10_000))
         }
         return normalized
+    }
+
+    private func hasSameUsageState(lhs: UsageResult, rhs: UsageResult) -> Bool {
+        lhs.remaining == rhs.remaining &&
+            lhs.limit == rhs.limit &&
+            lhs.resetDate == rhs.resetDate &&
+            lhs.cycleStartDate == rhs.cycleStartDate
     }
 }
