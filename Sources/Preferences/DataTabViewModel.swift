@@ -26,6 +26,8 @@ final class DataTabViewModel: ObservableObject {
 
     @Published var showDeleteConfirmation = false
     @Published private(set) var pendingDeleteMessage = ""
+    @Published var showImportConfirmation = false
+    @Published private(set) var pendingImportMessage = ""
 
     @Published private(set) var transferStatusText = ""
     @Published private(set) var transferStatusIsError = false
@@ -33,6 +35,8 @@ final class DataTabViewModel: ObservableObject {
     @Published private(set) var deleteStatusIsError = false
 
     private var configuredSourceNames: Set<String> = []
+    private var pendingImportURL: URL?
+    private var pendingImportHistory: [String: [UsageSnapshot]]?
 
     func configure(sourceNames: [String]) {
         configuredSourceNames = Set(sourceNames)
@@ -108,17 +112,45 @@ final class DataTabViewModel: ObservableObject {
         panel.allowsMultipleSelection = false
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-
         do {
             let data = try Data(contentsOf: url)
             let imported = try UsageHistoryTransferService.readImportData(from: data)
-            NotificationHistoryStore.shared.replaceAllHistory(imported)
-            refreshStats()
-            notifyDataChanged()
-            setTransferStatus("Imported \(stats.snapshotCount.formatted()) snapshots from \(url.lastPathComponent).")
+            pendingImportURL = url
+            pendingImportHistory = imported
+
+            let currentStats = NotificationHistoryStore.shared.stats()
+            let incomingStats = stats(for: imported)
+            pendingImportMessage = """
+            This will replace your current usage history with data from \(url.lastPathComponent). This cannot be undone.
+
+            Current:
+            \(summaryText(for: currentStats))
+
+            Import:
+            \(summaryText(for: incomingStats))
+            """
+            showImportConfirmation = true
         } catch {
             setTransferStatus("Import failed: \(error.localizedDescription)", isError: true)
         }
+    }
+
+    func confirmImport() {
+        guard let url = pendingImportURL, let imported = pendingImportHistory else { return }
+        pendingImportURL = nil
+        pendingImportHistory = nil
+        pendingImportMessage = ""
+
+        NotificationHistoryStore.shared.replaceAllHistory(imported)
+        refreshStats()
+        notifyDataChanged()
+        setTransferStatus("Imported \(stats.snapshotCount.formatted()) snapshots from \(url.lastPathComponent).")
+    }
+
+    func cancelImport() {
+        pendingImportURL = nil
+        pendingImportHistory = nil
+        pendingImportMessage = ""
     }
 
     func beginDeleteFlow() {
@@ -197,6 +229,32 @@ final class DataTabViewModel: ObservableObject {
     private func setDeleteStatus(_ text: String, isError: Bool = false) {
         deleteStatusText = text
         deleteStatusIsError = isError
+    }
+
+    private func stats(for historyBySource: [String: [UsageSnapshot]]) -> HistoryStorageStats {
+        let snapshots = historyBySource.values.flatMap { $0 }
+        let oldest = snapshots.min(by: { $0.timestamp < $1.timestamp })?.timestamp
+        let newest = snapshots.max(by: { $0.timestamp < $1.timestamp })?.timestamp
+        let estimatedBytes = (try? JSONEncoder().encode(historyBySource).count) ?? 0
+        return HistoryStorageStats(
+            sourceCount: historyBySource.keys.count,
+            snapshotCount: snapshots.count,
+            oldestSnapshot: oldest,
+            newestSnapshot: newest,
+            estimatedBytes: estimatedBytes
+        )
+    }
+
+    private func summaryText(for stats: HistoryStorageStats) -> String {
+        let byteText = ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file)
+        return "- \(stats.snapshotCount.formatted()) snapshots across \(stats.sourceCount.formatted()) sources (\(byteText))\n- \(dateRangeText(for: stats))"
+    }
+
+    private func dateRangeText(for stats: HistoryStorageStats) -> String {
+        guard let oldest = stats.oldestSnapshot, let newest = stats.newestSnapshot else {
+            return "No snapshots."
+        }
+        return "\(Self.displayFormatter.string(from: oldest)) to \(Self.displayFormatter.string(from: newest))"
     }
 
     private func updateAvailableSources(knownSourceNames: Set<String>) {

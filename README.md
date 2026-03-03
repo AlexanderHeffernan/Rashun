@@ -181,7 +181,7 @@ This project is licensed under the [MIT License](LICENSE).
 - [X] Better timezone handling, don't show UTC times to users in other timezones. Edit: Was a copilot source issue, fixed by converting to local timezone before storing usage events.
 - [X] Evaluate AppKit vs SwiftUI trade-offs (AppKit currently gives better menu bar/notification control)
 - [X] ~~Add macOS widgets~~ (would be a nice-to-have, but requires use of Xcode which I'm trying to avoid)
-- [ ] Improve data management (export/import usage data, delete stored data)
+- [X] Improve data management (export/import usage data, delete stored data)
 - [ ] Improve error handling and user feedback (e.g., warning icon or alert when usage fetch fails)
 - [ ] Add source health checks when enabling a source
 - [ ] Do we need improved handling of my complex AI Sources with multiple usage quotas?

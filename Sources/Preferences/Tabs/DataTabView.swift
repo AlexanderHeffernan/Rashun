@@ -24,6 +24,16 @@ struct DataTabView: View {
         } message: {
             Text(dataModel.pendingDeleteMessage)
         }
+        .alert("Replace Current Usage History?", isPresented: $dataModel.showImportConfirmation) {
+            Button("Replace", role: .destructive) {
+                dataModel.confirmImport()
+            }
+            Button("Cancel", role: .cancel) {
+                dataModel.cancelImport()
+            }
+        } message: {
+            Text(dataModel.pendingImportMessage)
+        }
     }
 
     private var summaryCard: some View {
