@@ -1,19 +1,7 @@
 import Cocoa
 
-struct ChartPoint {
-    let date: Date
-    let value: Double
-}
-
-struct ChartSeries {
-    let label: String
-    let color: NSColor
-    let points: [ChartPoint]
-    let forecast: [ChartPoint]
-}
-
 @MainActor
-class UsageChartView: NSView {
+final class UsageChartView: NSView {
 
     private struct HoverSeriesValue {
         let label: String
@@ -30,8 +18,11 @@ class UsageChartView: NSView {
     var visibleEndDate: Date? {
         didSet { needsDisplay = true }
     }
+    var showLegend = false {
+        didSet { needsDisplay = true }
+    }
 
-    private let paddingTop: CGFloat = 30
+    private let paddingTop: CGFloat = 18
     private let paddingBottom: CGFloat = 35
     private let paddingLeft: CGFloat = 55
     private let paddingRight: CGFloat = 20
@@ -78,11 +69,13 @@ class UsageChartView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        _ = event
         hoverDate = nil
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        _ = dirtyRect
         super.draw(dirtyRect)
 
         let chart = chartRect
@@ -103,7 +96,7 @@ class UsageChartView: NSView {
         for s in series {
             drawArea(s.points, color: s.color, in: chart, start: startDate, end: endDate)
             drawLine(s.points, color: s.color, in: chart, start: startDate, end: endDate)
-            drawLine(s.forecast, color: s.color.withAlphaComponent(0.65), in: chart, start: startDate, end: endDate, dashed: true)
+            drawLine(s.forecast, color: s.color.withAlphaComponent(0.78), in: chart, start: startDate, end: endDate, dashed: true)
         }
 
         if let hoverDate {
@@ -114,7 +107,9 @@ class UsageChartView: NSView {
 
         NSGraphicsContext.current?.restoreGraphicsState()
 
-        drawLegend(in: chart)
+        if showLegend {
+            drawLegend(in: chart)
+        }
         if let hoverDate {
             drawHoverTooltip(at: hoverDate, in: chart, start: startDate, end: endDate)
         }
@@ -228,18 +223,19 @@ class UsageChartView: NSView {
             path.line(to: NSPoint(x: xFor(point.date, in: rect, start: start, end: end), y: yFor(point.value, in: rect)))
         }
 
-        path.line(to: NSPoint(x: xFor(points.last!.date, in: rect, start: start, end: end), y: yFor(0, in: rect)))
-        path.close()
-
-        color.withAlphaComponent(0.08).setFill()
-        path.fill()
+        if let last = points.last {
+            path.line(to: NSPoint(x: xFor(last.date, in: rect, start: start, end: end), y: yFor(0, in: rect)))
+            path.close()
+            color.withAlphaComponent(0.08).setFill()
+            path.fill()
+        }
     }
 
     private func drawLine(_ points: [ChartPoint], color: NSColor, in rect: NSRect, start: Date, end: Date, dashed: Bool = false) {
         guard points.count >= 2 else { return }
 
         let path = NSBezierPath()
-        path.lineWidth = dashed ? 1.5 : 2
+        path.lineWidth = 2
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         if dashed {

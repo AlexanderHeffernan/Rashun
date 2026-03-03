@@ -11,7 +11,7 @@ struct UpdatesTabView: View {
     }
 
     private var versionCard: some View {
-        PreferenceCard(title: "Version") {
+        BrandCard(title: "Version") {
             HStack(spacing: 8) {
                 Text(model.currentVersionText)
                     .font(.system(size: 15, weight: .medium))
@@ -22,7 +22,7 @@ struct UpdatesTabView: View {
     }
 
     private var updateChecksCard: some View {
-        PreferenceCard(title: "Update Checks") {
+        BrandCard(title: "Update Checks") {
             VStack(alignment: .leading, spacing: 14) {
                 BrandToggle(
                     title: "Check for updates automatically",

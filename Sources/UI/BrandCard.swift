@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct PreferenceCard<Content: View>: View {
+struct BrandCard<Content: View>: View {
     let title: String
     let content: Content
 
@@ -12,7 +12,7 @@ struct PreferenceCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
-                .font(.system(size: 38/2, weight: .bold, design: .rounded))
+                .font(.system(size: 19, weight: .bold, design: .rounded))
                 .foregroundColor(BrandPalette.textPrimary)
 
             content

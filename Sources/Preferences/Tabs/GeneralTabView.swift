@@ -10,7 +10,7 @@ struct GeneralTabView: View {
     }
 
     private var appBehaviorCard: some View {
-        PreferenceCard(title: "App Behavior") {
+        BrandCard(title: "App Behavior") {
             VStack(alignment: .leading, spacing: 20) {
                 startupSection
                 sectionDivider

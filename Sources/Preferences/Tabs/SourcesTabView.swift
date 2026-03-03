@@ -5,7 +5,7 @@ struct SourcesTabView: View {
 
     var body: some View {
         TabScrollContainer {
-            PreferenceCard(title: "Sources") {
+            BrandCard(title: "Sources") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Enable providers and configure notification rules for each source.")
                         .font(.system(size: 12, weight: .medium))

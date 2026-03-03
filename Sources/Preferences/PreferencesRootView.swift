@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum PreferencesTab: String, CaseIterable, Hashable {
+    case general = "General"
+    case sources = "Sources"
+    case updates = "Updates"
+}
+
 struct PreferencesRootView: View {
     @ObservedObject var model: PreferencesViewModel
     @State private var selectedTab: PreferencesTab = .general
@@ -87,46 +93,12 @@ struct PreferencesRootView: View {
 
     private var tabBar: some View {
         HStack {
-            HStack(spacing: 6) {
-                ForEach(PreferencesTab.allCases, id: \.self) { tab in
-                    Button(action: { selectedTab = tab }) {
-                        Text(tab.rawValue)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(selectedTab == tab ? BrandPalette.textPrimary : BrandPalette.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 11)
-                            .frame(minWidth: 116)
-                            .background(tabBackground(isSelected: selectedTab == tab))
-                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(6)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(BrandPalette.cardAlt.opacity(0.9))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(BrandPalette.primary.opacity(0.2), lineWidth: 1)
-                    )
+            BrandSegmentedControl(
+                options: PreferencesTab.allCases,
+                selection: $selectedTab,
+                label: { $0.rawValue }
             )
             Spacer()
-        }
-    }
-
-    @ViewBuilder
-    private func tabBackground(isSelected: Bool) -> some View {
-        if isSelected {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(BrandPalette.primary.opacity(0.25))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(BrandPalette.accent.opacity(0.5), lineWidth: 1)
-                )
-        } else {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.clear)
         }
     }
 

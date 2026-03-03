@@ -25,9 +25,3 @@ extension Color {
         self.init(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
     }
 }
-
-enum PreferencesTab: String, CaseIterable, Hashable {
-    case general = "General"
-    case sources = "Sources"
-    case updates = "Updates"
-}
