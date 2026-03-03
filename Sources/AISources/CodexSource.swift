@@ -14,24 +14,35 @@ struct CodexSource: AISource {
             throw NSError(domain: "CodexSource", code: -1, userInfo: [NSLocalizedDescriptionKey: "No Codex session files found"])
         }
 
+        var latestSample: TokenCountSample?
         for fileURL in files {
             guard let text = try? String(contentsOf: fileURL, encoding: .utf8),
                   let sample = parseLatestTokenCount(from: text) else {
                 continue
             }
 
-            let remaining = max(0, min(100, 100 - sample.usedPercent))
-            let resetDate = sample.resetsAtEpoch.map { Date(timeIntervalSince1970: $0) }
-            let cycleStartDate: Date?
-            if let resetDate, let windowMinutes = sample.windowMinutes {
-                cycleStartDate = resetDate.addingTimeInterval(-(windowMinutes * 60))
+            if let existing = latestSample {
+                if sample.timestamp > existing.timestamp {
+                    latestSample = sample
+                }
             } else {
-                cycleStartDate = nil
+                latestSample = sample
             }
-            return UsageResult(remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
         }
 
-        throw NSError(domain: "CodexSource", code: -2, userInfo: [NSLocalizedDescriptionKey: "No token_count rate limit data found in recent Codex sessions"])
+        guard let sample = latestSample else {
+            throw NSError(domain: "CodexSource", code: -2, userInfo: [NSLocalizedDescriptionKey: "No token_count rate limit data found in recent Codex sessions"])
+        }
+
+        let remaining = max(0, min(100, 100 - sample.usedPercent))
+        let resetDate = sample.resetsAtEpoch.map { Date(timeIntervalSince1970: $0) }
+        let cycleStartDate: Date?
+        if let resetDate, let windowMinutes = sample.windowMinutes {
+            cycleStartDate = resetDate.addingTimeInterval(-(windowMinutes * 60))
+        } else {
+            cycleStartDate = nil
+        }
+        return UsageResult(remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
     }
 
     func forecast(current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
@@ -78,32 +89,50 @@ struct CodexSource: AISource {
                   let payload = object["payload"] as? [String: Any],
                   let payloadType = payload["type"] as? String,
                   payloadType == "token_count",
-                  let primary = primaryRateLimits(from: payload),
+                  let rateLimits = rateLimits(from: payload),
+                  let primary = rateLimits["primary"] as? [String: Any],
                   let usedPercent = numericValue(primary["used_percent"]) else {
                 continue
             }
 
+            if let limitID = rateLimits["limit_id"] as? String,
+               !limitID.isEmpty,
+               limitID != "codex" {
+                continue
+            }
+
+            let timestamp = parsedTimestamp(from: object)
             let resetEpoch = numericValue(primary["resets_at"])
             let windowMinutes = numericValue(primary["window_minutes"])
-            return TokenCountSample(usedPercent: usedPercent, resetsAtEpoch: resetEpoch, windowMinutes: windowMinutes)
+            return TokenCountSample(timestamp: timestamp, usedPercent: usedPercent, resetsAtEpoch: resetEpoch, windowMinutes: windowMinutes)
         }
 
         return nil
     }
 
-    private func primaryRateLimits(from payload: [String: Any]) -> [String: Any]? {
+    private func rateLimits(from payload: [String: Any]) -> [String: Any]? {
         if let info = payload["info"] as? [String: Any],
-           let rateLimits = info["rate_limits"] as? [String: Any],
-           let primary = rateLimits["primary"] as? [String: Any] {
-            return primary
+           let rateLimits = info["rate_limits"] as? [String: Any] {
+            return rateLimits
         }
 
-        if let rateLimits = payload["rate_limits"] as? [String: Any],
-           let primary = rateLimits["primary"] as? [String: Any] {
-            return primary
+        if let rateLimits = payload["rate_limits"] as? [String: Any] {
+            return rateLimits
         }
 
         return nil
+    }
+
+    private func parsedTimestamp(from object: [String: Any]) -> Date {
+        guard let raw = object["timestamp"] as? String else { return .distantPast }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) {
+            return date
+        }
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return standard.date(from: raw) ?? .distantPast
     }
 
     func numericValue(_ raw: Any?) -> Double? {
@@ -125,7 +154,8 @@ struct CodexSource: AISource {
 
         let currentPercent = min(max(current.percentRemaining, 0), 100)
         var points: [ForecastPoint] = [ForecastPoint(date: now, value: currentPercent)]
-        let burnRate = burnRatePerSecond(from: history, now: now, currentPercent: currentPercent, lookbackHours: historyWindowHours)
+        let filteredHistory = historyForCurrentCycle(history, current: current)
+        let burnRate = burnRatePerSecond(from: filteredHistory, now: now, currentPercent: currentPercent, lookbackHours: historyWindowHours)
         let preReset = resetDate.addingTimeInterval(-1)
 
         let projectedPreReset: Double
@@ -174,6 +204,20 @@ struct CodexSource: AISource {
         return ForecastResult(points: points, summary: summary)
     }
 
+    private func historyForCurrentCycle(_ history: [UsageSnapshot], current: UsageResult) -> [UsageSnapshot] {
+        let epsilon: TimeInterval = 1
+        return history.filter { snapshot in
+            if let currentReset = current.resetDate {
+                guard let snapshotReset = snapshot.usage.resetDate else { return false }
+                return abs(snapshotReset.timeIntervalSince(currentReset)) <= epsilon
+            }
+            if let cycleStart = current.cycleStartDate {
+                return snapshot.timestamp >= cycleStart
+            }
+            return true
+        }
+    }
+
     private func burnRatePerSecond(
         from history: [UsageSnapshot],
         now: Date,
@@ -197,6 +241,7 @@ struct CodexSource: AISource {
 }
 
 struct TokenCountSample {
+    let timestamp: Date
     let usedPercent: Double
     let resetsAtEpoch: Double?
     let windowMinutes: Double?

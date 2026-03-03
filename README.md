@@ -178,7 +178,7 @@ This project is licensed under the [MIT License](LICENSE).
 - [X] Set up a CI/CD pipeline (GitHub Actions)
 - [X] Add an easier install path (no clone/build required), with optional auto-update support
 - [X] Auto-update support 
-- [ ] Better timezone handling, don't show UTC times to users in other timezones
+- [X] Better timezone handling, don't show UTC times to users in other timezones. Edit: Was a copilot source issue, fixed by converting to local timezone before storing usage events.
 - [ ] Evaluate AppKit vs SwiftUI trade-offs (AppKit currently gives better menu bar/notification control)
 - [ ] Add macOS widgets
 - [ ] Improve data management (export/import usage data, delete stored data)
