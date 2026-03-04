@@ -133,6 +133,12 @@ final class UsageChartView: NSView {
         }
 
         let padding = max(end.timeIntervalSince(start) * 0.02, 60)
+        // For unbounded ranges (All), keep the right edge anchored at "now"
+        // so the chart does not show artificial future gap.
+        if visibleStartDate == nil, visibleEndDate == nil {
+            return (start.addingTimeInterval(-padding), end)
+        }
+
         return (start.addingTimeInterval(-padding), end.addingTimeInterval(padding))
     }
 

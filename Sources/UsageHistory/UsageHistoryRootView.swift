@@ -155,7 +155,7 @@ struct UsageHistoryRootView: View {
     private var summaryCard: some View {
         BrandCard(title: "Forecast Insights") {
             if model.summaryLines.isEmpty {
-                Text("No forecast insights for this range.")
+                Text("No forecast insights available.")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(BrandPalette.textSecondary)
             } else {
