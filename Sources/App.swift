@@ -1,4 +1,5 @@
 import Cocoa
+import SwiftUI
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -90,12 +91,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu?.addItem(withTitle: "No sources enabled — open Preferences...", action: #selector(showPreferences), keyEquivalent: "")
         } else {
             var hasWarnings = false
-            for source in enabled {
+            for (index, source) in enabled.enumerated() {
                 let hasWarning = !loadingSources.contains(source.name) && sourceHasWarning(source)
                 if hasWarning { hasWarnings = true }
                 let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
                 item.view = sourceMenuView(source: source, hasWarning: hasWarning)
                 menu?.addItem(item)
+                if index < enabled.count - 1 {
+                    menu?.addItem(NSMenuItem.separator())
+                }
             }
             if hasWarnings {
                 let hint = NSMenuItem(
@@ -124,60 +128,64 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func sourceMenuView(source: AISource, hasWarning: Bool) -> NSView {
         let metrics = enabledMetrics(for: source)
-        let currentResults = results[source.name] ?? [:]
-        let warningSuffix = hasWarning ? "  ⚠" : ""
-
-        if source.metrics.count <= 1 {
-            let metricId = metrics.first?.id ?? source.metrics.first?.id ?? "default"
-            let display = loadingSources.contains(source.name)
-                ? loadingIndicator
-                : (currentResults[metricId] ?? SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage?.formatted ?? "N/A")
-            let label = NSTextField(labelWithString: "\(source.name) Remaining: \(display)\(warningSuffix)")
-            label.font = NSFont.menuFont(ofSize: 0)
-            label.textColor = .labelColor
-            label.sizeToFit()
-            let container = NSView(frame: NSRect(x: 0, y: 0, width: label.frame.width + 28, height: label.frame.height + 4))
-            label.frame.origin = NSPoint(x: 14, y: 2)
-            container.addSubview(label)
-            return container
-        }
-
-        var labels: [NSTextField] = []
-        let sourceLabel = NSTextField(labelWithString: "\(source.name)\(warningSuffix)")
-        sourceLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-        sourceLabel.textColor = .secondaryLabelColor
-        labels.append(sourceLabel)
-
+        let rows: [MenuDropdownMetricRowModel]
         if metrics.isEmpty {
-            let noMetricsLabel = NSTextField(labelWithString: "No metrics enabled")
-            noMetricsLabel.font = NSFont.menuFont(ofSize: 0)
-            noMetricsLabel.textColor = .secondaryLabelColor
-            labels.append(noMetricsLabel)
+            rows = [
+                MenuDropdownMetricRowModel(
+                    title: "No metrics enabled",
+                    valueText: "--",
+                    progress: 0,
+                    hasValue: false,
+                    hasWarning: hasWarning
+                )
+            ]
         } else {
-            for metric in metrics {
-                let metricWarningSuffix = metricHasWarning(source: source, metricId: metric.id) ? "  ⚠" : ""
-                let display = loadingSources.contains(source.name)
-                    ? loadingIndicator
-                    : (currentResults[metric.id] ?? SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage?.formatted ?? "N/A")
-                let metricLabel = NSTextField(labelWithString: "\(metric.title) Remaining: \(display)\(metricWarningSuffix)")
-                metricLabel.font = NSFont.menuFont(ofSize: 0)
-                metricLabel.textColor = .labelColor
-                labels.append(metricLabel)
+            let sourceHasSingleMetric = source.metrics.count <= 1 && metrics.count <= 1
+            rows = metrics.map { metric in
+                let warning = metricHasWarning(source: source, metricId: metric.id)
+                let rowTitle = sourceHasSingleMetric ? "Remaining" : metric.title
+                if loadingSources.contains(source.name) {
+                    return MenuDropdownMetricRowModel(
+                        title: rowTitle,
+                        valueText: "Refreshing",
+                        progress: 0,
+                        hasValue: false,
+                        hasWarning: warning
+                    )
+                }
+
+                if let usage = usageResultForIcon(sourceName: source.name, metricId: metric.id) {
+                    let percent = min(max(usage.percentRemaining, 0), 100)
+                    return MenuDropdownMetricRowModel(
+                        title: rowTitle,
+                        valueText: "\(Int(round(percent)))%",
+                        progress: percent / 100,
+                        hasValue: true,
+                        hasWarning: warning
+                    )
+                }
+
+                return MenuDropdownMetricRowModel(
+                    title: rowTitle,
+                    valueText: "--",
+                    progress: 0,
+                    hasValue: false,
+                    hasWarning: warning
+                )
             }
         }
 
-        for label in labels { label.sizeToFit() }
-        let maxWidth = labels.map { $0.frame.width }.max() ?? 0
-        let lineHeight = (labels.map { $0.frame.height }.max() ?? 0) + 2
-        let height = CGFloat(labels.count) * lineHeight + 4
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: maxWidth + 28, height: height))
-        var y = height - lineHeight - 2
-        for label in labels {
-            label.frame.origin = NSPoint(x: 14, y: y)
-            container.addSubview(label)
-            y -= lineHeight
-        }
-        return container
+        let host = NSHostingView(
+            rootView: MenuDropdownSourceCardView(
+                sourceName: source.name,
+                logoImage: logoImage(forSourceName: source.name),
+                sourceColorHex: source.menuBarBrandColorHex,
+                rows: rows
+            )
+        )
+        let fit = host.fittingSize
+        host.frame = NSRect(origin: .zero, size: fit)
+        return host
     }
 
     @objc func refreshClicked() {
@@ -549,7 +557,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func logoImage(for metric: IconRingMetric) -> NSImage? {
-        let assetBaseName = logoBaseName(forSourceName: metric.sourceName)
+        logoImage(forSourceName: metric.sourceName)
+    }
+
+    private func logoImage(forSourceName sourceName: String) -> NSImage? {
+        let assetBaseName = logoBaseName(forSourceName: sourceName)
         if let inMemory = NSImage(named: assetBaseName) {
             return inMemory
         }
