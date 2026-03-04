@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var sources: [AISource] { allSources }
 
     var results: [String: [String: String]] = [:]
+    var latestUsageResults: [String: [String: UsageResult]] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
 
@@ -28,15 +29,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            // try to use an SF Symbol brain icon (template) and show a placeholder title
-            if let brain = NSImage(systemSymbolName: "brain", accessibilityDescription: "AI") {
-                brain.isTemplate = true
-                button.image = brain
-                button.imagePosition = .imageLeft
-            } else {
-                button.title = "AI"
-            }
-            button.title = "—"
+            button.imagePosition = .imageOnly
+            button.title = ""
         }
 
         menu = NSMenu()
@@ -67,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         updateMenu()
+        updateStatusIcon()
 
         Task {
             _ = await NotificationManager.shared.requestAuthorization()
@@ -231,6 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let metricUsages = fetchResult.usages
                     let metricDisplays = metricUsages.mapValues { $0.formatted }
                     results[name] = metricDisplays
+                    latestUsageResults[name] = metricUsages
                     usageResultsBySource[name] = metricUsages
 
                     if source.metrics.count > 1 {
@@ -280,33 +276,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 loadingSources.remove(name)
                 updateMenu()
+                updateStatusIcon()
             }
         }
 
         lastRefreshDate = Date()
         await evaluateNotifications(sources: enabled, results: usageResultsBySource)
 
-        // compute average remaining percentage across successful sources
         if percentValues.isEmpty {
-            // no successful sources to aggregate
-            if let button = statusItem?.button {
-                button.title = "—"
-                if let outline = NSImage(systemSymbolName: "brain", accessibilityDescription: nil) {
-                    outline.isTemplate = true
-                    button.image = outline
-                }
-            }
-        } else {
-            let avg = percentValues.reduce(0, +) / Double(percentValues.count)
-            let formatted = String(format: "%.0f%%", avg)
-            if let button = statusItem?.button {
-                button.title = formatted
-                if let img = brainFillImage(percent: avg, size: NSSize(width: 16, height: 16)) {
-                    button.image = img
-                    button.imagePosition = .imageLeft
-                }
+            latestUsageResults = latestUsageResults.filter { key, _ in
+                enabled.contains { $0.name == key }
             }
         }
+        updateStatusIcon()
 
         NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
     }
@@ -319,53 +301,348 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         "\(source.name) - \(metric.title)"
     }
 
-    /// Generate a template NSImage representing the brain with the bottom `percent` filled.
-    /// `percent` is 0..100. Returns a template image so the system tints it for the menu bar.
-    private func brainFillImage(percent: Double, size: NSSize) -> NSImage? {
-        guard let fill = NSImage(systemSymbolName: "brain.fill", accessibilityDescription: nil),
-              let outline = NSImage(systemSymbolName: "brain", accessibilityDescription: nil) else {
-            return nil
-        }
-
-        let image = NSImage(size: size)
-        image.isTemplate = true
-
-        image.lockFocus()
-        defer { image.unlockFocus() }
-
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return nil }
-
-        let bounds = CGRect(origin: .zero, size: size)
-
-        // Draw the filled brain clipped to the bottom percent
-        ctx.saveGState()
-        let clippedHeight = bounds.height * CGFloat(min(max(percent, 0), 100) / 100.0)
-        let fillClipRect = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: clippedHeight)
-        ctx.clip(to: fillClipRect)
-        fill.draw(in: bounds)
-        ctx.restoreGState()
-
-        // Draw the outline clipped to the top (unfilled) portion so it visually shows the empty area
-        ctx.saveGState()
-        let outlineClipRect = CGRect(x: bounds.minX, y: bounds.minY + clippedHeight, width: bounds.width, height: bounds.height - clippedHeight)
-        ctx.clip(to: outlineClipRect)
-        outline.draw(in: bounds)
-        ctx.restoreGState()
-
-        return image
-    }
-
     @objc private func settingsChanged(_ note: Notification) {
         let enabled = Set(sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
         // prune results for disabled sources
         results = results.filter { enabled.contains($0.key) }
+        latestUsageResults = latestUsageResults.filter { enabled.contains($0.key) }
         updateMenu()
+        updateStatusIcon()
 
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: SettingsStore.shared.pollInterval(), repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in await self.refresh() }
         }
+    }
+
+    private struct IconRingMetric {
+        let sourceName: String
+        let metricTitle: String
+        let percentRemaining: Double
+        let hasUsage: Bool
+        let sourceColorHex: UInt32
+    }
+
+    private func updateStatusIcon() {
+        guard let button = statusItem?.button else { return }
+        let metrics = selectedMetricsForStatusIcon()
+        if metrics.isEmpty {
+            if let placeholder = NSImage(systemSymbolName: "circle.dashed", accessibilityDescription: "No selected metrics") {
+                placeholder.isTemplate = true
+                button.image = placeholder
+                button.toolTip = "No menu bar metrics selected"
+            }
+            return
+        }
+
+        let appearance = SettingsStore.shared.menuBarAppearance
+        if let image = ringMetersImage(
+            metrics: metrics,
+            colorMode: appearance.colorMode,
+            centerMode: appearance.centerContentMode
+        ) {
+            button.image = image
+        }
+        button.toolTip = metrics.map { metric in
+            let valueText = metric.hasUsage
+                ? "\(String(format: "%.1f", metric.percentRemaining))%"
+                : "N/A"
+            return "\(metric.sourceName) · \(metric.metricTitle): \(valueText)"
+        }.joined(separator: "\n")
+    }
+
+    private func selectedMetricsForStatusIcon() -> [IconRingMetric] {
+        let enabledSources = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
+        let appearance = SettingsStore.shared.menuBarAppearance
+        let configuredSelections = appearance.selectedMetrics
+        let validSelections = configuredSelections.filter { selection in
+            guard let source = enabledSources.first(where: { $0.name == selection.sourceName }) else { return false }
+            guard SettingsStore.shared.isMetricEnabled(sourceName: selection.sourceName, metricId: selection.metricId) else { return false }
+            return source.metrics.contains(where: { $0.id == selection.metricId })
+        }
+
+        let chosenSelections: [MenuBarMetricSelection]
+        if configuredSelections.isEmpty {
+            chosenSelections = enabledSources
+                .flatMap { source in
+                    source.metrics
+                        .filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+                        .map { metric in MenuBarMetricSelection(sourceName: source.name, metricId: metric.id) }
+                }
+                .map { $0 }
+        } else {
+            // Honor explicit menu-bar selections; do not silently fall back to unrelated metrics.
+            chosenSelections = validSelections
+        }
+
+        return chosenSelections.compactMap { selection in
+            guard let source = enabledSources.first(where: { $0.name == selection.sourceName }),
+                  let metric = source.metrics.first(where: { $0.id == selection.metricId }) else {
+                return nil
+            }
+            let usage = usageResultForIcon(sourceName: selection.sourceName, metricId: selection.metricId)
+            let clampedPercent = usage.map { min(max($0.percentRemaining, 0), 100) } ?? 0
+            return IconRingMetric(
+                sourceName: source.name,
+                metricTitle: metric.title,
+                percentRemaining: clampedPercent,
+                hasUsage: usage != nil,
+                sourceColorHex: source.menuBarBrandColorHex
+            )
+        }
+    }
+
+    private func usageResultForIcon(sourceName: String, metricId: String) -> UsageResult? {
+        if let usage = latestUsageResults[sourceName]?[metricId] {
+            return usage
+        }
+        guard let source = sources.first(where: { $0.name == sourceName }) else { return nil }
+        if source.metrics.count <= 1 {
+            return SourceHealthStore.shared.health(for: sourceName)?.lastSuccessfulUsage
+        }
+        return SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.lastSuccessfulUsage
+    }
+
+    private func ringMetersImage(
+        metrics: [IconRingMetric],
+        colorMode: MenuBarColorMode,
+        centerMode: MenuBarCenterContentMode
+    ) -> NSImage? {
+        let ringSize: CGFloat = 20
+        let spacing: CGFloat = 3
+        let count = metrics.count
+        guard count > 0 else { return nil }
+
+        let width = ringSize * CGFloat(count) + spacing * CGFloat(max(0, count - 1))
+        let size = NSSize(width: width, height: ringSize)
+        let image = NSImage(size: size)
+        image.isTemplate = colorMode == .monochrome
+
+        image.lockFocus()
+        defer { image.unlockFocus() }
+        guard let context = NSGraphicsContext.current?.cgContext else { return nil }
+
+        for index in 0..<count {
+            let metric = metrics[index]
+            let rect = CGRect(
+                x: CGFloat(index) * (ringSize + spacing),
+                y: 0,
+                width: ringSize,
+                height: ringSize
+            )
+            drawRing(
+                in: context,
+                rect: rect.insetBy(dx: 0.7, dy: 0.7),
+                metric: metric,
+                colorMode: colorMode,
+                centerMode: centerMode
+            )
+        }
+
+        return image
+    }
+
+    private func drawRing(
+        in context: CGContext,
+        rect: CGRect,
+        metric: IconRingMetric,
+        colorMode: MenuBarColorMode,
+        centerMode: MenuBarCenterContentMode
+    ) {
+        let percent = metric.percentRemaining
+        let clampedPercent = min(max(percent, 0), 100)
+        let progress = CGFloat(clampedPercent / 100)
+        let lineWidth: CGFloat = 2.2
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = (min(rect.width, rect.height) / 2) - (lineWidth / 2)
+        let startAngle = CGFloat.pi / 2
+        let endAngle = startAngle - (2 * CGFloat.pi * progress)
+
+        let trackPath = CGMutablePath()
+        trackPath.addArc(center: center, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: false)
+        context.addPath(trackPath)
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setStrokeColor(trackColor(for: colorMode).cgColor)
+        context.strokePath()
+
+        guard progress > 0 else {
+            drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
+            return
+        }
+
+        let progressPath = CGMutablePath()
+        progressPath.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+
+        switch colorMode {
+        case .monochrome:
+            context.addPath(progressPath)
+            context.setLineWidth(lineWidth)
+            context.setLineCap(.round)
+            context.setStrokeColor(NSColor.black.withAlphaComponent(0.95).cgColor)
+            context.strokePath()
+        case .brandGradient:
+            context.saveGState()
+            context.addPath(progressPath)
+            context.setLineWidth(lineWidth)
+            context.setLineCap(.round)
+            context.replacePathWithStrokedPath()
+            context.clip()
+            if let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [brandPrimaryColor.cgColor, brandAccentColor.cgColor] as CFArray,
+                locations: [0, 1]
+            ) {
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: rect.minX, y: rect.maxY),
+                    end: CGPoint(x: rect.maxX, y: rect.minY),
+                    options: []
+                )
+            }
+            context.restoreGState()
+        case .sourceSolid:
+            context.addPath(progressPath)
+            context.setLineWidth(lineWidth)
+            context.setLineCap(.round)
+            context.setStrokeColor(colorFromHex(metric.sourceColorHex).cgColor)
+            context.strokePath()
+        }
+
+        drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
+    }
+
+    private var brandPrimaryColor: NSColor { NSColor(calibratedRed: 147 / 255, green: 90 / 255, blue: 253 / 255, alpha: 1) }
+    private var brandAccentColor: NSColor { NSColor(calibratedRed: 13 / 255, green: 228 / 255, blue: 209 / 255, alpha: 1) }
+
+    private func trackColor(for mode: MenuBarColorMode) -> NSColor {
+        switch mode {
+        case .monochrome:
+            return NSColor.black.withAlphaComponent(0.25)
+        case .brandGradient, .sourceSolid:
+            return NSColor(calibratedWhite: 0.45, alpha: 0.28)
+        }
+    }
+
+    private func drawRingCenter(
+        in rect: CGRect,
+        metric: IconRingMetric,
+        colorMode: MenuBarColorMode,
+        centerMode: MenuBarCenterContentMode
+    ) {
+        let foreground: NSColor = colorMode == .monochrome
+            ? NSColor.black.withAlphaComponent(0.95)
+            : NSColor.white.withAlphaComponent(0.96)
+
+        let centerRect = rect.insetBy(dx: 3.8, dy: 3.8)
+        switch centerMode {
+        case .logo:
+            if let image = logoImage(for: metric) {
+                drawCenteredImage(image, in: centerRect)
+                return
+            }
+            drawPercentageCenter(metric: metric, in: centerRect, color: foreground)
+        case .percentage:
+            drawPercentageCenter(metric: metric, in: centerRect, color: foreground)
+        }
+    }
+
+    private func logoImage(for metric: IconRingMetric) -> NSImage? {
+        let assetBaseName = logoBaseName(forSourceName: metric.sourceName)
+        if let inMemory = NSImage(named: assetBaseName) {
+            return inMemory
+        }
+
+        let bundleCandidates: [URL?] = [
+            Bundle.module.url(forResource: assetBaseName, withExtension: "png", subdirectory: "SourceLogos"),
+            Bundle.module.url(forResource: assetBaseName, withExtension: "png", subdirectory: "Resources/SourceLogos"),
+            Bundle.module.url(forResource: assetBaseName, withExtension: "png")
+        ]
+        for candidate in bundleCandidates {
+            if let resourceURL = candidate, let image = NSImage(contentsOf: resourceURL) {
+                return image
+            }
+        }
+
+        let localCandidates = [
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("Sources/Resources/SourceLogos/\(assetBaseName).png"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png")
+        ]
+        for candidate in localCandidates where FileManager.default.fileExists(atPath: candidate.path) {
+            if let image = NSImage(contentsOf: candidate) {
+                return image
+            }
+        }
+
+        return nil
+    }
+
+    private func logoBaseName(forSourceName sourceName: String) -> String {
+        let lowered = sourceName.lowercased()
+        return lowered.replacingOccurrences(of: "[^a-z0-9]+", with: "", options: .regularExpression)
+    }
+
+    private func drawPercentageCenter(metric: IconRingMetric, in rect: CGRect, color: NSColor) {
+        guard metric.hasUsage else {
+            drawCenterText("--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
+            return
+        }
+        let percentRemaining = metric.percentRemaining
+        let value = Int(round(percentRemaining))
+        let text = "\(value)"
+        let fontSize: CGFloat
+        if value >= 100 {
+            fontSize = 5.6
+        } else if value >= 10 {
+            fontSize = 6.6
+        } else {
+            fontSize = 7.0
+        }
+        drawCenterText(text, in: rect, color: color, size: fontSize, weight: .semibold)
+    }
+
+    private func drawCenterText(_ text: String, in rect: CGRect, color: NSColor, size: CGFloat, weight: NSFont.Weight) {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        let nsText = NSString(string: text)
+        let textSize = nsText.size(withAttributes: attributes)
+        let drawRect = CGRect(
+            x: rect.midX - (textSize.width / 2),
+            y: rect.midY - (textSize.height / 2),
+            width: textSize.width,
+            height: textSize.height
+        )
+        nsText.draw(in: drawRect, withAttributes: attributes)
+    }
+
+    private func drawCenteredImage(_ image: NSImage, in rect: CGRect) {
+        guard image.size.width > 0, image.size.height > 0 else {
+            image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
+            return
+        }
+
+        let scale = min(rect.width / image.size.width, rect.height / image.size.height)
+        let drawSize = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        let drawRect = CGRect(
+            x: rect.midX - (drawSize.width / 2),
+            y: rect.midY - (drawSize.height / 2),
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+
+    private func colorFromHex(_ hex: UInt32) -> NSColor {
+        let red = CGFloat((hex >> 16) & 0xFF) / 255
+        let green = CGFloat((hex >> 8) & 0xFF) / 255
+        let blue = CGFloat(hex & 0xFF) / 255
+        return NSColor(calibratedRed: red, green: green, blue: blue, alpha: 1)
     }
 
     private func evaluateNotifications(sources: [AISource], results: [String: [String: UsageResult]]) async {

@@ -4,6 +4,7 @@ struct CodexSource: AISource {
     let name = "Codex"
     let requirements = "Requires Codex app/CLI installed and local session logs at ~/.codex/sessions."
     let metrics = [AISourceMetric(id: "codex", title: "Codex")]
+    let menuBarBrandColorHex: UInt32 = 0x3C35FF
     func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
         { current, _, _ in
             current.cycleStartDate

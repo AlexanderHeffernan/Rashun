@@ -187,6 +187,7 @@ This project is licensed under the [MIT License](LICENSE).
 - [X] Do we need improved handling of my complex AI Sources with multiple usage quotas?
 - [X] Show/hide lines on Usage History chart
 - [X] Fix bug where if data isn't changing in a source, it skips storage of the usage event. It should instead replace the last stored event with the new one, so that the history is accurate even when usage isn't changing. If no changes are occuring, need to save the first occurance and the latest occurance.
-- [ ] Improved notification/warning UI/handling for multi-metric sources. Should be able to configure notifications for specific metrics.
+- [X] Improved notification/warning UI/handling for multi-metric sources. Should be able to configure notifications for specific metrics.
 - [ ] Improve aesthetic of menu icon and dropdown. Make it more intuitive and visually appealing. Also, add personalisation settings.
+- [ ] Improve interactiveness of the notifications
 - [ ] Final cleanup and code documentation

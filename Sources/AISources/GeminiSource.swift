@@ -31,6 +31,7 @@ struct GeminiSource: AISource {
 
     let name = "Gemini"
     let requirements = "Requires Gemini CLI with Google login and local credentials at ~/.gemini/oauth_creds.json."
+    let menuBarBrandColorHex: UInt32 = 0xDE4D5C
     let metrics: [AISourceMetric] = [
         AISourceMetric(id: "gemini-2.5-flash", title: "2.5-Flash"),
         AISourceMetric(id: "gemini-2.5-flash-lite", title: "2.5-Flash-Lite"),

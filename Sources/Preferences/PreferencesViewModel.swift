@@ -3,6 +3,14 @@ import ServiceManagement
 
 @MainActor
 final class PreferencesViewModel: ObservableObject {
+    struct MenuBarMetricOption: Identifiable, Hashable {
+        var id: String { "\(sourceName)::\(metricId)" }
+        let sourceName: String
+        let sourceTitle: String
+        let metricId: String
+        let metricTitle: String
+    }
+
     struct NotificationSection: Identifiable {
         let id: String
         let title: String?
@@ -24,6 +32,7 @@ final class PreferencesViewModel: ObservableObject {
     @Published var sourceHealthCheckErrorMessage: String?
     @Published private(set) var sourceHealthCheckInProgress = false
     @Published private(set) var healthCheckSourceName: String?
+    @Published private(set) var menuBarAppearance = MenuBarAppearanceSettings()
 
     private var settings: SettingsStore { .shared }
     private var updates: UpdateManager { .shared }
@@ -31,6 +40,7 @@ final class PreferencesViewModel: ObservableObject {
     init() {
         registerObservers()
         pollMinutesText = formattedPollMinutes()
+        menuBarAppearance = settings.menuBarAppearance
         refreshUpdateStatus()
     }
 
@@ -57,6 +67,8 @@ final class PreferencesViewModel: ObservableObject {
             seedRuleInputDrafts(for: source)
         }
         pollMinutesText = formattedPollMinutes()
+        sanitizeMenuBarSelections()
+        menuBarAppearance = settings.menuBarAppearance
         refreshUpdateStatus()
     }
 
@@ -207,6 +219,53 @@ final class PreferencesViewModel: ObservableObject {
         pollMinutesText = formattedPollMinutes()
     }
 
+    var menuBarColorMode: MenuBarColorMode {
+        get { menuBarAppearance.colorMode }
+        set { settings.setMenuBarColorMode(newValue) }
+    }
+
+    var menuBarCenterContentMode: MenuBarCenterContentMode {
+        get { menuBarAppearance.centerContentMode }
+        set { settings.setMenuBarCenterContentMode(newValue) }
+    }
+
+    var menuBarSelectionCount: Int { menuBarAppearance.selectedMetrics.count }
+
+    func menuBarMetricOptions() -> [MenuBarMetricOption] {
+        sources.filter { settings.isEnabled(sourceName: $0.name) }.flatMap { source in
+            source.metrics
+                .filter { settings.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+                .map { metric in
+                MenuBarMetricOption(
+                    sourceName: source.name,
+                    sourceTitle: source.name,
+                    metricId: metric.id,
+                    metricTitle: metric.title
+                )
+            }
+        }
+    }
+
+    func isMenuBarMetricSelected(sourceName: String, metricId: String) -> Bool {
+        menuBarAppearance.selectedMetrics.contains { selection in
+            selection.sourceName == sourceName && selection.metricId == metricId
+        }
+    }
+
+    func setMenuBarMetricSelected(sourceName: String, metricId: String, selected: Bool) {
+        guard settings.isEnabled(sourceName: sourceName),
+              settings.isMetricEnabled(sourceName: sourceName, metricId: metricId) else { return }
+        var current = menuBarAppearance.selectedMetrics
+        let target = MenuBarMetricSelection(sourceName: sourceName, metricId: metricId)
+        if selected {
+            guard !current.contains(target) else { return }
+            current.append(target)
+        } else {
+            current.removeAll { $0 == target }
+        }
+        settings.setMenuBarSelectedMetrics(current)
+    }
+
     func checkForUpdates() async {
         _ = await updates.checkForUpdate(notify: false)
         refreshUpdateStatus()
@@ -239,7 +298,26 @@ final class PreferencesViewModel: ObservableObject {
         center.addObserver(self, selector: #selector(handleSourceHealthChanged), name: .aiSourceHealthChanged, object: nil)
     }
 
-    @objc private func handleSettingsChanged() { pollMinutesText = formattedPollMinutes() }
+    @objc private func handleSettingsChanged() {
+        pollMinutesText = formattedPollMinutes()
+        sanitizeMenuBarSelections()
+        menuBarAppearance = settings.menuBarAppearance
+    }
+
+    private func sanitizeMenuBarSelections() {
+        let validSelections = settings.menuBarAppearance.selectedMetrics.filter { selection in
+            guard settings.isEnabled(sourceName: selection.sourceName),
+                  settings.isMetricEnabled(sourceName: selection.sourceName, metricId: selection.metricId),
+                  let source = sources.first(where: { $0.name == selection.sourceName }) else {
+                return false
+            }
+            return source.metrics.contains(where: { $0.id == selection.metricId })
+        }
+
+        if validSelections != settings.menuBarAppearance.selectedMetrics {
+            settings.setMenuBarSelectedMetrics(validSelections)
+        }
+    }
     @objc private func handleUpdateStatusChanged() { refreshUpdateStatus() }
     @objc private func handleSourceHealthChanged() { objectWillChange.send() }
 

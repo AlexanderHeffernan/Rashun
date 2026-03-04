@@ -19,6 +19,8 @@ protocol AISource: Sendable {
     func notificationDefinitions(for metricId: String) -> [NotificationDefinition]
     /// Metric-specific forecast.
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult?
+    /// Source-specific brand color used by source-solid menu bar rings.
+    var menuBarBrandColorHex: UInt32 { get }
 }
 
 extension AISource {
@@ -75,6 +77,8 @@ extension AISource {
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
         nil
     }
+
+    var menuBarBrandColorHex: UInt32 { 0x935AFD }
 
     /// Shared helper used when a source receives an unsupported metric ID.
     func unsupportedMetricError(_ metricId: String) -> NSError {

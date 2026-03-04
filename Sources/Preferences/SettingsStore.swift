@@ -11,6 +11,7 @@ final class SettingsStore {
     private let notificationStateKey = "ai.notificationState.v1"
     private let pollIntervalKey = "ai.pollIntervalSeconds.v1"
     private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
+    private let menuBarAppearanceKey = "ai.menuBarAppearance.v1"
     private var enabledMap: [String: Bool] = [:]
     private var sourceMetricEnabledMap: [String: [String: Bool]] = [:]
     private var notificationSettings: [String: [NotificationRuleSetting]] = [:]
@@ -18,6 +19,7 @@ final class SettingsStore {
 
     private(set) var pollIntervalSeconds: TimeInterval = 120
     private(set) var autoUpdateCheckEnabled: Bool = true
+    private(set) var menuBarAppearance = MenuBarAppearanceSettings()
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else { return }
@@ -50,6 +52,15 @@ final class SettingsStore {
             autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
         }
 
+        if let appearanceData = UserDefaults.standard.data(forKey: menuBarAppearanceKey),
+           let decodedAppearance = try? JSONDecoder().decode(MenuBarAppearanceSettings.self, from: appearanceData) {
+            menuBarAppearance = MenuBarAppearanceSettings.normalized(
+                colorMode: decodedAppearance.colorMode,
+                centerContentMode: decodedAppearance.centerContentMode,
+                selectedMetrics: decodedAppearance.selectedMetrics
+            )
+        }
+
         if migrated {
             save()
         }
@@ -69,6 +80,10 @@ final class SettingsStore {
 
         if let data = try? JSONEncoder().encode(notificationState) {
             UserDefaults.standard.set(data, forKey: notificationStateKey)
+        }
+
+        if let data = try? JSONEncoder().encode(menuBarAppearance) {
+            UserDefaults.standard.set(data, forKey: menuBarAppearanceKey)
         }
     }
 
@@ -134,6 +149,36 @@ final class SettingsStore {
         } else {
             UpdateManager.shared.stopPeriodicChecks()
         }
+    }
+
+    func setMenuBarColorMode(_ mode: MenuBarColorMode) {
+        menuBarAppearance = MenuBarAppearanceSettings.normalized(
+            colorMode: mode,
+            centerContentMode: menuBarAppearance.centerContentMode,
+            selectedMetrics: menuBarAppearance.selectedMetrics
+        )
+        save()
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setMenuBarCenterContentMode(_ mode: MenuBarCenterContentMode) {
+        menuBarAppearance = MenuBarAppearanceSettings.normalized(
+            colorMode: menuBarAppearance.colorMode,
+            centerContentMode: mode,
+            selectedMetrics: menuBarAppearance.selectedMetrics
+        )
+        save()
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setMenuBarSelectedMetrics(_ selectedMetrics: [MenuBarMetricSelection]) {
+        menuBarAppearance = MenuBarAppearanceSettings.normalized(
+            colorMode: menuBarAppearance.colorMode,
+            centerContentMode: menuBarAppearance.centerContentMode,
+            selectedMetrics: selectedMetrics
+        )
+        save()
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
     func ruleSettings(for sourceName: String) -> [NotificationRuleSetting] {

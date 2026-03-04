@@ -4,6 +4,7 @@ struct CopilotSource: AISource {
     let name = "Copilot"
     let requirements = "Requires GitHub CLI 'gh' configured and authenticated (used to fetch auth token)."
     let metrics = [AISourceMetric(id: "copilot-premium-interactions", title: "Copilot")]
+    let menuBarBrandColorHex: UInt32 = 0xFFFFFF
     func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
         { current, _, _ in
             current.cycleStartDate

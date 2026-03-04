@@ -4,6 +4,7 @@ struct AmpSource: AISource {
     let name = "AMP"
     let requirements = "Requires the amp CLI installed at ~/.amp/bin/amp and executable."
     let metrics = [AISourceMetric(id: "amp-free", title: "AMP")]
+    let menuBarBrandColorHex: UInt32 = 0xF34E3F
 
     func fetchUsage(for metricId: String) async throws -> UsageResult {
         guard metrics.contains(where: { $0.id == metricId }) else {
