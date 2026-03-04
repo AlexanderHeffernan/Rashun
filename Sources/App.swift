@@ -576,14 +576,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return inMemory
         }
 
-        let bundleCandidates: [URL?] = [
-            Bundle.module.url(forResource: assetBaseName, withExtension: "png", subdirectory: "SourceLogos"),
-            Bundle.module.url(forResource: assetBaseName, withExtension: "png", subdirectory: "Resources/SourceLogos"),
-            Bundle.module.url(forResource: assetBaseName, withExtension: "png")
+        // Avoid Bundle.module here: if SwiftPM resource bundle placement differs in packaged builds,
+        // Bundle.module can hard-fail with fatalError during initialization.
+        let appBundleCandidates: [URL?] = [
+            Bundle.main.bundleURL.appendingPathComponent("Rashun_Rashun.bundle"),
+            Bundle.main.resourceURL?.appendingPathComponent("Rashun_Rashun.bundle")
         ]
-        for candidate in bundleCandidates {
-            if let resourceURL = candidate, let image = NSImage(contentsOf: resourceURL) {
-                return image
+        for bundleURL in appBundleCandidates.compactMap({ $0 }).filter({ FileManager.default.fileExists(atPath: $0.path) }) {
+            let logoCandidates = [
+                bundleURL.appendingPathComponent("SourceLogos/\(assetBaseName).png"),
+                bundleURL.appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png"),
+                bundleURL.appendingPathComponent("\(assetBaseName).png")
+            ]
+            for candidate in logoCandidates where FileManager.default.fileExists(atPath: candidate.path) {
+                if let image = NSImage(contentsOf: candidate) {
+                    return image
+                }
             }
         }
 

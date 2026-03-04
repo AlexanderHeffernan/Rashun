@@ -30,7 +30,7 @@ cp "$BIN_DIR/Rashun" Rashun.app/Contents/MacOS/Rashun
 cp Info.plist Rashun.app/Contents/
 cp AppIcon.icns Rashun.app/Contents/Resources/
 
-# Copy SwiftPM resource bundles (required for SourceLogos and other packaged assets).
+# Copy SwiftPM resource bundles into app resources.
 find "$BIN_DIR" -maxdepth 1 -type d -name "*.bundle" -exec cp -R {} Rashun.app/Contents/Resources/ \;
 
 # Code sign
