@@ -6,21 +6,8 @@ final class NotificationHistoryStoreTests: XCTestCase {
     private let store = UsageHistoryStore.shared
     private let source = "TestSource"
 
-    override func setUp() async throws {
-        try await super.setUp()
-        await MainActor.run {
-            store.clearAllHistory()
-        }
-    }
-
-    override func tearDown() async throws {
-        await MainActor.run {
-            store.clearAllHistory()
-        }
-        try await super.tearDown()
-    }
-
     func testAppend_keepsFirstAndLatestWhenUsageStateIsUnchanged() {
+        resetStore()
         let usage = UsageResult(
             remaining: 80,
             limit: 100,
@@ -37,6 +24,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testAppend_replacesLatestDuplicateSnapshotWhenStateRemainsUnchanged() {
+        resetStore()
         let usage = baseUsage()
 
         store.append(sourceName: source, usage: usage)
@@ -52,6 +40,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testAppend_keepsSnapshotWhenRemainingChanges() {
+        resetStore()
         let base = baseUsage()
         store.append(sourceName: source, usage: base)
         store.append(sourceName: source, usage: UsageResult(
@@ -65,6 +54,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testAppend_keepsSnapshotWhenLimitChanges() {
+        resetStore()
         let base = baseUsage()
         store.append(sourceName: source, usage: base)
         store.append(sourceName: source, usage: UsageResult(
@@ -78,6 +68,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testAppend_keepsSnapshotWhenResetDateChanges() {
+        resetStore()
         let base = baseUsage()
         store.append(sourceName: source, usage: base)
         store.append(sourceName: source, usage: UsageResult(
@@ -91,6 +82,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testAppend_keepsSnapshotWhenCycleStartDateChanges() {
+        resetStore()
         let base = baseUsage()
         store.append(sourceName: source, usage: base)
         store.append(sourceName: source, usage: UsageResult(
@@ -104,6 +96,7 @@ final class NotificationHistoryStoreTests: XCTestCase {
     }
 
     func testDeleteSnapshotsOlderThan_removesOnlyOlderRows() {
+        resetStore()
         let now = Date()
         store.replaceAllHistory([
             source: [
@@ -125,5 +118,9 @@ final class NotificationHistoryStoreTests: XCTestCase {
             resetDate: Date(timeIntervalSince1970: 1_700_000_000),
             cycleStartDate: Date(timeIntervalSince1970: 1_699_000_000)
         )
+    }
+
+    private func resetStore() {
+        store.clearAllHistory()
     }
 }
