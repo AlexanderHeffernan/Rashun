@@ -14,6 +14,9 @@ struct StatusCommand: AsyncParsableCommand {
     @Argument(help: "Optional source name (for example: AMP, Codex, Copilot, Gemini)")
     var sourceName: String?
 
+    @Option(name: .long, help: "Optional metric id when targeting a multi-metric source")
+    var metric: String?
+
     @MainActor
     func run() async throws {
         if let sourceName {
@@ -35,13 +38,31 @@ struct StatusCommand: AsyncParsableCommand {
             return
         }
 
+        if let metric,
+           !source.metrics.contains(where: { $0.id == metric }) {
+            try emitErrorAndExit(
+                code: "unknown_metric",
+                short: "Unknown metric",
+                detail: "Source '\(source.name)' does not provide metric '\(metric)'. Available metrics: \(source.metrics.map(\.id).joined(separator: ", ")).",
+                exitCode: 2
+            )
+            return
+        }
+
         let outcome = await fetchSource(source)
         switch outcome {
         case let .success(metrics):
+            let filteredMetrics: [(AISourceMetric, UsageResult)]
+            if let metric {
+                filteredMetrics = metrics.filter { $0.0.id == metric }
+            } else {
+                filteredMetrics = metrics
+            }
+
             if global.json {
                 try JSONOutput.print(SingleSourceStatusResponse(
                     source: source.name,
-                    metrics: metrics.map { metric, usage in
+                    metrics: filteredMetrics.map { metric, usage in
                         MetricStatus(
                             id: metric.id,
                             title: metric.title,
@@ -58,7 +79,7 @@ struct StatusCommand: AsyncParsableCommand {
 
             let formatter = OutputFormatter(noColor: global.noColor)
             print(formatter.colorize(source.name, as: .bold))
-            for (metric, usage) in metrics {
+            for (metric, usage) in filteredMetrics {
                 let label = source.metrics.count > 1 ? metric.title : source.name
                 let bar = formatter.progressBar(percent: usage.percentRemaining)
                 let color = colorForPercent(usage.percentRemaining)

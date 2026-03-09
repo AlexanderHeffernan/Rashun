@@ -24,9 +24,9 @@ struct SourcesCommand: AsyncParsableCommand {
         print("Available sources:")
         print("")
         for source in sources {
-            let health = SourceHealthStore.shared.health(for: source.name)
-            let healthy = (health?.consecutiveFailures ?? 0) == 0
-            let hasHealthRecord = health != nil
+            let status = status(for: source)
+            let healthy = status.healthy
+            let hasHealthRecord = status.hasHealthRecord
             let symbol = healthy
                 ? formatter.emoji("✅", fallback: "[ok]")
                 : formatter.emoji("❌", fallback: "[x]")
@@ -45,7 +45,7 @@ struct SourcesCommand: AsyncParsableCommand {
             if !hasHealthRecord {
                 print("     Tip: run `rashun check \(source.name)` to verify setup.")
             }
-            if let message = health?.shortErrorMessage, !message.isEmpty {
+            if let message = status.lastError, !message.isEmpty {
                 print("     Last error: \(message)")
             }
             print("")
@@ -54,14 +54,49 @@ struct SourcesCommand: AsyncParsableCommand {
 
     @MainActor
     private func makeJSONEntry(for source: AISource) -> SourceEntry {
-        let health = SourceHealthStore.shared.health(for: source.name)
+        let status = status(for: source)
         return SourceEntry(
             name: source.name,
             requirements: source.requirements,
             metrics: source.metrics.map { MetricEntry(id: $0.id, title: $0.title) },
-            healthy: (health?.consecutiveFailures ?? 0) == 0,
-            hasHealthRecord: health != nil,
-            lastError: health?.shortErrorMessage
+            healthy: status.healthy,
+            hasHealthRecord: status.hasHealthRecord,
+            lastError: status.lastError
+        )
+    }
+
+    @MainActor
+    private func status(for source: AISource) -> (healthy: Bool, hasHealthRecord: Bool, lastError: String?) {
+        if source.metrics.count <= 1 {
+            let health = SourceHealthStore.shared.health(for: source.name)
+            return (
+                healthy: (health?.consecutiveFailures ?? 0) == 0,
+                hasHealthRecord: health != nil,
+                lastError: health?.shortErrorMessage
+            )
+        }
+
+        let recordsByMetric: [(AISourceMetric, SourceHealthRecord?)] = source.metrics.map { metric in
+            (metric, SourceHealthStore.shared.health(for: source.name, metricId: metric.id))
+        }
+        let records = recordsByMetric.compactMap(\.1)
+        let hasHealthRecord = !records.isEmpty
+        let hasFailure = records.contains { $0.consecutiveFailures > 0 }
+
+        let lastError: String?
+        if let failed = recordsByMetric.first(where: { pair in
+            guard let record = pair.1 else { return false }
+            return record.consecutiveFailures > 0 && !(record.shortErrorMessage ?? "").isEmpty
+        }), let message = failed.1?.shortErrorMessage {
+            lastError = "\(failed.0.title): \(message)"
+        } else {
+            lastError = nil
+        }
+
+        return (
+            healthy: !hasFailure,
+            hasHealthRecord: hasHealthRecord,
+            lastError: lastError
         )
     }
 }
