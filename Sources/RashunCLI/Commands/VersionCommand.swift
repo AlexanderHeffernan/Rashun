@@ -8,20 +8,16 @@ struct VersionCommand: ParsableCommand {
         abstract: "Show current version"
     )
 
-    @Flag(name: .long, help: "Output machine-readable JSON")
-    var json = false
+    @OptionGroup
+    var global: GlobalOptions
 
     func run() throws {
         let version = Versioning.versionString()
-        if json {
+        if global.json {
             struct VersionResponse: Encodable {
                 let version: String
             }
-            let data = try JSONEncoder().encode(VersionResponse(version: version))
-            guard let output = String(data: data, encoding: .utf8) else {
-                throw ExitCode.failure
-            }
-            print(output)
+            try JSONOutput.print(VersionResponse(version: version))
             return
         }
 
