@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
 
 public struct CopilotSource: AISource {
     public let name = "Copilot"
@@ -21,31 +18,9 @@ public struct CopilotSource: AISource {
         guard metrics.contains(where: { $0.id == metricId }) else {
             throw unsupportedMetricError(metricId)
         }
-        let token = try getGhAuthToken()
+        let json = try fetchCopilotUserPayloadViaGhApi()
 
-        var request = URLRequest(url: URL(string: "https://api.github.com/copilot_internal/user")!)
-        request.httpMethod = "GET"
-        request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.addValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw CopilotFetchError.invalidHTTPResponse
-        }
-        guard httpResponse.statusCode == 200 else {
-            let bodySnippet = String(data: data, encoding: .utf8)?
-                .replacingOccurrences(of: "\n", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw CopilotFetchError.apiStatus(
-                statusCode: httpResponse.statusCode,
-                bodySnippet: String(bodySnippet.prefix(200))
-            )
-        }
-
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-
-        guard let quotaSnapshots = json?["quota_snapshots"] as? [String: Any],
+                guard let quotaSnapshots = json["quota_snapshots"] as? [String: Any],
               let premium = quotaSnapshots["premium_interactions"] as? [String: Any],
               let remaining = premium["remaining"] as? Int,
               let entitlement = premium["entitlement"] as? Int else {
@@ -76,12 +51,12 @@ public struct CopilotSource: AISource {
             case let .ghCommandFailed(exitCode, stderr):
                 return SourceFetchErrorPresentation(
                     shortMessage: "GitHub CLI command failed",
-                    detailedMessage: "Failed to run `gh auth token` (exit \(exitCode)). GitHub CLI output: \(stderr)"
+                    detailedMessage: "Failed to run `gh` command (exit \(exitCode)). GitHub CLI output: \(stderr)"
                 )
             case let .ghNoToken(stderr):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Copilot auth missing",
-                    detailedMessage: "GitHub CLI returned no auth token. Run `gh auth login` and confirm your session is active. Details: \(stderr)"
+                    detailedMessage: "GitHub CLI returned an empty response for Copilot API data. Run `gh auth login` and confirm your session is active. Details: \(stderr)"
                 )
             case let .apiStatus(statusCode, bodySnippet):
                 let detailSuffix = bodySnippet.isEmpty ? "" : " Response: \(bodySnippet)"
@@ -98,11 +73,6 @@ public struct CopilotSource: AISource {
                 return SourceFetchErrorPresentation(
                     shortMessage: "Copilot date parsing failed",
                     detailedMessage: "Rashun could not compute Copilot cycle dates from the current system calendar context."
-                )
-            case .invalidHTTPResponse:
-                return SourceFetchErrorPresentation(
-                    shortMessage: "Invalid Copilot response",
-                    detailedMessage: "Received a non-HTTP response when requesting Copilot usage."
                 )
             }
         }
@@ -204,7 +174,21 @@ public struct CopilotSource: AISource {
         return ForecastResult(points: points, summary: summary)
     }
 
-    private func getGhAuthToken() throws -> String {
+    private func fetchCopilotUserPayloadViaGhApi() throws -> [String: Any] {
+        let process = Process()
+
+        #if os(Windows)
+        let cmdPath = ProcessInfo.processInfo.environment["ComSpec"] ?? "C:\\Windows\\System32\\cmd.exe"
+        process.executableURL = URL(fileURLWithPath: cmdPath)
+        process.arguments = [
+            "/c",
+            "gh",
+            "api",
+            "/copilot_internal/user",
+            "-H",
+            "Accept: application/vnd.github.v3+json"
+        ]
+        #else
         guard let ghPath = ExecutableLocator.resolve(
             command: "gh",
             additionalCandidates: [
@@ -215,10 +199,15 @@ public struct CopilotSource: AISource {
         ) else {
             throw CopilotFetchError.ghNotInstalled(path: "PATH")
         }
-        let process = Process()
         process.executableURL = URL(fileURLWithPath: ghPath)
-        process.arguments = ["auth", "token"]
+        process.arguments = [
+            "api",
+            "/copilot_internal/user",
+            "-H",
+            "Accept: application/vnd.github.v3+json"
+        ]
         process.currentDirectoryURL = URL(fileURLWithPath: "/")
+        #endif
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
@@ -236,7 +225,8 @@ public struct CopilotSource: AISource {
         }
         process.waitUntilExit()
 
-        let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
             .replacingOccurrences(of: "\n", with: " ")
@@ -250,7 +240,11 @@ public struct CopilotSource: AISource {
             throw CopilotFetchError.ghNoToken(stderr: stderr.isEmpty ? "No output from `gh auth token`." : stderr)
         }
 
-        return stdout
+        guard let json = try JSONSerialization.jsonObject(with: stdoutData) as? [String: Any] else {
+            throw CopilotFetchError.invalidPayload
+        }
+
+        return json
     }
 
     private func monthlyCycleStartDate(reference: Date = Date()) -> Date? {
@@ -286,5 +280,4 @@ public enum CopilotFetchError: Error {
     case apiStatus(statusCode: Int, bodySnippet: String)
     case invalidPayload
     case cycleDateComputationFailed
-    case invalidHTTPResponse
 }

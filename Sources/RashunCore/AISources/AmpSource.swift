@@ -79,7 +79,9 @@ public struct AmpSource: AISource {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = ["usage"]
+        #if !os(Windows)
         process.currentDirectoryURL = URL(fileURLWithPath: "/")
+        #endif
 
         let pipe = Pipe()
         process.standardOutput = pipe
