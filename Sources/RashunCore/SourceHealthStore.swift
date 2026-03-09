@@ -27,12 +27,14 @@ public struct SourceHealthRecord: Codable {
 
 @MainActor
 public final class SourceHealthStore {
-    public static let shared = SourceHealthStore()
+    public static let shared = SourceHealthStore(backend: PersistenceBackendFactory.default())
 
     private let userDefaultsKey = "ai.sourceHealth.v1"
+    private let backend: PersistenceBackend
     private var recordsBySource: [String: SourceHealthRecord] = [:]
 
-    private init() {
+    public init(backend: PersistenceBackend) {
+        self.backend = backend
         load()
     }
 
@@ -79,7 +81,7 @@ public final class SourceHealthStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+        guard let data = backend.data(forKey: userDefaultsKey),
               let decoded = try? JSONDecoder().decode([String: SourceHealthRecord].self, from: data) else {
             return
         }
@@ -88,8 +90,10 @@ public final class SourceHealthStore {
 
     private func persistAndNotify() {
         if let data = try? JSONEncoder().encode(recordsBySource) {
-            UserDefaults.standard.set(data, forKey: userDefaultsKey)
+            backend.set(data, forKey: userDefaultsKey)
         }
+        #if canImport(AppKit) || canImport(UIKit)
         NotificationCenter.default.post(name: .aiSourceHealthChanged, object: nil)
+        #endif
     }
 }

@@ -24,11 +24,15 @@ public struct HistoryStorageStats {
 
 @MainActor
 public final class UsageHistoryStore {
-    public static let shared = UsageHistoryStore()
-    private init() { load() }
+    public static let shared = UsageHistoryStore(backend: PersistenceBackendFactory.default())
+    public init(backend: PersistenceBackend) {
+        self.backend = backend
+        load()
+    }
 
     private let maxSnapshots = 10_000
     private let userDefaultsKey = "ai.notificationHistory.v1"
+    private let backend: PersistenceBackend
     private var historyBySource: [String: [UsageSnapshot]] = [:]
 
     public func history(for sourceName: String) -> [UsageSnapshot] {
@@ -118,14 +122,14 @@ public final class UsageHistoryStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+        guard let data = backend.data(forKey: userDefaultsKey),
               let decoded = try? JSONDecoder().decode([String: [UsageSnapshot]].self, from: data) else { return }
         historyBySource = decoded
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(historyBySource) {
-            UserDefaults.standard.set(data, forKey: userDefaultsKey)
+            backend.set(data, forKey: userDefaultsKey)
         }
     }
 
