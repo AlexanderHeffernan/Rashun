@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public struct GeminiSource: AISource {
     private actor UsageCache {
@@ -305,7 +308,7 @@ public struct GeminiSource: AISource {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let updatedData = try encoder.encode(updated)
-        try updatedData.write(to: credsURL, options: .atomic)
+        try updatedData.write(to: credsURL, options: Data.WritingOptions.atomic)
 
         return newToken
     }
