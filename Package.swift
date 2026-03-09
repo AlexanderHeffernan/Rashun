@@ -18,10 +18,7 @@ var targets: [Target] = [
     ),
 ]
 
-var platforms: [SupportedPlatform] = []
-
 #if os(macOS)
-platforms = [.macOS(.v14)]
 targets.append(
     .executableTarget(
         name: "Rashun",
@@ -44,8 +41,15 @@ targets.append(
 )
 #endif
 
+#if os(macOS)
 let package = Package(
     name: "Rashun",
-    platforms: platforms,
+    platforms: [.macOS(.v14)],
     targets: targets
 )
+#else
+let package = Package(
+    name: "Rashun",
+    targets: targets
+)
+#endif
