@@ -7,8 +7,55 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  cli-core-cross-platform:
+    name: CLI/Core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Swift (macOS/Linux)
+        if: runner.os != 'Windows'
+        uses: swift-actions/setup-swift@v3
+        with:
+          swift-version: "6.2.4"
+
+      - name: Setup Swift (Windows)
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.2-release
+          swift-build: 6.2-RELEASE
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build CLI
+        run: swift build --product RashunCLI
+
+      - name: CLI smoke test (macOS/Linux)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          swift run RashunCLI --help
+          swift run RashunCLI
+
+      - name: CLI smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          swift run RashunCLI --help
+          swift run RashunCLI
+
+  macos-app:
+    name: macOS App
     runs-on: macos-latest
+    needs: cli-core-cross-platform
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +74,7 @@ jobs:
         run: ./build.sh
 
       - name: Smoke test app launch
+        shell: bash
         run: |
           set -euo pipefail
 

@@ -10,58 +10,48 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-artifacts:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact_name: rashun-macos-app
+            artifact_path: Rashun.zip
+          - os: ubuntu-latest
+            artifact_name: rashun-cli-linux
+            artifact_path: rashun-cli-linux.tar.gz
+          - os: windows-latest
+            artifact_name: rashun-cli-windows
+            artifact_path: rashun-cli-windows.zip
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Determine version
-        id: version
-        run: |
-          # Read base version from Info.plist
-          PLIST_VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
-
-          # Get the latest release tag (if any)
-          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-
-          if [ -z "$LATEST_TAG" ]; then
-            # No previous release — use the plist version as-is
-            VERSION="$PLIST_VERSION"
-          else
-            LATEST_VERSION="${LATEST_TAG#v}"
-            # Compare plist version to latest tag
-            # If plist is higher (manual bump), use it; otherwise auto-bump patch
-            HIGHER=$(printf '%s\n%s' "$PLIST_VERSION" "$LATEST_VERSION" | sort -V | tail -1)
-            if [ "$PLIST_VERSION" != "$LATEST_VERSION" ] && [ "$HIGHER" = "$PLIST_VERSION" ]; then
-              # Manual bump in Info.plist takes priority
-              VERSION="$PLIST_VERSION"
-            else
-              # Auto-bump patch from the latest tag
-              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
-              PATCH=$((PATCH + 1))
-              VERSION="$MAJOR.$MINOR.$PATCH"
-            fi
-          fi
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing version: $VERSION"
-
-      - name: Stamp version into Info.plist
-        run: |
-          /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString ${{ steps.version.outputs.version }}" Info.plist
-
-      - name: Setup Swift
+      - name: Setup Swift (macOS/Linux)
+        if: runner.os != 'Windows'
         uses: swift-actions/setup-swift@v3
         with:
           swift-version: "6.2.4"
 
-      - name: Build app
+      - name: Setup Swift (Windows)
+        if: runner.os == 'Windows'
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.2-release
+          swift-build: 6.2-RELEASE
+
+      - name: Build macOS app and CLI
+        if: runner.os == 'macOS'
         run: ./build.sh
 
       - name: Smoke test app launch
+        if: runner.os == 'macOS'
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -96,8 +86,104 @@ jobs:
           kill "$APP_PID" 2>/dev/null || true
           wait "$APP_PID" 2>/dev/null || true
 
-      - name: Zip app bundle
+      - name: Package macOS app
+        if: runner.os == 'macOS'
+        shell: bash
         run: zip -r Rashun.zip Rashun.app
+
+      - name: Package macOS CLI
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .build/arm64-apple-macosx/release/RashunCLI rashun
+          chmod +x rashun
+          tar -czf rashun-cli-macos.tar.gz rashun
+
+      - name: Build CLI (Linux/Windows)
+        if: runner.os != 'macOS'
+        run: swift build -c release --product RashunCLI
+
+      - name: Package Linux CLI
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .build/release/RashunCLI rashun
+          chmod +x rashun
+          tar -czf rashun-cli-linux.tar.gz rashun
+
+      - name: Package Windows CLI
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item ".build\release\RashunCLI.exe" "rashun.exe"
+          Compress-Archive -Path "rashun.exe" -DestinationPath "rashun-cli-windows.zip" -Force
+
+      - name: Upload primary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+
+      - name: Upload macOS CLI artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rashun-cli-macos
+          path: rashun-cli-macos.tar.gz
+
+  publish-release:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download macOS app artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rashun-macos-app
+
+      - name: Download macOS CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rashun-cli-macos
+
+      - name: Download Linux CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rashun-cli-linux
+
+      - name: Download Windows CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rashun-cli-windows
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          PLIST_VERSION=$(grep -A1 'CFBundleShortVersionString' Info.plist | tail -1 | sed -E 's/.*<string>([^<]+)<\/string>.*/\1/')
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+
+          if [ -z "$LATEST_TAG" ]; then
+            VERSION="$PLIST_VERSION"
+          else
+            LATEST_VERSION="${LATEST_TAG#v}"
+            HIGHER=$(printf '%s\n%s' "$PLIST_VERSION" "$LATEST_VERSION" | sort -V | tail -1)
+            if [ "$PLIST_VERSION" != "$LATEST_VERSION" ] && [ "$HIGHER" = "$PLIST_VERSION" ]; then
+              VERSION="$PLIST_VERSION"
+            else
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+              PATCH=$((PATCH + 1))
+              VERSION="$MAJOR.$MINOR.$PATCH"
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Clean up old latest tag
         env:
@@ -107,13 +193,24 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          gh release create "v${{ steps.version.outputs.version }}" Rashun.zip \
+          gh release create "v${{ steps.version.outputs.version }}" \
+            Rashun.zip \
+            rashun-cli-macos.tar.gz \
+            rashun-cli-linux.tar.gz \
+            rashun-cli-windows.zip \
             --title "v${{ steps.version.outputs.version }}" \
             --latest \
             --notes "## v${{ steps.version.outputs.version }}
 
-          **Install with one command:**
+          **macOS app install:**
           \`\`\`bash
           curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/install.sh | bash
-          \`\`\`"
+          \`\`\`
+
+          **CLI artifacts:**
+          - macOS: \`rashun-cli-macos.tar.gz\`
+          - Linux: \`rashun-cli-linux.tar.gz\`
+          - Windows: \`rashun-cli-windows.zip\`
+          "
