@@ -1,0 +1,522 @@
+# RashunCLI Rewrite Plan
+
+## Overview
+
+A complete rewrite of RashunCLI to be a polished, cross-platform, human-and-machine-friendly command-line interface built on top of RashunCore. The CLI should feel like a first-class citizen alongside the macOS app (and future Linux/Windows apps), sharing history and version identity.
+
+---
+
+## Design Principles
+
+1. **Cross-platform first.** The CLI and all of RashunCore must work on macOS, Linux, and Windows. Any macOS-only logic (e.g. `UserDefaults`) in RashunCore must be abstracted or replaced.
+2. **Shared state.** The CLI and the platform app share usage history, so a fetch from the CLI shows up in the app's charts and vice versa.
+3. **Friendly by default.** Running bare `rashun` gives a helpful intro, not a wall of errors. Errors are actionable, not stack traces.
+4. **Machine-readable opt-in.** Every subcommand supports `--json` for programmatic consumers and AI agents. JSON errors include structured codes and hints.
+5. **Incremental usability.** Users start with `rashun` (intro) → `rashun sources` (what's available) → `rashun check <source>` (is it set up?) → `rashun status <source>` (get usage). Natural discovery flow.
+
+---
+
+## Dependency Addition
+
+### Swift Argument Parser
+
+Add `apple/swift-argument-parser` to `Package.swift`. It is fully cross-platform (macOS, Linux, Windows) and gives us typed subcommands, auto-generated help, flag/option parsing, and validation for free.
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+],
+// RashunCLI target:
+.executableTarget(
+    name: "RashunCLI",
+    dependencies: [
+        "RashunCore",
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+    ],
+    path: "Sources/RashunCLI"
+),
+```
+
+---
+
+## RashunCore Cross-Platform Prerequisites
+
+Before the CLI rewrite can work cross-platform, the following RashunCore changes are required:
+
+### Problem 1: `UserDefaults` is macOS/iOS only
+
+`UsageHistoryStore` and `SourceHealthStore` both persist via `UserDefaults`. This does not exist on Linux or Windows.
+
+**Solution:** Introduce a `PersistenceBackend` protocol in RashunCore:
+
+```swift
+public protocol PersistenceBackend: Sendable {
+    func data(forKey key: String) -> Data?
+    func set(_ data: Data?, forKey key: String)
+}
+```
+
+- On macOS/iOS: provide a `UserDefaultsBackend` that wraps `UserDefaults.standard`.
+- On Linux/Windows: provide a `FilePersistenceBackend` that reads/writes JSON files to a platform-appropriate directory (e.g. `~/.rashun/` on Linux, `%APPDATA%\Rashun\` on Windows).
+- `UsageHistoryStore` and `SourceHealthStore` accept a backend via their initializer instead of hardcoding `UserDefaults`.
+- The shared singleton pattern (`static let shared`) should be replaced or initialized with the appropriate backend by the app/CLI at startup.
+
+### Problem 2: `@MainActor` on stores
+
+`UsageHistoryStore` and `SourceHealthStore` are `@MainActor`. This works in a GUI app with a main run loop, but is awkward in a CLI.
+
+**Solution:** The stores don't actually need `@MainActor` — they need thread safety. Options:
+- Replace `@MainActor` with an internal lock/actor for synchronization.
+- Or, since the CLI is single-threaded per invocation, accept `@MainActor` and run via `@main` with async entry point (Swift Argument Parser supports `AsyncParsableCommand`).
+- Recommended: keep `@MainActor` for now since `AsyncParsableCommand` handles it, but flag for future cleanup.
+
+### Problem 3: `NotificationCenter.default.post` in `SourceHealthStore`
+
+`SourceHealthStore.persistAndNotify()` posts to `NotificationCenter`. This is a no-op in CLI context and doesn't exist on Linux.
+
+**Solution:** Guard with `#if canImport(AppKit) || canImport(UIKit)`, or make the notification posting optional/callback-based.
+
+---
+
+## Command Structure
+
+```
+rashun                                  → Intro / help / getting started
+rashun status [<source>]                → Usage for one or all configured sources
+rashun sources                          → List all sources with setup status
+rashun check <source>                   → Health check: prerequisites + test fetch
+rashun forecast <source>                → Show forecast/projection for a source
+rashun history <source>                 → Show recent usage history snapshots
+rashun history stats                    → Storage stats (counts, date range, size)
+rashun history clear [<source>]         → Clear history (all or per-source)
+rashun history export <path>            → Export history to JSON file
+rashun history import <path>            → Import history from JSON file
+rashun version                          → Show current version
+rashun update                           → Check for updates and install if available
+```
+
+Global flags available on all subcommands:
+- `--json` — JSON output instead of human-readable
+- `--no-color` — disable colors/emoji (also auto-detected when stdout is not a TTY)
+- `--help` / `-h` — auto-generated by ArgumentParser
+
+---
+
+## Subcommand Details
+
+### `rashun` (root, no subcommand)
+
+Displays a welcome message and quick-start guide:
+
+```
+🔮 Rashun v1.2.0 — AI Usage Monitor
+
+Quick start:
+  rashun sources          See available AI sources and setup status
+  rashun check <source>   Verify a source is configured correctly
+  rashun status <source>  Check current usage for a source
+  rashun status           Check usage for all active sources
+  rashun --help           See all commands
+
+Supported sources: AMP, Copilot, Codex, Gemini (could this be dynamic rather than hardcoded based on the sources actually available in the app?).
+```
+
+### `rashun status [<source>]` 
+
+**Without source argument:** Fetches usage for all sources. Groups output into active (successful fetch) and inactive (failed). Does not exit with error code if some sources fail — it's an overview.
+
+Human output:
+```
+📊 AI Usage Status
+
+AMP             ██████████░░░░  72% remaining
+Copilot         ████████░░░░░░  58% remaining  (resets Apr 1)
+Gemini 2.5-Pro  ██████████████ 100% remaining  (resets in 23h)
+
+⚠️  Inactive sources:
+  Codex — Codex sessions folder missing. Run `rashun check codex` for details.
+```
+
+**With source argument:** Fetches usage for that specific source. Multi-metric sources (Gemini) show all metrics. Exits with appropriate error code on failure, with the source's `mapFetchError` message.
+
+Human output:
+```
+Gemini
+  2.5-Flash       ██████████████ 100% remaining
+  2.5-Flash-Lite  ██████████████ 100% remaining
+  2.5-Pro         ████████░░░░░░  57% remaining  (resets in 23h)
+  3-Flash-Preview ██████████████ 100% remaining
+  3-Pro-Preview   ████████████░░  85% remaining  (resets Mar 12)
+```
+
+JSON output (single source):
+```json
+{
+  "source": "AMP",
+  "metrics": [
+    {
+      "id": "amp-free",
+      "title": "AMP",
+      "percentRemaining": 72.3,
+      "remaining": 3.62,
+      "limit": 5.00,
+      "resetDate": null,
+      "cycleStartDate": null
+    }
+  ]
+}
+```
+
+JSON output (all sources):
+```json
+{
+  "active": [ ... ],
+  "inactive": [
+    {
+      "source": "Codex",
+      "error": {
+        "code": "source_not_configured",
+        "short": "Codex sessions folder missing",
+        "detail": "Expected Codex sessions folder was not found at ..."
+      }
+    }
+  ]
+}
+```
+
+**Side effect:** On successful fetch, appends to `UsageHistoryStore` and records success in `SourceHealthStore`. On failure, records failure in `SourceHealthStore`.
+
+### `rashun sources`
+
+Lists all available sources with their setup requirements and current health status.
+
+```
+Available sources:
+
+  ✅ AMP
+     Requires the amp CLI installed and available on PATH (or at ~/.amp/bin/amp).
+
+  ✅ Copilot
+     Requires GitHub CLI 'gh' configured, authenticated, and available on PATH.
+
+  ❌ Codex
+     Requires Codex app/CLI installed and local session logs at ~/.codex/sessions.
+     Last error: Codex sessions folder missing
+
+  ✅ Gemini
+     Requires Gemini CLI with Google login and local credentials at ~/.gemini/oauth_creds.json.
+```
+
+Health status comes from `SourceHealthStore`: ✅ if last fetch succeeded (or never attempted), ❌ if consecutive failures > 0.
+
+JSON output:
+```json
+[
+  {
+    "name": "AMP",
+    "requirements": "Requires the amp CLI ...",
+    "metrics": [{"id": "amp-free", "title": "AMP"}],
+    "healthy": true,
+    "lastError": null
+  }
+]
+```
+
+### `rashun check <source>`
+
+A full diagnostic health check for a specific source:
+1. Print the source's `requirements` string.
+2. Attempt a fetch for every metric.
+3. On success: print ✅ with current usage as proof of life.
+4. On failure: use `mapFetchError()` to print the actionable `detailedMessage`.
+
+```
+🔍 Checking AMP...
+
+Requirements: Requires the amp CLI installed and available on PATH (or at ~/.amp/bin/amp).
+
+✅ AMP is healthy
+   AMP: 72% remaining ($3.62/$5.00)
+```
+
+```
+🔍 Checking Codex...
+
+Requirements: Requires Codex app/CLI installed and local session logs at ~/.codex/sessions.
+
+❌ Codex check failed
+   Codex sessions folder missing
+   Expected Codex sessions folder was not found at /Users/you/.codex/sessions.
+   Open Codex and run at least one request, then retry.
+```
+
+### `rashun forecast <source>`
+
+Fetches current usage + history and runs the source's `forecast()` method. Shows the human-readable `summary` and, with `--json`, the full forecast points array.
+
+```
+📈 AMP Forecast
+AMP: reaches 100% Wed, Mar 12 at 3:45 PM
+```
+
+```
+📈 Copilot Forecast
+Copilot: projected 12% at reset (Apr 1, 12:00 AM)
+```
+
+If the source returns `nil` for forecast (not enough data or not applicable):
+```
+📈 Codex Forecast
+No forecast available. Not enough usage history or no active reset window.
+```
+
+JSON:
+```json
+{
+  "source": "Copilot",
+  "summary": "Copilot: projected 12% at reset (Apr 1, 12:00 AM)",
+  "points": [
+    {"date": "2026-03-10T14:00:00Z", "value": 58.2},
+    {"date": "2026-03-15T00:00:00Z", "value": 41.0},
+    ...
+  ]
+}
+```
+
+### `rashun history <source>`
+
+Displays recent usage snapshots from `UsageHistoryStore`. Supports `--range` filter.
+
+Options:
+- `--range <day|week|month|all>` — time range filter (default: `week`)
+- `--limit <n>` — max snapshots to show (default: 20)
+- `--json`
+
+```
+📜 AMP Usage History (last 7 days, 14 snapshots)
+
+Mar 10, 2:30 PM   72.3% remaining  ($3.62/$5.00)
+Mar 10, 2:00 PM   71.8% remaining  ($3.59/$5.00)
+Mar 10, 1:30 PM   70.2% remaining  ($3.51/$5.00)
+...
+```
+
+### `rashun history stats`
+
+Shows storage statistics from `UsageHistoryStore.stats()`.
+
+```
+📊 History Storage Stats
+
+Sources tracked:  4
+Total snapshots:  1,247
+Oldest snapshot:  Feb 1, 2026
+Newest snapshot:  Mar 10, 2026
+Storage size:     ~84 KB
+```
+
+### `rashun history clear [<source>]`
+
+Clears history. With a source name, clears only that source. Without, clears all.
+
+Supports `--older-than <days>` to only delete old snapshots.
+
+Requires confirmation unless `--yes` / `-y` flag is passed (important for scripting).
+
+```
+$ rashun history clear codex
+⚠️  This will delete all 342 history snapshots for Codex. Continue? [y/N] y
+✅ Cleared 342 snapshots for Codex.
+```
+
+```
+$ rashun history clear --older-than 30
+⚠️  This will delete 891 snapshots older than 30 days across all sources. Continue? [y/N]
+```
+
+### `rashun history export <path>`
+
+Exports all history to a JSON file using `UsageHistoryTransferService.makeExportData()`.
+
+```
+$ rashun history export ~/rashun-backup.json
+✅ Exported 1,247 snapshots to /Users/you/rashun-backup.json
+```
+
+### `rashun history import <path>`
+
+Imports history from a JSON file using `UsageHistoryTransferService.readImportData()`.
+
+Supports `--replace` to overwrite existing history, or default merge behavior (replaces all, matching the app's current behavior with `replaceAllHistory`).
+
+```
+$ rashun history import ~/rashun-backup.json
+✅ Imported 1,247 snapshots from backup.
+```
+
+### `rashun version`
+
+```
+$ rashun version
+Rashun v1.2.0
+
+$ rashun version --json
+{"version":"1.2.0"}
+```
+
+The version string must match the app's version exactly — sourced from the same `Versioning` / build-time constant.
+
+### `rashun update`
+
+Checks for updates and optionally installs.
+
+**Check only (`rashun update` or `rashun update --check`):**
+```
+$ rashun update
+🔄 Checking for updates...
+✅ Update available: v1.3.0 (current: v1.2.0)
+
+Run `rashun update --install` to update now.
+```
+
+```
+$ rashun update
+✅ Rashun v1.2.0 is up to date.
+```
+
+**Install (`rashun update --install`):**
+Runs the equivalent of `install.sh` — downloads the latest release from GitHub and replaces the binary. The exact mechanism depends on platform:
+- macOS/Linux: download release binary or run install script from the GitHub release assets.
+- Windows: download and replace the `.exe`.
+
+```
+$ rashun update --install
+🔄 Checking for updates...
+📥 Downloading Rashun v1.3.0...
+✅ Updated to v1.3.0. Restart your terminal session.
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0    | Success |
+| 1    | Fetch/runtime error (source failed, network error, etc.) |
+| 2    | Unknown source or invalid argument |
+| 3    | Source not configured / prerequisites missing |
+| 4    | User cancelled (e.g., declined confirmation prompt) |
+
+When `--json` is active, errors are also structured:
+```json
+{
+  "error": {
+    "code": 3,
+    "short": "Codex sessions folder missing",
+    "detail": "Expected Codex sessions folder was not found at ..."
+  }
+}
+```
+
+---
+
+## Output Formatting
+
+### Human Output
+- Progress bars: `██████░░░░░░░░` using Unicode block characters.
+- Status emoji: ✅ ❌ ⚠️ 📊 📈 📜 🔄 📥 🔮 🔍
+- Color via ANSI escape codes: green for healthy/high %, yellow for medium, red for low/errors.
+- Auto-detect TTY: if stdout is not a terminal (piped), disable colors and emoji automatically.
+- `--no-color` flag to force plain output.
+
+### JSON Output
+- Compact by default (no pretty-printing) for easy piping to `jq`.
+- All dates as ISO 8601 strings.
+- Consistent top-level shape per subcommand.
+
+---
+
+## File Structure
+
+```
+Sources/RashunCLI/
+├── RashunCLI.swift              # @main entry point, root command
+├── Commands/
+│   ├── StatusCommand.swift      # rashun status [source]
+│   ├── SourcesCommand.swift     # rashun sources
+│   ├── CheckCommand.swift       # rashun check <source>
+│   ├── ForecastCommand.swift    # rashun forecast <source>
+│   ├── HistoryCommand.swift     # rashun history <source>
+│   ├── HistoryStatsCommand.swift
+│   ├── HistoryClearCommand.swift
+│   ├── HistoryExportCommand.swift
+│   ├── HistoryImportCommand.swift
+│   ├── VersionCommand.swift     # rashun version
+│   └── UpdateCommand.swift      # rashun update
+├── Formatting/
+│   ├── OutputFormatter.swift    # TTY detection, color, progress bars
+│   └── JSONOutput.swift         # Shared JSON encoding helpers
+└── Helpers/
+    └── SourceResolver.swift     # Find source by name (case-insensitive)
+```
+
+Delete `main.swift` — Swift Argument Parser uses `@main` on the root command struct instead.
+
+---
+
+## Task Order
+
+Each task is designed to be a safe, working commit. Tasks are ordered so that each builds on the previous and the CLI is functional (if limited) at every step.
+
+### Task 1: RashunCore cross-platform storage
+
+Make `UsageHistoryStore` and `SourceHealthStore` cross-platform by introducing a `PersistenceBackend` protocol. Replace direct `UserDefaults` usage. Guard `NotificationCenter` posts behind `#if canImport`. Ensure all existing tests still pass.
+
+### Task 2: Add Swift Argument Parser dependency
+
+Add the `swift-argument-parser` package to `Package.swift`. Create the root `RashunCLI` command struct with `@main` and a basic help/intro message. Delete `main.swift`. Verify it builds and runs on macOS (and Linux if possible).
+
+### Task 3: `rashun version`
+
+Implement `VersionCommand`. Ensure the CLI version string is sourced from the same place as the app. Support `--json` flag.
+
+### Task 4: Output formatting infrastructure
+
+Build `OutputFormatter` — TTY detection, ANSI color helpers, progress bar rendering, emoji helpers, `--no-color` support. Build `JSONOutput` helpers for consistent JSON encoding. Build `SourceResolver` helper.
+
+### Task 5: `rashun sources`
+
+Implement `SourcesCommand`. List all sources with their `requirements` string and health status from `SourceHealthStore`. Support `--json`.
+
+### Task 6: `rashun status [<source>]`
+
+Implement `StatusCommand`. Single-source and all-sources modes. Use `mapFetchError()` for actionable error messages. Record to `UsageHistoryStore` and `SourceHealthStore` on fetch. Progress bars and color for human output. Structured JSON output. Proper exit codes.
+
+### Task 7: `rashun check <source>`
+
+Implement `CheckCommand`. Print requirements, attempt fetch, display detailed success/failure using `mapFetchError()`. Support `--json`.
+
+### Task 8: `rashun forecast <source>`
+
+Implement `ForecastCommand`. Fetch current usage, load history, call `source.forecast()`, display summary and points. Support `--json`.
+
+### Task 9: `rashun history <source>`
+
+Implement `HistoryCommand`. Display snapshots from `UsageHistoryStore.history(for:)` with `--range` and `--limit` filtering. Support `--json`.
+
+### Task 10: `rashun history stats`
+
+Implement `HistoryStatsCommand`. Display `UsageHistoryStore.stats()` output. Support `--json`.
+
+### Task 11: `rashun history clear`
+
+Implement `HistoryClearCommand`. Per-source and all clearing. `--older-than` support. Confirmation prompt with `--yes` bypass. Support `--json`.
+
+### Task 12: `rashun history export` and `rashun history import`
+
+Implement `HistoryExportCommand` and `HistoryImportCommand` using `UsageHistoryTransferService`. Support `--replace` on import.
+
+### Task 13: `rashun update`
+
+Implement `UpdateCommand` using `UpdateCheckService` and `GitHubUpdateVersionFetcher`. `--check` for check-only, `--install` for full update. Platform-appropriate install mechanism. Support `--json`.
