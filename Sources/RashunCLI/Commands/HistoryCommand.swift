@@ -5,6 +5,20 @@ import RashunCore
 struct HistoryCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "history",
+        abstract: "Inspect stored usage history",
+        subcommands: [
+            HistoryShowCommand.self,
+            HistoryStatsCommand.self
+        ],
+        defaultSubcommand: HistoryShowCommand.self
+    )
+
+    func run() async throws {}
+}
+
+struct HistoryShowCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "show",
         abstract: "Show recent usage history snapshots for a source"
     )
 
@@ -202,4 +216,59 @@ enum HistoryRange: String, CaseIterable, ExpressibleByArgument {
             return .all
         }
     }
+}
+
+struct HistoryStatsCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "stats",
+        abstract: "Show history storage statistics"
+    )
+
+    @OptionGroup
+    var global: GlobalOptions
+
+    @MainActor
+    func run() async throws {
+        let stats = UsageHistoryStore.shared.stats()
+
+        if global.json {
+            try JSONOutput.print(HistoryStatsResponse(
+                sourceCount: stats.sourceCount,
+                snapshotCount: stats.snapshotCount,
+                oldestSnapshot: stats.oldestSnapshot,
+                newestSnapshot: stats.newestSnapshot,
+                estimatedBytes: stats.estimatedBytes
+            ))
+            return
+        }
+
+        let formatter = OutputFormatter(noColor: global.noColor)
+        print("\(formatter.emoji("📊", fallback: "*")) \(formatter.colorize("History Storage Stats", as: .bold))")
+        print("")
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, yyyy h:mm a"
+
+        print("Sources tracked: \(stats.sourceCount)")
+        print("Total snapshots: \(stats.snapshotCount)")
+        if let oldest = stats.oldestSnapshot {
+            print("Oldest snapshot: \(dateFormatter.string(from: oldest))")
+        } else {
+            print("Oldest snapshot: n/a")
+        }
+        if let newest = stats.newestSnapshot {
+            print("Newest snapshot: \(dateFormatter.string(from: newest))")
+        } else {
+            print("Newest snapshot: n/a")
+        }
+        print("Storage size: ~\(ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file))")
+    }
+}
+
+private struct HistoryStatsResponse: Encodable {
+    let sourceCount: Int
+    let snapshotCount: Int
+    let oldestSnapshot: Date?
+    let newestSnapshot: Date?
+    let estimatedBytes: Int
 }
