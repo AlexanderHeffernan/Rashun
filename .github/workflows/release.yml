@@ -111,14 +111,39 @@ jobs:
           set -euo pipefail
           cp .build/release/RashunCLI rashun
           chmod +x rashun
+
+          help_output="$(./rashun --help 2>&1 || true)"
+          if [ -z "$help_output" ]; then
+            echo "Linux CLI smoke test failed: rashun --help returned empty output" >&2
+            exit 1
+          fi
+
           tar -czf rashun-cli-linux.tar.gz rashun
 
       - name: Package Windows CLI
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Copy-Item ".build\release\RashunCLI.exe" "rashun.exe"
-          Compress-Archive -Path "rashun.exe" -DestinationPath "rashun-cli-windows.zip" -Force
+          $packageDir = "rashun-windows-cli"
+          Remove-Item -Recurse -Force $packageDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $packageDir | Out-Null
+
+          Copy-Item ".build\release\RashunCLI.exe" (Join-Path $packageDir "rashun.exe") -Force
+
+          $targetInfo = swift -print-target-info | ConvertFrom-Json
+          $runtimePath = $targetInfo.paths.runtimeLibraryPaths[0]
+          Get-ChildItem -Path $runtimePath -Filter "*.dll" -File |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path $packageDir $_.Name) -Force }
+
+          Get-ChildItem -Path ".build\release" -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName (Join-Path $packageDir $_.Name) -Force }
+
+          $helpOutput = & (Join-Path $packageDir "rashun.exe") --help 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($helpOutput)) {
+            throw "Windows CLI smoke test failed: rashun --help"
+          }
+
+          Compress-Archive -Path "$packageDir\*" -DestinationPath "rashun-cli-windows.zip" -Force
 
       - name: Upload primary artifact
         uses: actions/upload-artifact@v4
