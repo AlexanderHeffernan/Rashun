@@ -13,6 +13,7 @@ struct RashunCLI: AsyncParsableCommand {
         discussion: "Run `rashun --help` to see all commands.",
         subcommands: [
             CheckCommand.self,
+            ForecastCommand.self,
             StatusCommand.self,
             SourcesCommand.self,
             VersionCommand.self
