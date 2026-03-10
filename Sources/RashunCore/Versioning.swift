@@ -18,7 +18,7 @@ public enum Versioning {
             return fileVersion
         }
 
-        return "0.0.0"
+        return rashunVersion
     }
 
     private static func versionFromNearbyInfoPlist() -> String? {
