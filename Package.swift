@@ -8,13 +8,24 @@ var targets: [Target] = [
     ),
     .executableTarget(
         name: "RashunCLI",
-        dependencies: ["RashunCore"],
-        path: "Sources/RashunCLI"
+        dependencies: [
+            "RashunCore",
+            .product(name: "ArgumentParser", package: "swift-argument-parser")
+        ],
+        path: "Sources/RashunCLI",
+        exclude: [
+            "PLAN.md"
+        ]
     ),
     .testTarget(
         name: "RashunCoreTests",
         dependencies: ["RashunCore"],
         path: "Tests/RashunCoreTests"
+    ),
+    .testTarget(
+        name: "RashunCLITests",
+        dependencies: ["RashunCLI"],
+        path: "Tests/RashunCLITests"
     ),
 ]
 
@@ -45,11 +56,17 @@ targets.append(
 let package = Package(
     name: "Rashun",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0")
+    ],
     targets: targets
 )
 #else
 let package = Package(
     name: "Rashun",
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0")
+    ],
     targets: targets
 )
 #endif

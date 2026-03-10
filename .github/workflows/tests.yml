@@ -31,8 +31,11 @@ jobs:
           swift-version: swift-6.2-release
           swift-build: 6.2-RELEASE
 
-      - name: Run tests
-        run: swift test
+      - name: Run RashunCore tests
+        run: swift test --filter RashunCoreTests
+
+      - name: Run RashunCLI tests
+        run: swift test --filter RashunCLITests
 
       - name: Build CLI
         run: swift build --product RashunCLI

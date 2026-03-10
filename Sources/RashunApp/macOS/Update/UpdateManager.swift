@@ -22,7 +22,7 @@ final class UpdateManager {
         self.updateService = updateService ?? UpdateCheckService(
             repository: repo,
             currentVersionProvider: {
-                Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                Versioning.versionString(bundle: .main)
             }
         )
         self.installer = installer ?? MacOSShellUpdateInstaller()
@@ -47,7 +47,7 @@ final class UpdateManager {
 
     /// Current app version from the bundle's Info.plist.
     var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        Versioning.versionString(bundle: .main)
     }
 
     /// Whether an update is available and newer than the current version.

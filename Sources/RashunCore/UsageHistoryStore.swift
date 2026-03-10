@@ -24,11 +24,21 @@ public struct HistoryStorageStats {
 
 @MainActor
 public final class UsageHistoryStore {
-    public static let shared = UsageHistoryStore()
-    private init() { load() }
+    public static let shared = UsageHistoryStore(backend: PersistenceBackendFactory.default())
+    public init(
+        backend: PersistenceBackend,
+        legacyBackends: [PersistenceBackend] = PersistenceBackendFactory.defaultLegacyBackends()
+    ) {
+        self.backend = backend
+        self.legacyBackends = legacyBackends
+        load()
+    }
 
     private let maxSnapshots = 10_000
     private let userDefaultsKey = "ai.notificationHistory.v1"
+    private let migrationKey = "ai.notificationHistory.migrated.v1"
+    private let backend: PersistenceBackend
+    private let legacyBackends: [PersistenceBackend]
     private var historyBySource: [String: [UsageSnapshot]] = [:]
 
     public func history(for sourceName: String) -> [UsageSnapshot] {
@@ -45,6 +55,10 @@ public final class UsageHistoryStore {
         save()
     }
 
+    public func resetMigrationStateForTesting() {
+        backend.set(nil, forKey: migrationKey)
+    }
+
     public func sourceNamesWithHistory() -> [String] {
         historyBySource
             .filter { !$0.value.isEmpty }
@@ -56,9 +70,19 @@ public final class UsageHistoryStore {
         historyBySource
     }
 
-    public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]]) {
-        historyBySource = Self.normalizedHistory(newHistory)
+    @discardableResult
+    public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]], force: Bool = false) -> Bool {
+        let normalized = Self.normalizedHistory(newHistory)
+        let currentCount = Self.snapshotCount(in: historyBySource)
+        let incomingCount = Self.snapshotCount(in: normalized)
+
+        if !force, currentCount > 0, incomingCount * 2 < currentCount {
+            return false
+        }
+
+        historyBySource = normalized
         save()
+        return true
     }
 
     public func countSnapshots(sourceName: String? = nil) -> Int {
@@ -118,15 +142,80 @@ public final class UsageHistoryStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
-              let decoded = try? JSONDecoder().decode([String: [UsageSnapshot]].self, from: data) else { return }
-        historyBySource = decoded
+        let hasMigrated = backend.data(forKey: migrationKey) != nil
+
+        let sharedHistory = decodeHistory(from: backend.data(forKey: userDefaultsKey))
+        let sharedCount = Self.snapshotCount(in: sharedHistory)
+
+        if hasMigrated {
+            historyBySource = sharedHistory
+            return
+        }
+
+        var bestLegacyHistory: [String: [UsageSnapshot]] = [:]
+        var bestLegacyCount = 0
+
+        for legacy in legacyBackends {
+            guard let legacyData = legacy.data(forKey: userDefaultsKey) else {
+                continue
+            }
+            let decoded = decodeHistory(from: legacyData)
+            guard !decoded.isEmpty else { continue }
+
+            let count = Self.snapshotCount(in: decoded)
+            if count > bestLegacyCount {
+                bestLegacyHistory = decoded
+                bestLegacyCount = count
+            }
+        }
+
+        if sharedCount > 0 || bestLegacyCount > 0 {
+            writeMigrationBackup(named: "shared", history: sharedHistory)
+            writeMigrationBackup(named: "legacy", history: bestLegacyHistory)
+        }
+
+        let chosen = bestLegacyCount > sharedCount ? bestLegacyHistory : sharedHistory
+        historyBySource = chosen
+        if let encoded = try? JSONEncoder().encode(chosen) {
+            backend.set(encoded, forKey: userDefaultsKey)
+        }
+        backend.set(Data([1]), forKey: migrationKey)
+    }
+
+    private func decodeHistory(from data: Data?) -> [String: [UsageSnapshot]] {
+        guard let data,
+              let decoded = try? JSONDecoder().decode([String: [UsageSnapshot]].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private static func snapshotCount(in history: [String: [UsageSnapshot]]) -> Int {
+        history.values.reduce(0) { $0 + $1.count }
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(historyBySource) {
-            UserDefaults.standard.set(data, forKey: userDefaultsKey)
+            backend.set(data, forKey: userDefaultsKey)
         }
+    }
+
+    private func writeMigrationBackup(named suffix: String, history: [String: [UsageSnapshot]]) {
+        guard !history.isEmpty else { return }
+        #if os(macOS)
+        let fm = FileManager.default
+        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let backupDir = appSupport
+            .appendingPathComponent("Rashun", isDirectory: true)
+            .appendingPathComponent("Backups", isDirectory: true)
+        try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let fileURL = backupDir.appendingPathComponent("history-\(suffix)-\(stamp).json")
+        if let data = try? JSONEncoder().encode(history) {
+            try? data.write(to: fileURL, options: .atomic)
+        }
+        #endif
     }
 
     private func countMatching(sourceName: String?, predicate: (UsageSnapshot) -> Bool) -> Int {

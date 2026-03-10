@@ -3,6 +3,11 @@ import XCTest
 
 final class VersionComparisonTests: XCTestCase {
 
+    func testVersionString_prefersEnvironmentVariable() {
+        let version = Versioning.versionString(environment: ["RASHUN_VERSION": "9.8.7"])
+        XCTAssertEqual(version, "9.8.7")
+    }
+
     func testNewer_patchBump() {
         XCTAssertTrue(isNewerVersion("0.1.2", than: "0.1.1"))
     }

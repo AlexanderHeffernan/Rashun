@@ -73,10 +73,7 @@ final class UsageHistoryViewModel: ObservableObject {
             for metric in enabledMetrics {
                 let color = Self.palette[seriesIndex % Self.palette.count]
                 seriesIndex += 1
-                var history = UsageHistoryStore.shared.history(for: metricHistorySeriesName(source: source, metric: metric))
-                if history.isEmpty, metric.id == source.metrics.first?.id {
-                    history = UsageHistoryStore.shared.history(for: source.name)
-                }
+                let history = loadMetricHistory(source: source, metric: metric)
 
                 let points = filterPoints(history, bounds: bounds)
                 let forecastPoints = filteredForecastPoints(source: source, metricId: metric.id, history: history, points: points, bounds: bounds, showForecast: showForecastLines)
@@ -105,7 +102,29 @@ final class UsageHistoryViewModel: ObservableObject {
     }
 
     private func metricHistorySeriesName(source: AISource, metric: AISourceMetric) -> String {
+        "\(source.name)::\(metric.id)"
+    }
+
+    private func legacyMetricHistorySeriesName(source: AISource, metric: AISourceMetric) -> String {
         "\(source.name) - \(metric.title)"
+    }
+
+    private func loadMetricHistory(source: AISource, metric: AISourceMetric) -> [UsageSnapshot] {
+        let preferred = UsageHistoryStore.shared.history(for: metricHistorySeriesName(source: source, metric: metric))
+        if !preferred.isEmpty {
+            return preferred
+        }
+
+        let legacy = UsageHistoryStore.shared.history(for: legacyMetricHistorySeriesName(source: source, metric: metric))
+        if !legacy.isEmpty {
+            return legacy
+        }
+
+        if metric.id == source.metrics.first?.id {
+            return UsageHistoryStore.shared.history(for: source.name)
+        }
+
+        return []
     }
 
     private func filterPoints(_ history: [UsageSnapshot], bounds: (start: Date?, end: Date?)) -> [ChartPoint] {

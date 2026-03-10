@@ -92,7 +92,7 @@ final class DataTabViewModel: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         do {
-            let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+            let appVersion = Versioning.versionString(bundle: .main)
             let data = try UsageHistoryTransferService.makeExportData(
                 historyBySource: UsageHistoryStore.shared.allHistory(),
                 appVersion: appVersion
@@ -147,7 +147,11 @@ final class DataTabViewModel: ObservableObject {
         pendingImportHistory = nil
         pendingImportMessage = ""
 
-        UsageHistoryStore.shared.replaceAllHistory(imported)
+        let didReplace = UsageHistoryStore.shared.replaceAllHistory(imported, force: true)
+        guard didReplace else {
+            setTransferStatus("Import was blocked to protect existing history. Please try again.", isError: true)
+            return
+        }
         refreshStats()
         notifyDataChanged()
         setTransferStatus("Imported \(stats.snapshotCount.formatted()) snapshots from \(url.lastPathComponent).")
