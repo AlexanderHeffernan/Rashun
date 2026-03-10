@@ -9,7 +9,9 @@ struct HistoryCommand: AsyncParsableCommand {
         subcommands: [
             HistoryShowCommand.self,
             HistoryStatsCommand.self,
-            HistoryClearCommand.self
+            HistoryClearCommand.self,
+            HistoryExportCommand.self,
+            HistoryImportCommand.self
         ],
         defaultSubcommand: HistoryShowCommand.self
     )
@@ -468,4 +470,217 @@ private struct HistoryClearResponse: Encodable {
     let source: String?
     let olderThanDays: Int?
     let deletedSnapshots: Int
+}
+
+struct HistoryExportCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "export",
+        abstract: "Export history to a JSON file"
+    )
+
+    @OptionGroup
+    var global: GlobalOptions
+
+    @Argument(help: "Path to write exported history JSON")
+    var path: String
+
+    @MainActor
+    func run() async throws {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        do {
+            let data = try UsageHistoryTransferService.makeExportData(
+                historyBySource: UsageHistoryStore.shared.allHistory(),
+                appVersion: Versioning.versionString()
+            )
+            try data.write(to: url, options: .atomic)
+
+            let stats = UsageHistoryStore.shared.stats()
+            if global.json {
+                try JSONOutput.print(HistoryExportResponse(
+                    path: url.path,
+                    snapshotCount: stats.snapshotCount,
+                    sourceCount: stats.sourceCount
+                ))
+                return
+            }
+
+            let formatter = OutputFormatter(noColor: global.noColor)
+            print("\(formatter.emoji("✅", fallback: "[ok]")) Exported \(stats.snapshotCount) snapshots to \(url.path)")
+        } catch {
+            try emitErrorAndExit(
+                code: "export_failed",
+                short: "Export failed",
+                detail: error.localizedDescription,
+                exitCode: 1
+            )
+        }
+    }
+
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+        if global.json {
+            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+        } else {
+            let formatter = OutputFormatter(noColor: global.noColor)
+            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(detail)
+        }
+        throw ExitCode(exitCode)
+    }
+}
+
+struct HistoryImportCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "import",
+        abstract: "Import history from a JSON file"
+    )
+
+    @OptionGroup
+    var global: GlobalOptions
+
+    @Flag(name: .long, help: "Replace existing history with imported history")
+    var replace = false
+
+    @Flag(name: [.short, .long], help: "Skip confirmation prompt")
+    var yes = false
+
+    @Argument(help: "Path to history JSON file")
+    var path: String
+
+    @MainActor
+    func run() async throws {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let data: Data
+
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            try emitErrorAndExit(
+                code: "file_not_found",
+                short: "Import file not found",
+                detail: "Could not read file at \(url.path).",
+                exitCode: 2
+            )
+            return
+        }
+
+        let imported: [String: [UsageSnapshot]]
+        do {
+            imported = try UsageHistoryTransferService.readImportData(from: data)
+        } catch {
+            try emitErrorAndExit(
+                code: "invalid_import",
+                short: "Invalid import file",
+                detail: error.localizedDescription,
+                exitCode: 2
+            )
+            return
+        }
+
+        let mergedOrReplaced: [String: [UsageSnapshot]]
+        if replace {
+            mergedOrReplaced = imported
+        } else {
+            mergedOrReplaced = merge(current: UsageHistoryStore.shared.allHistory(), incoming: imported)
+        }
+
+        if global.json {
+            guard yes else {
+                try emitErrorAndExit(
+                    code: "confirmation_required",
+                    short: "Confirmation required",
+                    detail: "Pass --yes to confirm history import when using --json.",
+                    exitCode: 4
+                )
+                return
+            }
+        } else if !yes {
+            let incomingCount = imported.values.reduce(0) { $0 + $1.count }
+            let mode = replace ? "replace" : "merge"
+            print("⚠️  This will \(mode) your local history with \(incomingCount) imported snapshots. Continue? [y/N]")
+            let answer = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+            guard answer == "y" || answer == "yes" else {
+                throw ExitCode(4)
+            }
+        }
+
+        let didReplace = UsageHistoryStore.shared.replaceAllHistory(mergedOrReplaced, force: true)
+        if !didReplace {
+            try emitErrorAndExit(
+                code: "import_blocked",
+                short: "Import blocked",
+                detail: "Import was blocked by data protection safeguards.",
+                exitCode: 1
+            )
+            return
+        }
+
+        let stats = UsageHistoryStore.shared.stats()
+        if global.json {
+            try JSONOutput.print(HistoryImportResponse(
+                path: url.path,
+                replace: replace,
+                snapshotCount: stats.snapshotCount,
+                sourceCount: stats.sourceCount
+            ))
+            return
+        }
+
+        let formatter = OutputFormatter(noColor: global.noColor)
+        print("\(formatter.emoji("✅", fallback: "[ok]")) Imported \(stats.snapshotCount) snapshots from \(url.path)")
+    }
+
+    private func merge(
+        current: [String: [UsageSnapshot]],
+        incoming: [String: [UsageSnapshot]]
+    ) -> [String: [UsageSnapshot]] {
+        var merged = current
+
+        for (source, incomingSnapshots) in incoming {
+            let existing = merged[source] ?? []
+            var all = existing + incomingSnapshots
+            all.sort { $0.timestamp < $1.timestamp }
+
+            var deduped: [UsageSnapshot] = []
+            deduped.reserveCapacity(all.count)
+            for snapshot in all {
+                if let last = deduped.last,
+                   last.timestamp == snapshot.timestamp,
+                   last.usage.remaining == snapshot.usage.remaining,
+                   last.usage.limit == snapshot.usage.limit,
+                   last.usage.resetDate == snapshot.usage.resetDate,
+                   last.usage.cycleStartDate == snapshot.usage.cycleStartDate {
+                    continue
+                }
+                deduped.append(snapshot)
+            }
+
+            merged[source] = Array(deduped.suffix(10_000))
+        }
+
+        return merged
+    }
+
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+        if global.json {
+            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+        } else {
+            let formatter = OutputFormatter(noColor: global.noColor)
+            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(detail)
+        }
+        throw ExitCode(exitCode)
+    }
+}
+
+private struct HistoryExportResponse: Encodable {
+    let path: String
+    let snapshotCount: Int
+    let sourceCount: Int
+}
+
+private struct HistoryImportResponse: Encodable {
+    let path: String
+    let replace: Bool
+    let snapshotCount: Int
+    let sourceCount: Int
 }
