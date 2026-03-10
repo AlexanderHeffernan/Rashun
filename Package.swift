@@ -22,6 +22,11 @@ var targets: [Target] = [
         dependencies: ["RashunCore"],
         path: "Tests/RashunCoreTests"
     ),
+    .testTarget(
+        name: "RashunCLITests",
+        dependencies: ["RashunCLI"],
+        path: "Tests/RashunCLITests"
+    ),
 ]
 
 #if os(macOS)
