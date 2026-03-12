@@ -61,10 +61,15 @@ irm https://raw.githubusercontent.com/alexanderheffernan/rashun/main/scripts/ins
     </td>
   </tr>
   <tr>
-    <td align="center" colspan="2">
-      <img src="screenshots/preferences.png" width="660" alt="Preferences window — Sources tab" />
+    <td align="center" width="340">
+      <img src="screenshots/preferences.png" width="320" alt="Preferences window — Sources tab" />
       <br />
       <sub>Preferences — Sources & notification rules</sub>
+    </td>
+    <td align="center">
+      <img src="screenshots/cli.png" width="560" alt="CLI status output showing usage across sources" />
+      <br />
+      <sub>CLI status output (cross-platform)</sub>
     </td>
   </tr>
 </table>
