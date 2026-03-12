@@ -187,8 +187,13 @@ jobs:
           cp .build/release/RashunCLI "$packageDir/rashun-bin"
           chmod +x "$packageDir/rashun-bin"
 
-          runtimePath="$(swift -print-target-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["paths"]["runtimeLibraryPaths"][0])')"
-          cp -a "$runtimePath"/lib*.so* "$packageDir/lib/"
+          runtimePath="$(ldd "$packageDir/rashun-bin" | awk '/libswiftCore\.so/{print $3; exit}' | xargs dirname)"
+          if [ -z "$runtimePath" ] || [ ! -d "$runtimePath" ]; then
+            echo "Unable to resolve Swift runtime path from built binary" >&2
+            ldd "$packageDir/rashun-bin" >&2 || true
+            exit 1
+          fi
+          cp -L "$runtimePath"/lib*.so* "$packageDir/lib/"
 
           cat > "$packageDir/rashun" <<'EOF'
           #!/usr/bin/env bash

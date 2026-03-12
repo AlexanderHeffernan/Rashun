@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="alexanderheffernan/rashun"
-RELEASE_BASE_URL="https://github.com/$REPO/releases/latest/download"
+RELEASE_BASE_URL="${RASHUN_RELEASE_BASE_URL:-https://github.com/$REPO/releases/latest/download}"
 INSTALL_ROOT="${HOME}/.local"
 BIN_DIR="$INSTALL_ROOT/bin"
 TARGET="$BIN_DIR/rashun"
@@ -94,11 +94,19 @@ tar -xzf "$TMPDIR/rashun-cli-linux.tar.gz" -C "$EXTRACT_DIR"
 if [ -f "$EXTRACT_DIR/rashun" ] && [ -f "$EXTRACT_DIR/rashun-bin" ]; then
   rm -rf "$LIBEXEC_DIR"
   mkdir -p "$LIBEXEC_DIR"
-  cp -a "$EXTRACT_DIR/rashun" "$LIBEXEC_DIR/"
   cp -a "$EXTRACT_DIR/rashun-bin" "$LIBEXEC_DIR/"
   if [ -d "$EXTRACT_DIR/lib" ]; then
     cp -a "$EXTRACT_DIR/lib" "$LIBEXEC_DIR/"
   fi
+
+  cat > "$LIBEXEC_DIR/rashun" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export LD_LIBRARY_PATH="$LIBEXEC_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+exec "$LIBEXEC_DIR/rashun-bin" "\$@"
+EOF
+  chmod +x "$LIBEXEC_DIR/rashun"
+
   ln -sfn "$LIBEXEC_DIR/rashun" "$TARGET"
 else
   mv "$EXTRACT_DIR/rashun" "$TARGET"
