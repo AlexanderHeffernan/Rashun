@@ -28,8 +28,8 @@ Rashun sits in your menu bar, polls each source on a timer, and gives you a sing
 
 Rashun is currently rolling out cross-platform support in phases:
 
-- **Today:** full macOS app experience + CLI on macOS/Linux/Windows.
-- **In progress:** extracting more shared logic into `RashunCore` so future Linux/Windows app shells can be added with minimal OS-specific code.
+- **Today:** full macOS app experience + CLI on macOS/Linux/Windows (CLI tested on Linux + Windows).
+- **In progress:** adding Linux/Windows app shells on top of `RashunCore`.
 
 ### Why I built this
 
@@ -83,7 +83,15 @@ irm https://raw.githubusercontent.com/alexanderheffernan/rashun/main/scripts/ins
 - **Data management** — Export and import usage history as JSON. Delete history by source, date range, or entirely.
 - **Configurable polling** — Set how often Rashun checks your usage (default: every 2 minutes).
 - **Branded native UI** — A polished dark theme with source logos, card-based layouts, and segmented controls — all built with SwiftUI and AppKit.
-- **Extensible by design** — Adding a new AI source is a single Swift file in `Sources/AISources/`. The build script auto-discovers it.
+- **Extensible by design** — Adding a new AI source is a single Swift file in `Sources/RashunCore/AISources/`. The build script auto-discovers it.
+
+---
+
+## Platform Support
+
+- **macOS app:** supported (menu bar app + Preferences + charts).
+- **Linux/Windows apps:** not yet; the shared logic lives in `RashunCore` and the CLI already uses it.
+- **CLI:** macOS, Linux, Windows (tested on Linux + Windows).
 
 ---
 
@@ -108,14 +116,14 @@ The CLI uses the same `RashunCore` sources and models, so command-line output an
 - **Linux/Windows/macOS** for CLI usage
 - **Swift 6.2+** toolchain (only needed if building from source)
 
-Each source has its own requirements:
+Each source has its own requirements and OS support:
 
-| Source | What you need |
-|---|---|
-| **Amp** | [Amp CLI](https://ampcode.com) installed and available on PATH (or at `~/.amp/bin/amp`) |
-| **Copilot** | [GitHub CLI (`gh`)](https://cli.github.com/) installed, authenticated (`gh auth login`), and available on PATH |
-| **Codex** | Codex app/CLI installed with local session logs in `~/.codex/sessions` |
-| **Gemini** | Gemini CLI installed and authenticated (credentials at `~/.gemini/oauth_creds.json`) |
+| Source | OS support | What you need |
+|---|---|---|
+| **Amp** | macOS / Linux / Windows (where AMP CLI is available) | [Amp CLI](https://ampcode.com) installed and available on PATH (or at `~/.amp/bin/amp`) |
+| **Copilot** | macOS / Linux / Windows | [GitHub CLI (`gh`)](https://cli.github.com/) installed, authenticated (`gh auth login`), and available on PATH |
+| **Codex** | macOS only (Codex app/CLI currently macOS) | Codex app/CLI installed with local session logs in `~/.codex/sessions` |
+| **Gemini** | macOS / Linux / Windows (where Gemini CLI is available) | Gemini CLI installed and authenticated (credentials at `~/.gemini/oauth_creds.json`) |
 
 You only need the prerequisites for the sources you enable — Rashun won't complain about tools you don't use.
 
@@ -214,7 +222,7 @@ All thresholds and time windows are configurable in Preferences → Sources.
 
 Rashun is designed to make adding sources trivial. To add a new one:
 
-1. **Create a new file** in `Sources/AISources/` — e.g., `ClaudeSource.swift`
+1. **Create a new file** in `Sources/RashunCore/AISources/` — e.g., `ClaudeSource.swift`
 2. **Define a struct** conforming to `AISource`:
 
 ```swift
