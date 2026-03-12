@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Rashun — AI Usage Monitor for macOS</title>
-  <meta name="description" content="A macOS menu bar app that tracks your AI coding tool usage across Amp, Copilot, Codex, and Gemini — so you always know where you stand." />
-  <meta name="keywords" content="Rashun, AI usage monitor, macOS menu bar app, Copilot usage tracker, Amp usage, Codex usage, Gemini usage, AI token tracker, AI cost tracker, developer tools macOS, Alexander Heffernan" />
+  <title>Rashun — AI Usage Monitor for macOS + Cross-Platform CLI</title>
+  <meta name="description" content="Rashun is a macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Copilot, Codex, and Gemini." />
+  <meta name="keywords" content="Rashun, AI usage monitor, macOS menu bar app, cross-platform CLI, Linux Windows CLI, Copilot usage tracker, Amp usage, Codex usage, Gemini usage, AI token tracker, developer tools" />
   <meta name="author" content="Alexander Heffernan" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://rashun.alexheffernan.dev" />
@@ -17,8 +17,8 @@
   <!-- Open Graph (link previews in Slack, iMessage, Discord, Facebook, etc.) -->
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://rashun.alexheffernan.dev" />
-  <meta property="og:title" content="Rashun — AI Usage Monitor for macOS" />
-  <meta property="og:description" content="A macOS menu bar app that tracks your AI coding tool usage across Amp, Copilot, Codex, and Gemini — so you always know where you stand." />
+  <meta property="og:title" content="Rashun — AI Usage Monitor for macOS + Cross-Platform CLI" />
+  <meta property="og:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Copilot, Codex, and Gemini." />
   <meta property="og:image" content="https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg" />
   <meta property="og:image:alt" content="Rashun app icon" />
   <meta property="og:site_name" content="Rashun" />
@@ -27,8 +27,8 @@
   <!-- Twitter / X Card -->
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:url" content="https://rashun.alexheffernan.dev" />
-  <meta name="twitter:title" content="Rashun — AI Usage Monitor for macOS" />
-  <meta name="twitter:description" content="A macOS menu bar app that tracks your AI coding tool usage across Amp, Copilot, Codex, and Gemini — so you always know where you stand." />
+  <meta name="twitter:title" content="Rashun — AI Usage Monitor for macOS + Cross-Platform CLI" />
+  <meta name="twitter:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Copilot, Codex, and Gemini." />
   <meta name="twitter:image" content="https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg" />
   <meta name="twitter:image:alt" content="Rashun app icon" />
   <meta name="twitter:creator" content="@AlexanderHeffernan" />
@@ -39,9 +39,9 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Rashun",
-    "operatingSystem": "macOS",
+    "operatingSystem": "macOS, Windows, Linux",
     "applicationCategory": "DeveloperApplication",
-    "description": "A macOS menu bar app that tracks your AI coding tool usage across Amp, Copilot, Codex, and Gemini — so you always know where you stand.",
+    "description": "A macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Copilot, Codex, and Gemini.",
     "url": "https://rashun.alexheffernan.dev",
     "image": "https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg",
     "author": {
@@ -54,10 +54,12 @@
       "price": "0",
       "priceCurrency": "USD"
     },
-    "keywords": "AI usage monitor, Copilot tracker, Amp usage, Codex, Gemini, macOS menu bar, developer tools"
+    "keywords": "AI usage monitor, Copilot tracker, Amp usage, Codex, Gemini, macOS menu bar, cross-platform CLI"
   }
   </script>
   <style>
+    @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
     :root {
@@ -69,12 +71,13 @@
       --text: #ffffff;
       --text-muted: #B9B4D6;
       --warning: #FFD166;
+      --stroke: rgba(147, 90, 253, 0.18);
     }
 
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
@@ -95,7 +98,7 @@
       background: rgba(19, 17, 41, 0.85);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(147, 90, 253, 0.1);
+      border-bottom: 1px solid var(--stroke);
     }
 
     .nav-brand {
@@ -129,6 +132,7 @@
     }
 
     .nav-links a:hover { color: var(--text); }
+    .nav-links a.active { color: var(--text); }
 
     .nav-github {
       display: flex;
@@ -137,7 +141,7 @@
       background: var(--bg-card-alt);
       padding: 0.45rem 1rem;
       border-radius: 8px;
-      border: 1px solid rgba(147, 90, 253, 0.2);
+      border: 1px solid var(--stroke);
       color: var(--text) !important;
       transition: border-color 0.2s, background 0.2s;
     }
@@ -188,7 +192,7 @@
       font-weight: 800;
       letter-spacing: -0.03em;
       margin-bottom: 1rem;
-      background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 100%);
+      background: linear-gradient(135deg, var(--text) 0%, var(--text-muted) 85%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -225,7 +229,7 @@
       display: flex;
       align-items: center;
       background: var(--bg-card);
-      border: 1px solid rgba(147, 90, 253, 0.2);
+      border: 1px solid var(--stroke);
       border-radius: 12px;
       padding: 0.15rem 0.15rem 0.15rem 1.25rem;
       gap: 0.75rem;
@@ -236,7 +240,7 @@
 
     .install-box code {
       flex: 1;
-      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-family: "JetBrains Mono", "Cascadia Code", monospace;
       font-size: 0.85rem;
       color: var(--text-muted);
       white-space: nowrap;
@@ -258,6 +262,39 @@
       white-space: nowrap;
       transition: opacity 0.2s, transform 0.1s;
       flex-shrink: 0;
+    }
+
+    .install-tabs {
+      display: inline-flex;
+      gap: 0.5rem;
+      background: var(--bg-card-alt);
+      border: 1px solid var(--stroke);
+      border-radius: 999px;
+      padding: 0.35rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .install-tab {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding: 0.4rem 0.9rem;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s;
+      font-weight: 600;
+    }
+
+    .install-tab.active {
+      background: rgba(147, 90, 253, 0.2);
+      color: var(--text);
+    }
+
+    .install-hint {
+      margin-top: 0.8rem;
+      color: var(--text-muted);
+      font-size: 0.85rem;
     }
 
     .copy-btn:hover { opacity: 0.9; }
@@ -283,7 +320,7 @@
       background: var(--bg-card);
       padding: 0.4rem 0.85rem;
       border-radius: 20px;
-      border: 1px solid rgba(147, 90, 253, 0.1);
+      border: 1px solid var(--stroke);
     }
 
     .badge-dot {
@@ -335,7 +372,7 @@
 
     .screenshot-card {
       background: var(--bg-card);
-      border: 1px solid rgba(147, 90, 253, 0.1);
+      border: 1px solid var(--stroke);
       border-radius: 16px;
       overflow: hidden;
       transition: border-color 0.3s, transform 0.3s;
@@ -367,13 +404,13 @@
     /* ── Features ── */
     .features-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 1.25rem;
     }
 
     .feature-card {
       background: var(--bg-card);
-      border: 1px solid rgba(147, 90, 253, 0.1);
+      border: 1px solid var(--stroke);
       border-radius: 16px;
       padding: 1.75rem;
       transition: border-color 0.3s, transform 0.3s;
@@ -385,15 +422,12 @@
     }
 
     .feature-icon {
-      font-size: 1.5rem;
-      margin-bottom: 1rem;
-      width: 44px;
-      height: 44px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--bg-card-alt);
-      border-radius: 12px;
+      font-size: 0.7rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.8rem;
+      font-weight: 700;
     }
 
     .feature-card h3 {
@@ -409,38 +443,66 @@
     }
 
     /* ── Sources ── */
-    .sources-row {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      flex-wrap: wrap;
+    .sources-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.25rem;
       margin-top: 2rem;
     }
 
-    .source-pill {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
+    .source-card {
       background: var(--bg-card);
-      border: 1px solid rgba(147, 90, 253, 0.12);
-      border-radius: 12px;
-      padding: 0.8rem 1.4rem;
-      font-weight: 600;
-      font-size: 0.95rem;
-      transition: border-color 0.3s;
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
     }
 
-    .source-pill:hover { border-color: rgba(147, 90, 253, 0.3); }
+    .source-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
 
     .source-dot {
-      width: 10px;
-      height: 10px;
+      width: 12px;
+      height: 12px;
       border-radius: 50%;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .source-meta {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      display: grid;
+      gap: 0.4rem;
+    }
+
+    .source-meta span {
+      display: block;
+    }
+
+    .callout {
+      background: rgba(147, 90, 253, 0.08);
+      border: 1px solid rgba(147, 90, 253, 0.25);
+      padding: 1.25rem 1.5rem;
+      border-radius: 16px;
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    .callout strong {
+      font-size: 1rem;
     }
 
     /* ── Footer ── */
     footer {
-      border-top: 1px solid rgba(147, 90, 253, 0.1);
+      border-top: 1px solid var(--stroke);
       padding: 3rem 2rem;
       text-align: center;
     }
@@ -513,6 +575,7 @@
       .hero-icon { width: 88px; height: 88px; border-radius: 22px; }
       .screenshots-grid { grid-template-columns: 1fr; }
       .features-grid { grid-template-columns: 1fr; }
+      .sources-grid { grid-template-columns: 1fr; }
       .nav-links a:not(.nav-github) { display: none; }
       .section-title { font-size: 1.8rem; }
       .install-box code { font-size: 0.72rem; }
@@ -537,8 +600,11 @@
       Rashun
     </a>
     <div class="nav-links">
+      <a href="#install">Install</a>
       <a href="#screenshots">Screenshots</a>
       <a href="#features">Features</a>
+      <a href="#sources">Sources</a>
+      <a href="#contribute">Contribute</a>
       <a class="nav-github" href="https://github.com/alexanderheffernan/rashun" target="_blank" rel="noopener">
         <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -547,20 +613,25 @@
   </nav>
 
   <!-- Hero -->
-  <section class="hero">
+  <section class="hero" id="install">
     <img class="hero-icon fade-in" src="https://raw.githubusercontent.com/alexanderheffernan/rashun/main/icon.jpg" alt="Rashun app icon" />
     <h1 class="fade-in fade-in-delay-1">Rashun</h1>
-    <p class="fade-in fade-in-delay-2">A macOS menu bar app that tracks your AI coding tool usage across multiple sources — so you always know where you stand.</p>
+    <p class="fade-in fade-in-delay-2">A macOS menu bar app with a cross-platform CLI that tracks your AI coding tool usage — so you know where you stand.</p>
     <div class="install-block fade-in fade-in-delay-3">
-      <div class="install-label">Install with one command</div>
+      <div class="install-tabs" role="tablist">
+        <button class="install-tab active" data-os="unix" type="button">macOS / Linux</button>
+        <button class="install-tab" data-os="windows" type="button">Windows</button>
+      </div>
       <div class="install-box">
-        <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/install.sh | bash</code>
+        <code id="install-cmd"
+          data-unix="curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/install.sh | bash"
+          data-windows="irm https://raw.githubusercontent.com/alexanderheffernan/rashun/main/scripts/install/windows.ps1 | iex">curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/install.sh | bash</code>
         <button class="copy-btn" onclick="copyInstall()">Copy</button>
       </div>
     </div>
     <div class="hero-badges fade-in fade-in-delay-4">
-      <span class="badge"><span class="badge-dot purple"></span> macOS 14+</span>
-      <span class="badge"><span class="badge-dot cyan"></span> Swift 6.2</span>
+      <span class="badge"><span class="badge-dot purple"></span> macOS 14+ app</span>
+      <span class="badge"><span class="badge-dot cyan"></span> CLI: macOS / Linux / Windows</span>
       <span class="badge"><span class="badge-dot purple"></span> MIT License</span>
       <span class="badge"><span class="badge-dot cyan"></span> Open Source</span>
     </div>
@@ -569,8 +640,8 @@
   <!-- Screenshots -->
   <section id="screenshots">
     <div class="section-label fade-in">See it in action</div>
-    <h2 class="section-title fade-in fade-in-delay-1">Designed to stay out of your way</h2>
-    <p class="section-desc fade-in fade-in-delay-2">Rashun lives in your menu bar and gives you an at-a-glance view of your remaining quota across every AI tool you use.</p>
+    <h2 class="section-title fade-in fade-in-delay-1">Built for menus and terminals</h2>
+    <p class="section-desc fade-in fade-in-delay-2">Rashun gives you a live menu bar dashboard on macOS and the same data from a CLI on macOS, Linux, or Windows.</p>
     <div class="screenshots-grid">
       <div class="screenshot-card fade-in fade-in-delay-3">
         <img src="https://raw.githubusercontent.com/alexanderheffernan/rashun/main/screenshots/menu-bar.png" alt="Menu bar dropdown showing source usage" loading="lazy" />
@@ -579,6 +650,14 @@
       <div class="screenshot-card fade-in fade-in-delay-4">
         <img src="https://raw.githubusercontent.com/alexanderheffernan/rashun/main/screenshots/usage-history.png" alt="Usage History window with chart and forecasts" loading="lazy" />
         <div class="screenshot-caption">Usage history with forecasts</div>
+      </div>
+      <div class="screenshot-card fade-in fade-in-delay-5">
+        <img src="https://raw.githubusercontent.com/alexanderheffernan/rashun/main/screenshots/preferences.png" alt="Preferences window — Sources tab" loading="lazy" />
+        <div class="screenshot-caption">Preferences — Sources &amp; notification rules</div>
+      </div>
+      <div class="screenshot-card fade-in fade-in-delay-6">
+        <img src="https://raw.githubusercontent.com/alexanderheffernan/rashun/main/screenshots/cli.png" alt="CLI output showing usage across sources" loading="lazy" />
+        <div class="screenshot-caption">CLI status output (cross-platform)</div>
       </div>
 
     </div>
@@ -591,49 +670,24 @@
     <p class="section-desc fade-in fade-in-delay-2">Built for developers who juggle multiple AI coding tools and want a single source of truth.</p>
     <div class="features-grid">
       <div class="feature-card fade-in">
-        <div class="feature-icon">📊</div>
-        <h3>At-a-glance menu bar</h3>
-        <p>Ring icons show remaining quota per metric, with monochrome or source-branded colors.</p>
+        <div class="feature-icon">Menu Bar</div>
+        <h3>At-a-glance quota rings</h3>
+        <p>Stay on top of remaining usage with clean, color-aware menu bar rings and a fast dropdown view.</p>
       </div>
       <div class="feature-card fade-in fade-in-delay-1">
-        <div class="feature-icon">🔌</div>
-        <h3>Four sources built in</h3>
-        <p>Ships with Amp, GitHub Copilot, Codex, and Gemini CLI support out of the box.</p>
+        <div class="feature-icon">CLI</div>
+        <h3>Cross-platform CLI</h3>
+        <p>Script usage checks, grab JSON output, and integrate into terminals on macOS, Linux, or Windows.</p>
       </div>
       <div class="feature-card fade-in fade-in-delay-2">
-        <div class="feature-icon">📈</div>
-        <h3>Usage history &amp; charts</h3>
-        <p>Track usage trends over time with selectable ranges — Day, Week, Month, or All.</p>
+        <div class="feature-icon">Forecasts</div>
+        <h3>History + projections</h3>
+        <p>Track trends over time and see where your remaining quota is headed before it hits zero.</p>
       </div>
       <div class="feature-card fade-in fade-in-delay-3">
-        <div class="feature-icon">🔮</div>
-        <h3>Forecasting</h3>
-        <p>Projects when you'll run out based on your burn rate. Forecast curves appear on the chart.</p>
-      </div>
-      <div class="feature-card fade-in fade-in-delay-4">
-        <div class="feature-icon">🔔</div>
+        <div class="feature-icon">Alerts</div>
         <h3>Smart notifications</h3>
-        <p>Get alerted when quota is low, usage spikes, or you're on pace to hit zero before reset.</p>
-      </div>
-      <div class="feature-card fade-in fade-in-delay-5">
-        <div class="feature-icon">🔄</div>
-        <h3>Auto-updates</h3>
-        <p>Checks GitHub releases every 6 hours. One-click install &amp; restart from Preferences.</p>
-      </div>
-      <div class="feature-card fade-in fade-in-delay-6">
-        <div class="feature-icon">🧩</div>
-        <h3>Extensible by design</h3>
-        <p>Adding a new AI source is a single Swift file. The build script auto-discovers it.</p>
-      </div>
-      <div class="feature-card fade-in fade-in-delay-7">
-        <div class="feature-icon">💾</div>
-        <h3>Data management</h3>
-        <p>Export and import usage history as JSON. Delete by source, date range, or entirely.</p>
-      </div>
-      <div class="feature-card fade-in fade-in-delay-8">
-        <div class="feature-icon">🩺</div>
-        <h3>Source health monitoring</h3>
-        <p>Tracks fetch failures, surfaces actionable errors, and shows warning indicators.</p>
+        <p>Get alerted on low quota, unusual spikes, or when your pacing points to a cutoff.</p>
       </div>
     </div>
   </section>
@@ -642,12 +696,52 @@
   <section id="sources" style="text-align: center;">
     <div class="section-label fade-in">Supported sources</div>
     <h2 class="section-title fade-in fade-in-delay-1">Track the tools you actually use</h2>
-    <p class="section-desc fade-in fade-in-delay-2" style="margin-left: auto; margin-right: auto;">Enable whichever ones you use — Rashun won't complain about tools you don't.</p>
-    <div class="sources-row">
-      <div class="source-pill fade-in fade-in-delay-3"><span class="source-dot" style="background: #E84545;"></span> Amp</div>
-      <div class="source-pill fade-in fade-in-delay-4"><span class="source-dot" style="background: #FFFFFF;"></span> GitHub Copilot</div>
-      <div class="source-pill fade-in fade-in-delay-5"><span class="source-dot" style="background: #6E8FF6;"></span> Codex</div>
-      <div class="source-pill fade-in fade-in-delay-6"><span class="source-dot" style="background: #4ECDC4;"></span> Gemini CLI</div>
+    <p class="section-desc fade-in fade-in-delay-2" style="margin-left: auto; margin-right: auto;">Each source lists OS support and what has been tested so far.</p>
+    <div class="sources-grid" style="text-align: left;">
+      <div class="source-card fade-in fade-in-delay-3">
+        <div class="source-header"><span class="source-dot" style="background: #E84545;"></span> AMP</div>
+        <div class="source-meta">
+          <span><strong>OS:</strong> macOS / Linux / Windows (where AMP CLI is available)</span>
+          <span><strong>Tested:</strong> AMP Free only (paid plans not verified)</span>
+          <span><strong>Notes:</strong> Reads AMP CLI output and parses remaining quota.</span>
+        </div>
+      </div>
+      <div class="source-card fade-in fade-in-delay-4">
+        <div class="source-header"><span class="source-dot" style="background: #FFFFFF;"></span> GitHub Copilot</div>
+        <div class="source-meta">
+          <span><strong>OS:</strong> macOS / Linux / Windows</span>
+          <span><strong>Tested:</strong> Copilot Education free credits only (paid plans not verified)</span>
+          <span><strong>Notes:</strong> Uses GitHub CLI for auth and Copilot quota API.</span>
+        </div>
+      </div>
+      <div class="source-card fade-in fade-in-delay-5">
+        <div class="source-header"><span class="source-dot" style="background: #6E8FF6;"></span> Codex</div>
+        <div class="source-meta">
+          <span><strong>OS:</strong> macOS only (Codex app/CLI)</span>
+          <span><strong>Tested:</strong> Codex app free usage only (paid plans not verified)</span>
+          <span><strong>Notes:</strong> Parses local session logs from the Codex app.</span>
+        </div>
+      </div>
+      <div class="source-card fade-in fade-in-delay-6">
+        <div class="source-header"><span class="source-dot" style="background: #4ECDC4;"></span> Gemini CLI</div>
+        <div class="source-meta">
+          <span><strong>OS:</strong> macOS / Linux / Windows (where Gemini CLI is available)</span>
+          <span><strong>Tested:</strong> Free usage only (paid plans not verified)</span>
+          <span><strong>Notes:</strong> Tracks quota per model via local Gemini CLI credentials.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contribute -->
+  <section id="contribute">
+    <div class="section-label fade-in">Open source</div>
+    <h2 class="section-title fade-in fade-in-delay-1">Help build the next sources</h2>
+    <p class="section-desc fade-in fade-in-delay-2">Rashun is MIT licensed and built in the open. If you want to ship new AI sources or help bring a menu bar app to Windows and Linux, jump in.</p>
+    <div class="callout fade-in fade-in-delay-3">
+      <strong>Looking for experienced contributors</strong>
+      <span>We need help with new AI source integrations, robust parsing across plans, and platform app shells for Windows and Linux.</span>
+      <span>Start at the repository and open an issue or PR.</span>
     </div>
   </section>
 
@@ -692,8 +786,49 @@
 
     document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
 
+    const installCode = document.getElementById('install-cmd');
+    const installTabs = document.querySelectorAll('.install-tab');
+
+    function setInstallOS(os) {
+      installTabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.os === os);
+      });
+      if (os === 'windows') {
+        installCode.textContent = installCode.dataset.windows;
+      } else {
+        installCode.textContent = installCode.dataset.unix;
+      }
+    }
+
+    installTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        setInstallOS(tab.dataset.os);
+      });
+    });
+
+    const isWindows = navigator.userAgent.toLowerCase().includes('windows');
+    setInstallOS(isWindows ? 'windows' : 'unix');
+
+    const navLinks = Array.from(document.querySelectorAll('.nav-links a[href^="#"]'));
+    const sections = navLinks
+      .map(link => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+
+    const navObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) { return; }
+        navLinks.forEach(link => link.classList.remove('active'));
+        const activeLink = navLinks.find(link => link.getAttribute('href') === `#${entry.target.id}`);
+        if (activeLink) {
+          activeLink.classList.add('active');
+        }
+      });
+    }, { threshold: 0.4 });
+
+    sections.forEach(section => navObserver.observe(section));
+
     function copyInstall() {
-      const cmd = document.getElementById('install-cmd').textContent;
+      const cmd = installCode.textContent;
       navigator.clipboard.writeText(cmd).then(() => {
         const btn = document.querySelector('.copy-btn');
         btn.textContent = 'Copied!';
