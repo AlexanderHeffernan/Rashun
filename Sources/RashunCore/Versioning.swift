@@ -5,15 +5,19 @@ public enum Versioning {
         bundle: Bundle = .main,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         generatedVersion: String = rashunVersion,
+        bundleVersionProvider: (() -> String?)? = nil,
         nearbyInfoPlistVersion: (() -> String?)? = nil
     ) -> String {
+        let resolvedBundleVersionProvider = bundleVersionProvider ?? {
+            bundle.infoDictionary?["CFBundleShortVersionString"] as? String
+        }
         let resolvedNearbyInfoPlistVersion = nearbyInfoPlistVersion ?? Versioning.versionFromNearbyInfoPlist
 
         if let envVersion = environment["RASHUN_VERSION"], !envVersion.isEmpty {
             return envVersion
         }
 
-        if let bundleVersion = bundle.infoDictionary?["CFBundleShortVersionString"] as? String,
+        if let bundleVersion = resolvedBundleVersionProvider(),
            !bundleVersion.isEmpty {
             return bundleVersion
         }

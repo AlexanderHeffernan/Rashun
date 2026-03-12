@@ -7,6 +7,7 @@ final class VersionComparisonTests: XCTestCase {
         let version = Versioning.versionString(
             environment: ["RASHUN_VERSION": "9.8.7"],
             generatedVersion: "1.2.3",
+            bundleVersionProvider: { "16.0" },
             nearbyInfoPlistVersion: { "4.5.6" }
         )
         XCTAssertEqual(version, "9.8.7")
@@ -16,6 +17,7 @@ final class VersionComparisonTests: XCTestCase {
         let version = Versioning.versionString(
             environment: [:],
             generatedVersion: "1.2.3",
+            bundleVersionProvider: { nil },
             nearbyInfoPlistVersion: { "4.5.6" }
         )
         XCTAssertEqual(version, "1.2.3")
@@ -25,6 +27,7 @@ final class VersionComparisonTests: XCTestCase {
         let version = Versioning.versionString(
             environment: [:],
             generatedVersion: "0.0.0",
+            bundleVersionProvider: { nil },
             nearbyInfoPlistVersion: { "4.5.6" }
         )
         XCTAssertEqual(version, "4.5.6")
