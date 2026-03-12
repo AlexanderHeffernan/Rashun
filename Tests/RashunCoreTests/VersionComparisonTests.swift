@@ -4,8 +4,30 @@ import XCTest
 final class VersionComparisonTests: XCTestCase {
 
     func testVersionString_prefersEnvironmentVariable() {
-        let version = Versioning.versionString(environment: ["RASHUN_VERSION": "9.8.7"])
+        let version = Versioning.versionString(
+            environment: ["RASHUN_VERSION": "9.8.7"],
+            generatedVersion: "1.2.3",
+            nearbyInfoPlistVersion: { "4.5.6" }
+        )
         XCTAssertEqual(version, "9.8.7")
+    }
+
+    func testVersionString_prefersGeneratedVersionOverNearbyInfoPlist() {
+        let version = Versioning.versionString(
+            environment: [:],
+            generatedVersion: "1.2.3",
+            nearbyInfoPlistVersion: { "4.5.6" }
+        )
+        XCTAssertEqual(version, "1.2.3")
+    }
+
+    func testVersionString_fallsBackToNearbyInfoPlistWhenGeneratedIsDefault() {
+        let version = Versioning.versionString(
+            environment: [:],
+            generatedVersion: "0.0.0",
+            nearbyInfoPlistVersion: { "4.5.6" }
+        )
+        XCTAssertEqual(version, "4.5.6")
     }
 
     func testNewer_patchBump() {

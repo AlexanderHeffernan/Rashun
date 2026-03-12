@@ -3,8 +3,12 @@ import Foundation
 public enum Versioning {
     public static func versionString(
         bundle: Bundle = .main,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        generatedVersion: String = rashunVersion,
+        nearbyInfoPlistVersion: (() -> String?)? = nil
     ) -> String {
+        let resolvedNearbyInfoPlistVersion = nearbyInfoPlistVersion ?? Versioning.versionFromNearbyInfoPlist
+
         if let envVersion = environment["RASHUN_VERSION"], !envVersion.isEmpty {
             return envVersion
         }
@@ -14,11 +18,15 @@ public enum Versioning {
             return bundleVersion
         }
 
-        if let fileVersion = versionFromNearbyInfoPlist(), !fileVersion.isEmpty {
+        if generatedVersion != "0.0.0" {
+            return generatedVersion
+        }
+
+        if let fileVersion = resolvedNearbyInfoPlistVersion(), !fileVersion.isEmpty {
             return fileVersion
         }
 
-        return rashunVersion
+        return generatedVersion
     }
 
     private static func versionFromNearbyInfoPlist() -> String? {
