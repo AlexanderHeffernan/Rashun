@@ -35,6 +35,10 @@ Rashun is currently rolling out cross-platform support in phases:
 
 As a student relying on the free tiers of multiple AI coding tools, I kept running into the same problem — burning through one tool's quota without realizing it, then scrambling to figure out which others I had left. I built Rashun so I'd never have to guess again.
 
+### Install
+
+MacOS/Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexanderheffernan/rashun/main/install.sh | bash
 ```
