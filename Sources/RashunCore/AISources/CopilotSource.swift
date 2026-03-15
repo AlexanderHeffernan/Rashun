@@ -7,6 +7,7 @@ public struct CopilotSource: AISource {
     public let menuBarBrandColorHex: UInt32 = 0xFFFFFF
     public var agentConfigDirectory: String? { "~/.copilot" }
     public var agentInstructionFilePath: String? { "~/.copilot/instructions/rashun.instructions.md" }
+    public var agentRequiresManualSetup: Bool { true }
 
     public init() {}
 

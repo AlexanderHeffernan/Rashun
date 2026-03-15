@@ -5,7 +5,7 @@ import XCTest
 final class CLIParsingTests: XCTestCase {
     func testRootConfigurationIncludesExpectedSubcommands() {
         let names = Set(RashunCLI.configuration.subcommands.map { $0.configuration.commandName })
-        XCTAssertEqual(names, ["check", "forecast", "history", "status", "sources", "update", "version"])
+        XCTAssertEqual(names, ["check", "forecast", "history", "setup", "status", "sources", "update", "version"])
     }
 
     func testRootParseAcceptsGlobalFlags() throws {

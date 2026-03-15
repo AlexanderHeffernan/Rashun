@@ -17,7 +17,8 @@ enum SkillGenerator {
         Rashun installed — a CLI tool that tracks your remaining AI usage quota.
 
         ### When to check usage
-        - Before starting a large or multi-step task
+        - **Always** before starting a large or multi-step task (even if the user doesn’t mention Rashun)
+        - Immediately if the user asks whether you have enough usage to complete a task
         - When you sense you've been working for a while and may have used significant quota
         - After completing a major task, to inform the user of remaining capacity
 

@@ -21,6 +21,16 @@ public protocol AISource: Sendable {
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult?
     /// Source-specific brand color used by source-solid menu bar rings.
     var menuBarBrandColorHex: UInt32 { get }
+    /// Directory that indicates the agent is installed (e.g. "~/.config/amp").
+    /// Return nil if this source has no associated agent.
+    var agentConfigDirectory: String? { get }
+    /// Path to the agent's global instruction file where skill text is injected.
+    /// Return nil if the agent requires manual setup.
+    var agentInstructionFilePath: String? { get }
+    /// Display name for the agent in CLI output. Defaults to the source name.
+    var agentName: String { get }
+    /// If true, the agent requires manual setup (do not write instruction files).
+    var agentRequiresManualSetup: Bool { get }
 }
 
 extension AISource {
@@ -90,6 +100,9 @@ extension AISource {
 
     /// Display name for the agent in CLI output. Defaults to the source name.
     public var agentName: String { name }
+
+    /// Return true if the agent requires manual setup.
+    public var agentRequiresManualSetup: Bool { false }
 
     /// Shared helper used when a source receives an unsupported metric ID.
     public func unsupportedMetricError(_ metricId: String) -> NSError {
