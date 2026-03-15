@@ -38,7 +38,8 @@ enum InteractiveSelector {
         tcgetattr(STDIN_FILENO, &original)
 
         var raw = original
-        raw.c_lflag &= ~UInt(ECHO | ICANON)
+        let disabled = tcflag_t(ECHO | ICANON)
+        raw.c_lflag &= ~disabled
         raw.c_cc.6 = 1  // VMIN
         raw.c_cc.5 = 0  // VTIME
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
@@ -108,7 +109,7 @@ enum InteractiveSelector {
         }
         print()
         print("  \(formatter.colorize(prompt, as: .cyan))", terminator: "")
-        fflush(stdout)
+        FileHandle.standardOutput.synchronizeFile()
     }
 
     private static func clearLines(_ count: Int) {
@@ -116,7 +117,7 @@ enum InteractiveSelector {
             print("\u{001B}[A\u{001B}[2K", terminator: "")
         }
         print("\r", terminator: "")
-        fflush(stdout)
+        FileHandle.standardOutput.synchronizeFile()
     }
 
     private static func stdinIsTTY() -> Bool {

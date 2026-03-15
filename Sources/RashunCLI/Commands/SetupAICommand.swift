@@ -259,7 +259,7 @@ struct SetupAICommand: AsyncParsableCommand {
         }
         print("")
         print("Enter number: ", terminator: "")
-        fflush(stdout)
+        FileHandle.standardOutput.synchronizeFile()
 
         guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines),
               let choice = Int(input),
