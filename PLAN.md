@@ -304,7 +304,7 @@ The `--manual` flag lets safety-conscious users see the exact skill text that wo
 - [X] **`AgentDetector`** — iterate `allSources`, filter by `agentConfigDirectory`, check filesystem
 - [X] **`SkillGenerator`** — template rendering using AISource agent properties
 - [X] **`SkillInstaller`** — file read/write with marker-based idempotency
-- [ ] **`InteractiveSelector`** — terminal checkbox UI
+- [X] **`InteractiveSelector`** — terminal checkbox UI
 - [ ] **`SetupAICommand`** — ties it all together as `rashun setup ai`
 - [ ] **Register in `RashunCLI.swift`** — add to subcommands
 - [ ] **Tests** — unit tests for each component, integration test for full flow
