@@ -5,6 +5,8 @@ public struct CodexSource: AISource {
     public let requirements = "OS support: macOS only. Requires Codex app installed and local session logs at ~/.codex/sessions."
     public let metrics = [AISourceMetric(id: "codex", title: "Codex")]
     public let menuBarBrandColorHex: UInt32 = 0x3C35FF
+    public var agentConfigDirectory: String? { "~/.codex" }
+    public var agentInstructionFilePath: String? { "~/.codex/AGENTS.md" }
 
     public init() {}
 

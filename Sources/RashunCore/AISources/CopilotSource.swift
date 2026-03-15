@@ -5,6 +5,9 @@ public struct CopilotSource: AISource {
     public let requirements = "OS support: macOS/Linux/Windows. Requires GitHub CLI 'gh' configured, authenticated, and available on PATH (used to fetch auth token)."
     public let metrics = [AISourceMetric(id: "copilot-premium-interactions", title: "Copilot")]
     public let menuBarBrandColorHex: UInt32 = 0xFFFFFF
+    public var agentConfigDirectory: String? { "~/.copilot" }
+    public var agentInstructionFilePath: String? { "~/.copilot/instructions/rashun.instructions.md" }
+    public var agentRequiresManualSetup: Bool { true }
 
     public init() {}
 
