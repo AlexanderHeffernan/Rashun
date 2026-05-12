@@ -41,10 +41,6 @@ struct MenuDropdownSourceCardView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(width: 300, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.34))
-        )
     }
 
     @ViewBuilder
