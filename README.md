@@ -81,7 +81,7 @@ irm https://raw.githubusercontent.com/alexanderheffernan/rashun/main/scripts/ins
 ## Features
 
 - **Menu bar at a glance** — Ring icons show remaining quota per metric, with your choice of monochrome or source-branded colors. Display the AI source's logo or the overall remaining usage percentage in the center.
-- **Four sources built in** — Ships with support for **Amp Free**, **GitHub Copilot**, **Codex** (tested with free-tier weekly rate limits only), and **Gemini CLI** (with per-model metric tracking for Gemini). Enable whichever ones you use.
+- **Four sources built in** — Ships with support for **Amp Free**, **GitHub Copilot**, **Codex** (free weekly plus paid-plan 5-hour/weekly windows – in beta), and **Gemini CLI** (with per-model metric tracking for Gemini). Enable whichever ones you use.
 - **Usage history & charts** — A dedicated window charts your usage trends over time with selectable ranges (Day, Week, Month, All). Toggle individual sources on and off in the legend.
 - **Forecasting** — Each source projects when you'll run out based on your burn rate. Amp models its regenerating quota; Copilot, Codex, and Gemini project against their reset windows. Forecast curves appear as dashed lines on the chart alongside a summary of insights.
 - **Smart notifications** — Get alerted when remaining usage drops below a threshold, when you're burning through tokens unusually fast, or when you're on pace to run out before reset. All thresholds are configurable.
@@ -114,7 +114,7 @@ The CLI uses the same `RashunCore` sources and models, so command-line output an
 |---|---|---|
 | **Amp** | Amp Free | Runs `~/.amp/bin/amp usage` and parses `Amp Free: $x/$y remaining` |
 | **Copilot** | Premium Interactions | Uses `gh auth token` for authentication, then hits the GitHub Copilot internal API |
-| **Codex** | Codex | Extracts the latest usage percentage from `~/.codex/sessions/*.jsonl` session logs |
+| **Codex** | Free Weekly Usage, Pro 5 Hour, Pro Weekly | Uses Codex OAuth credentials at `~/.codex/auth.json` to call the Codex usage API for paid-plan windows, with `~/.codex/sessions/*.jsonl` session logs as a local fallback/source for free weekly usage |
 | **Gemini** | 2.5-Flash, 2.5-Flash-Lite, 2.5-Pro, 3-Flash-Preview, 3-Pro-Preview | Uses local `~/.gemini/oauth_creds.json` auth to call Gemini Code Assist quota APIs and tracks each model's remaining usage independently |
 
 ---
@@ -131,7 +131,7 @@ Each source has its own requirements and OS support:
 |---|---|---|
 | **Amp** | macOS / Linux / Windows (where AMP CLI is available) | [Amp CLI](https://ampcode.com) installed and available on PATH (or at `~/.amp/bin/amp`) |
 | **Copilot** | macOS / Linux / Windows | [GitHub CLI (`gh`)](https://cli.github.com/) installed, authenticated (`gh auth login`), and available on PATH |
-| **Codex** | macOS only (Codex app/CLI currently macOS) | Codex app/CLI installed with local session logs in `~/.codex/sessions` |
+| **Codex** | macOS only (Codex app/CLI currently macOS) | Codex app/CLI installed and signed in, with local auth at `~/.codex/auth.json` and session logs in `~/.codex/sessions` |
 | **Gemini** | macOS / Linux / Windows (where Gemini CLI is available) | Gemini CLI installed and authenticated (credentials at `~/.gemini/oauth_creds.json`) |
 
 You only need the prerequisites for the sources you enable — Rashun won't complain about tools you don't use.

@@ -4,39 +4,114 @@ import XCTest
 final class CodexSourceTests: XCTestCase {
     let source = CodexSource()
 
-    func testParseLatestTokenCountParsesUsedPercentAndReset() {
+    func testParseLatestRateLimitSampleParsesInfoRateLimits() {
         let line = #"{"timestamp":"2026-02-05T23:41:03.396Z","type":"event_msg","payload":{"type":"token_count","info":{"rate_limits":{"primary":{"used_percent":73.5,"window_minutes":10080,"resets_at":1770799659}}}}}"#
-        let sample = source.parseLatestTokenCount(from: line)
+        let sample = source.parseLatestRateLimitSample(from: line)
 
         XCTAssertEqual(sample?.timestamp.timeIntervalSince1970 ?? 0, 1_770_334_863.396, accuracy: 0.001)
-        XCTAssertEqual(sample?.usedPercent, 73.5)
-        XCTAssertEqual(sample?.resetsAtEpoch, 1770799659)
+        XCTAssertEqual(sample?.primary?.usedPercent, 73.5)
+        XCTAssertEqual(sample?.primary?.resetsAt, 1770799659)
     }
 
-    func testParseLatestTokenCountParsesPayloadLevelRateLimits() {
+    func testMetricsExposeFreeWeeklyAndProWindows() {
+        XCTAssertEqual(source.metrics.map(\.id), [
+            "codex-free-weekly",
+            "codex-pro-5h",
+            "codex-pro-weekly",
+        ])
+        XCTAssertEqual(source.metrics.map(\.title), [
+            "Free Weekly Usage",
+            "Pro 5 Hour",
+            "Pro Weekly",
+        ])
+    }
+
+    func testParseProUsageByMetricParsesPrimaryAndSecondaryWindows() {
+        let response = CodexUsageResponse(
+            planType: "pro",
+            rateLimit: CodexRateLimit(
+                primaryWindow: CodexRateLimitWindow(
+                    usedPercent: 37.5,
+                    resetAt: 1_778_625_600,
+                    limitWindowSeconds: 18_000
+                ),
+                secondaryWindow: CodexRateLimitWindow(
+                    usedPercent: 82,
+                    resetAt: 1_779_126_400,
+                    limitWindowSeconds: 604_800
+                )
+            )
+        )
+
+        let usages = source.parseProUsageByMetric(from: response)
+
+        XCTAssertEqual(usages["codex-pro-5h"]?.remaining, 62.5)
+        XCTAssertEqual(usages["codex-pro-5h"]?.limit, 100)
+        XCTAssertEqual(usages["codex-pro-5h"]?.resetDate?.timeIntervalSince1970, 1_778_625_600)
+        XCTAssertEqual(usages["codex-pro-5h"]?.cycleStartDate?.timeIntervalSince1970, 1_778_607_600)
+        XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 18)
+        XCTAssertEqual(usages["codex-pro-weekly"]?.limit, 100)
+    }
+
+    func testParseProUsageByMetricClampsUsedPercent() {
+        let overused = CodexUsageResponse(
+            rateLimit: CodexRateLimit(
+                primaryWindow: CodexRateLimitWindow(usedPercent: 125),
+                secondaryWindow: CodexRateLimitWindow(usedPercent: -5)
+            )
+        )
+
+        let usages = source.parseProUsageByMetric(from: overused)
+
+        XCTAssertEqual(usages["codex-pro-5h"]?.remaining, 0)
+        XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 100)
+    }
+
+    func testParseLatestRateLimitSampleParsesPayloadLevelRateLimits() {
         let line = #"{"timestamp":"2026-03-02T23:13:10.936Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":{"used_percent":4.0,"window_minutes":10080,"resets_at":1772691486}}}}"#
-        let sample = source.parseLatestTokenCount(from: line)
+        let sample = source.parseLatestRateLimitSample(from: line)
 
         XCTAssertEqual(sample?.timestamp.timeIntervalSince1970 ?? 0, 1_772_493_190.936, accuracy: 0.001)
-        XCTAssertEqual(sample?.usedPercent, 4.0)
-        XCTAssertEqual(sample?.resetsAtEpoch, 1772691486)
+        XCTAssertEqual(sample?.primary?.usedPercent, 4.0)
+        XCTAssertEqual(sample?.primary?.resetsAt, 1772691486)
     }
 
-    func testParseLatestTokenCountIgnoresNonCodexLimitID() {
+    func testParseLatestRateLimitSampleParsesTopLevelRateLimits() {
+        let line = #"{"timestamp":"2026-05-12T22:39:49.548Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1717179}}},"rate_limits":{"limit_id":"codex","primary":{"used_percent":5.0,"window_minutes":300,"resets_at":1778642727},"secondary":{"used_percent":1.0,"window_minutes":10080,"resets_at":1779229527},"plan_type":"plus"}}"#
+        let sample = source.parseLatestRateLimitSample(from: line)
+
+        XCTAssertEqual(sample?.timestamp.timeIntervalSince1970 ?? 0, 1_778_625_589.548, accuracy: 0.001)
+        XCTAssertEqual(sample?.primary?.usedPercent, 5.0)
+        XCTAssertEqual(sample?.primary?.windowMinutes, 300)
+        XCTAssertEqual(sample?.primary?.resetsAt, 1_778_642_727)
+    }
+
+    func testParseLatestRateLimitSampleParsesSecondaryWindowAndPlan() {
+        let line = #"{"timestamp":"2026-05-12T22:39:49.548Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1717179}}},"rate_limits":{"limit_id":"codex","primary":{"used_percent":5.0,"window_minutes":300,"resets_at":1778642727},"secondary":{"used_percent":1.0,"window_minutes":10080,"resets_at":1779229527},"plan_type":"plus"}}"#
+        let sample = source.parseLatestRateLimitSample(from: line)
+
+        XCTAssertEqual(sample?.planType, "plus")
+        XCTAssertEqual(sample?.primary?.usedPercent, 5.0)
+        XCTAssertEqual(sample?.primary?.windowMinutes, 300)
+        XCTAssertEqual(sample?.secondary?.usedPercent, 1.0)
+        XCTAssertEqual(sample?.secondary?.windowMinutes, 10_080)
+    }
+
+    func testParseLatestRateLimitSampleIgnoresNonCodexLimitID() {
         let line = #"{"timestamp":"2026-03-02T23:13:10.936Z","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"something_else","primary":{"used_percent":4.0,"window_minutes":10080,"resets_at":1772691486}}}}"#
-        let sample = source.parseLatestTokenCount(from: line)
+        let sample = source.parseLatestRateLimitSample(from: line)
 
         XCTAssertNil(sample)
     }
 
-    func testParseLatestTokenCountUsesLatestMatchingLine() {
+    func testParseLatestRateLimitSampleUsesLatestMatchingLine() {
         let content = """
         {"timestamp":"2026-03-02T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"rate_limits":{"primary":{"used_percent":90.0}}}}}
         {"timestamp":"2026-03-02T11:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"rate_limits":{"primary":{"used_percent":40.0}}}}}
         """
 
-        let sample = source.parseLatestTokenCount(from: content)
-        XCTAssertEqual(sample?.usedPercent, 40.0)
+        let sample = source.parseLatestRateLimitSample(from: content)
+        XCTAssertEqual(sample?.primary?.usedPercent, 40.0)
     }
 
     func testNumericValueSupportsIntDoubleAndNSNumber() {
