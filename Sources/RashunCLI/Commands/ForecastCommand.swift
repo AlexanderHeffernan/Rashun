@@ -42,6 +42,7 @@ struct ForecastCommand: AsyncParsableCommand {
 
         let selectedMetrics = source.metrics.filter { metric == nil || $0.id == metric }
         var forecasts: [MetricForecast] = []
+        var firstFailure: (code: String, presentation: SourceFetchErrorPresentation)?
 
         for selectedMetric in selectedMetrics {
             do {
@@ -66,14 +67,29 @@ struct ForecastCommand: AsyncParsableCommand {
                     SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
                 }
                 let code = classificationCode(error)
-                try emitErrorAndExit(
-                    code: code,
-                    short: presentation.shortMessage,
-                    detail: presentation.detailedMessage,
-                    exitCode: code == "source_not_configured" ? 3 : 1
-                )
-                return
+                if firstFailure == nil {
+                    firstFailure = (code, presentation)
+                }
+                if metric != nil {
+                    try emitErrorAndExit(
+                        code: code,
+                        short: presentation.shortMessage,
+                        detail: presentation.detailedMessage,
+                        exitCode: code == "source_not_configured" ? 3 : 1
+                    )
+                    return
+                }
             }
+        }
+
+        if forecasts.isEmpty, let firstFailure {
+            try emitErrorAndExit(
+                code: firstFailure.code,
+                short: firstFailure.presentation.shortMessage,
+                detail: firstFailure.presentation.detailedMessage,
+                exitCode: firstFailure.code == "source_not_configured" ? 3 : 1
+            )
+            return
         }
 
         if global.json {

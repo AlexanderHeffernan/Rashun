@@ -167,6 +167,7 @@ struct StatusCommand: AsyncParsableCommand {
     @MainActor
     private func fetchSource(_ source: AISource) async -> SourceFetchOutcome {
         var successes: [(AISourceMetric, UsageResult)] = []
+        var firstFailure: (code: String, presentation: SourceFetchErrorPresentation)?
 
         for metric in source.metrics {
             do {
@@ -181,16 +182,25 @@ struct StatusCommand: AsyncParsableCommand {
                 successes.append((metric, usage))
             } catch {
                 let presentation = source.mapFetchError(for: metric.id, error)
+                let code = classificationCode(error)
                 if source.metrics.count > 1 {
                     SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
                 } else {
                     SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
                 }
-                return .failure(code: classificationCode(error), presentation: presentation)
+                if firstFailure == nil {
+                    firstFailure = (code, presentation)
+                }
             }
         }
 
-        return .success(metrics: successes)
+        if !successes.isEmpty {
+            return .success(metrics: successes)
+        }
+        if let firstFailure {
+            return .failure(code: firstFailure.code, presentation: firstFailure.presentation)
+        }
+        return .success(metrics: [])
     }
 
     private func classificationCode(_ error: Error) -> String {
