@@ -12,10 +12,7 @@ var targets: [Target] = [
             "RashunCore",
             .product(name: "ArgumentParser", package: "swift-argument-parser")
         ],
-        path: "Sources/RashunCLI",
-        exclude: [
-            "PLAN.md"
-        ]
+        path: "Sources/RashunCLI"
     ),
     .testTarget(
         name: "RashunCoreTests",
