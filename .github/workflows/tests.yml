@@ -18,11 +18,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Swift (macOS/Linux)
+      - name: Validate Swift (macOS/Linux)
         if: runner.os != 'Windows'
-        uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          SWIFT_VERSION="$(swift --version | sed -nE 's/.*Swift version ([0-9]+(\.[0-9]+){0,2}).*/\1/p' | head -1)"
+          if [ -z "$SWIFT_VERSION" ]; then
+            echo "Unable to detect Swift version" >&2
+            exit 1
+          fi
+
+          IFS=. read -r SWIFT_MAJOR SWIFT_MINOR _ <<< "$SWIFT_VERSION"
+          if [ "$SWIFT_MAJOR" -lt 6 ] || { [ "$SWIFT_MAJOR" -eq 6 ] && [ "$SWIFT_MINOR" -lt 2 ]; }; then
+            echo "Swift $SWIFT_VERSION is too old; requires Swift >= 6.2.0" >&2
+            exit 1
+          fi
 
       - name: Setup Swift (Windows)
         if: runner.os == 'Windows'
@@ -62,10 +74,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@v3
-        with:
-          swift-version: "6.2.4"
+      - name: Validate Swift
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift --version
+          SWIFT_VERSION="$(swift --version | sed -nE 's/.*Swift version ([0-9]+(\.[0-9]+){0,2}).*/\1/p' | head -1)"
+          if [ -z "$SWIFT_VERSION" ]; then
+            echo "Unable to detect Swift version" >&2
+            exit 1
+          fi
+
+          IFS=. read -r SWIFT_MAJOR SWIFT_MINOR _ <<< "$SWIFT_VERSION"
+          if [ "$SWIFT_MAJOR" -lt 6 ] || { [ "$SWIFT_MAJOR" -eq 6 ] && [ "$SWIFT_MINOR" -lt 2 ]; }; then
+            echo "Swift $SWIFT_VERSION is too old; requires Swift >= 6.2.0" >&2
+            exit 1
+          fi
 
       - name: Generate source list
         run: ./build.sh --test
