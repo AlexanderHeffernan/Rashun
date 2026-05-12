@@ -4,20 +4,6 @@ import XCTest
 final class NotificationHistoryStoreTests: XCTestCase {
     private static let source = "TestSource"
 
-    override func setUp() {
-        super.setUp()
-        MainActor.assumeIsolated {
-            UsageHistoryStore.shared.clearAllHistory()
-        }
-    }
-
-    override func tearDown() {
-        MainActor.assumeIsolated {
-            UsageHistoryStore.shared.clearAllHistory()
-        }
-        super.tearDown()
-    }
-
     func testAppend_keepsFirstAndLatestWhenUsageStateIsUnchanged() {
         let usage = UsageResult(
             remaining: 80,
@@ -27,10 +13,11 @@ final class NotificationHistoryStoreTests: XCTestCase {
         )
 
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: usage)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: usage)
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: usage)
+            store.append(sourceName: Self.source, usage: usage)
 
-            let history = UsageHistoryStore.shared.history(for: Self.source)
+            let history = store.history(for: Self.source)
             XCTAssertEqual(history.count, 2)
             XCTAssertLessThan(history[0].timestamp, history[1].timestamp)
         }
@@ -40,14 +27,15 @@ final class NotificationHistoryStoreTests: XCTestCase {
         let usage = Self.baseUsage()
 
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: usage)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: usage)
-            let secondTimestamp = UsageHistoryStore.shared.history(for: Self.source)[1].timestamp
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: usage)
+            store.append(sourceName: Self.source, usage: usage)
+            let secondTimestamp = store.history(for: Self.source)[1].timestamp
 
             Thread.sleep(forTimeInterval: 0.01)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: usage)
+            store.append(sourceName: Self.source, usage: usage)
 
-            let history = UsageHistoryStore.shared.history(for: Self.source)
+            let history = store.history(for: Self.source)
             XCTAssertEqual(history.count, 2)
             XCTAssertGreaterThan(history[1].timestamp, secondTimestamp)
         }
@@ -56,78 +44,87 @@ final class NotificationHistoryStoreTests: XCTestCase {
     func testAppend_keepsSnapshotWhenRemainingChanges() {
         let base = Self.baseUsage()
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: base)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: UsageResult(
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: base)
+            store.append(sourceName: Self.source, usage: UsageResult(
                 remaining: base.remaining - 1,
                 limit: base.limit,
                 resetDate: base.resetDate,
                 cycleStartDate: base.cycleStartDate
             ))
 
-            XCTAssertEqual(UsageHistoryStore.shared.history(for: Self.source).count, 2)
+            XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
     }
 
     func testAppend_keepsSnapshotWhenLimitChanges() {
         let base = Self.baseUsage()
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: base)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: UsageResult(
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: base)
+            store.append(sourceName: Self.source, usage: UsageResult(
                 remaining: base.remaining,
                 limit: base.limit + 1,
                 resetDate: base.resetDate,
                 cycleStartDate: base.cycleStartDate
             ))
 
-            XCTAssertEqual(UsageHistoryStore.shared.history(for: Self.source).count, 2)
+            XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
     }
 
     func testAppend_keepsSnapshotWhenResetDateChanges() {
         let base = Self.baseUsage()
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: base)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: UsageResult(
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: base)
+            store.append(sourceName: Self.source, usage: UsageResult(
                 remaining: base.remaining,
                 limit: base.limit,
                 resetDate: base.resetDate?.addingTimeInterval(60),
                 cycleStartDate: base.cycleStartDate
             ))
 
-            XCTAssertEqual(UsageHistoryStore.shared.history(for: Self.source).count, 2)
+            XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
     }
 
     func testAppend_keepsSnapshotWhenCycleStartDateChanges() {
         let base = Self.baseUsage()
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: base)
-            UsageHistoryStore.shared.append(sourceName: Self.source, usage: UsageResult(
+            let store = Self.makeStore()
+            store.append(sourceName: Self.source, usage: base)
+            store.append(sourceName: Self.source, usage: UsageResult(
                 remaining: base.remaining,
                 limit: base.limit,
                 resetDate: base.resetDate,
                 cycleStartDate: base.cycleStartDate?.addingTimeInterval(60)
             ))
 
-            XCTAssertEqual(UsageHistoryStore.shared.history(for: Self.source).count, 2)
+            XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
     }
 
     func testDeleteSnapshotsOlderThan_removesOnlyOlderRows() {
         let now = Date()
         MainActor.assumeIsolated {
-            UsageHistoryStore.shared.replaceAllHistory([
+            let store = Self.makeStore()
+            store.replaceAllHistory([
                 Self.source: [
                     UsageSnapshot(timestamp: now.addingTimeInterval(-3600), usage: Self.baseUsage()),
                     UsageSnapshot(timestamp: now.addingTimeInterval(-60), usage: Self.baseUsage())
                 ]
             ])
 
-            let removed = UsageHistoryStore.shared.deleteSnapshotsOlderThan(now.addingTimeInterval(-300), sourceName: Self.source)
+            let removed = store.deleteSnapshotsOlderThan(now.addingTimeInterval(-300), sourceName: Self.source)
 
             XCTAssertEqual(removed, 1)
-            XCTAssertEqual(UsageHistoryStore.shared.history(for: Self.source).count, 1)
+            XCTAssertEqual(store.history(for: Self.source).count, 1)
         }
+    }
+
+    @MainActor private static func makeStore() -> UsageHistoryStore {
+        UsageHistoryStore(backend: InMemoryPersistenceBackend(), legacyBackends: [])
     }
 
     private static func baseUsage() -> UsageResult {
