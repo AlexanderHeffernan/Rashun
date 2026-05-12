@@ -20,26 +20,31 @@ struct MenuBarMetricSelection: Codable, Hashable {
 struct MenuBarAppearanceSettings: Codable {
     var colorMode: MenuBarColorMode
     var centerContentMode: MenuBarCenterContentMode
+    var showMetricBadges: Bool
     var selectedMetrics: [MenuBarMetricSelection]
 
     init(
         colorMode: MenuBarColorMode = .monochrome,
         centerContentMode: MenuBarCenterContentMode = .logo,
+        showMetricBadges: Bool = true,
         selectedMetrics: [MenuBarMetricSelection] = []
     ) {
         self.colorMode = Self.normalizedColorMode(colorMode)
         self.centerContentMode = centerContentMode
+        self.showMetricBadges = showMetricBadges
         self.selectedMetrics = Self.unique(selectedMetrics)
     }
 
     static func normalized(
         colorMode: MenuBarColorMode,
         centerContentMode: MenuBarCenterContentMode,
+        showMetricBadges: Bool,
         selectedMetrics: [MenuBarMetricSelection]
     ) -> MenuBarAppearanceSettings {
         MenuBarAppearanceSettings(
             colorMode: colorMode,
             centerContentMode: centerContentMode,
+            showMetricBadges: showMetricBadges,
             selectedMetrics: selectedMetrics
         )
     }
@@ -66,6 +71,7 @@ struct MenuBarAppearanceSettings: Codable {
     private enum CodingKeys: String, CodingKey {
         case colorMode
         case centerContentMode
+        case showMetricBadges
         case selectedMetrics
     }
 
@@ -73,10 +79,12 @@ struct MenuBarAppearanceSettings: Codable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let colorMode = try container.decodeIfPresent(MenuBarColorMode.self, forKey: .colorMode) ?? .monochrome
         let centerContentMode = try container.decodeIfPresent(MenuBarCenterContentMode.self, forKey: .centerContentMode) ?? .logo
+        let showMetricBadges = try container.decodeIfPresent(Bool.self, forKey: .showMetricBadges) ?? true
         let selectedMetrics = try container.decodeIfPresent([MenuBarMetricSelection].self, forKey: .selectedMetrics) ?? []
         self.init(
             colorMode: colorMode,
             centerContentMode: centerContentMode,
+            showMetricBadges: showMetricBadges,
             selectedMetrics: selectedMetrics
         )
     }
@@ -85,6 +93,7 @@ struct MenuBarAppearanceSettings: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(colorMode, forKey: .colorMode)
         try container.encode(centerContentMode, forKey: .centerContentMode)
+        try container.encode(showMetricBadges, forKey: .showMetricBadges)
         try container.encode(selectedMetrics, forKey: .selectedMetrics)
     }
 }

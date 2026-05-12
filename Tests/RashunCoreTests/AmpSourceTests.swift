@@ -6,6 +6,10 @@ final class AmpSourceTests: XCTestCase {
 
     // MARK: - parseUsage
 
+    func testMetricBadge() {
+        XCTAssertEqual(source.metrics.first?.menuBarBadgeText, "1d")
+    }
+
     func testParseUsage_validOutput() {
         let result = source.parseUsage(from: "Amp Free: $5.00/$10.00 remaining")
         XCTAssertNotNil(result)

@@ -4,6 +4,16 @@ import XCTest
 final class GeminiSourceTests: XCTestCase {
     let source = GeminiSource()
 
+    func testMetricBadges() {
+        XCTAssertEqual(source.metrics.map(\.menuBarBadgeText), [
+            "2.5",
+            "2.5-Lite",
+            "2.5-Pro",
+            "3",
+            "3-Pro",
+        ])
+    }
+
     func testSelectPreferredBucket_prefersFirstConfiguredMetric() {
         let buckets = [
             GeminiQuotaBucket(remainingAmount: "100", remainingFraction: 0.5, resetTime: nil, tokenType: nil, modelId: "gemini-3-flash-preview"),

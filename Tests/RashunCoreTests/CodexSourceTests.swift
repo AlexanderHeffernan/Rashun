@@ -24,6 +24,11 @@ final class CodexSourceTests: XCTestCase {
             "Pro 5 Hour",
             "Pro Weekly",
         ])
+        XCTAssertEqual(source.metrics.map(\.menuBarBadgeText), [
+            "Free",
+            "5h",
+            "7d",
+        ])
     }
 
     func testParseProUsageByMetricParsesPrimaryAndSecondaryWindows() {

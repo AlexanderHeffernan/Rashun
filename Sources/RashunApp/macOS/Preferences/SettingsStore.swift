@@ -58,6 +58,7 @@ final class SettingsStore {
             menuBarAppearance = MenuBarAppearanceSettings.normalized(
                 colorMode: decodedAppearance.colorMode,
                 centerContentMode: decodedAppearance.centerContentMode,
+                showMetricBadges: decodedAppearance.showMetricBadges,
                 selectedMetrics: decodedAppearance.selectedMetrics
             )
         }
@@ -156,6 +157,7 @@ final class SettingsStore {
         menuBarAppearance = MenuBarAppearanceSettings.normalized(
             colorMode: mode,
             centerContentMode: menuBarAppearance.centerContentMode,
+            showMetricBadges: menuBarAppearance.showMetricBadges,
             selectedMetrics: menuBarAppearance.selectedMetrics
         )
         save()
@@ -166,6 +168,18 @@ final class SettingsStore {
         menuBarAppearance = MenuBarAppearanceSettings.normalized(
             colorMode: menuBarAppearance.colorMode,
             centerContentMode: mode,
+            showMetricBadges: menuBarAppearance.showMetricBadges,
+            selectedMetrics: menuBarAppearance.selectedMetrics
+        )
+        save()
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setMenuBarShowMetricBadges(_ show: Bool) {
+        menuBarAppearance = MenuBarAppearanceSettings.normalized(
+            colorMode: menuBarAppearance.colorMode,
+            centerContentMode: menuBarAppearance.centerContentMode,
+            showMetricBadges: show,
             selectedMetrics: menuBarAppearance.selectedMetrics
         )
         save()
@@ -176,6 +190,7 @@ final class SettingsStore {
         menuBarAppearance = MenuBarAppearanceSettings.normalized(
             colorMode: menuBarAppearance.colorMode,
             centerContentMode: menuBarAppearance.centerContentMode,
+            showMetricBadges: menuBarAppearance.showMetricBadges,
             selectedMetrics: selectedMetrics
         )
         save()

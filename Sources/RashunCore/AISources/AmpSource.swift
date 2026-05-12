@@ -3,7 +3,7 @@ import Foundation
 public struct AmpSource: AISource {
     public let name = "AMP"
     public let requirements = "OS support: macOS/Linux/Windows (where AMP CLI is available). Requires the amp CLI installed and available on PATH (or at ~/.amp/bin/amp)."
-    public let metrics = [AISourceMetric(id: "amp-free", title: "AMP")]
+    public let metrics = [AISourceMetric(id: "amp-free", title: "AMP", menuBarBadgeText: "1d")]
     public let menuBarBrandColorHex: UInt32 = 0xF34E3F
     public var agentConfigDirectory: String? { "~/.config/amp" }
     public var agentInstructionFilePath: String? { "~/.config/amp/AGENTS.md" }

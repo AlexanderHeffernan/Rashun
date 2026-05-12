@@ -118,6 +118,17 @@ struct GeneralTabView: View {
                 .frame(width: 340)
             }
 
+            Toggle(
+                "Show metric badges",
+                isOn: Binding(
+                    get: { model.menuBarShowMetricBadges },
+                    set: { model.menuBarShowMetricBadges = $0 }
+                )
+            )
+            .toggleStyle(.checkbox)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(BrandPalette.textPrimary)
+
             Text("Select metrics to render as horizontal ring icons in the menu bar.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(BrandPalette.textSecondary.opacity(0.9))

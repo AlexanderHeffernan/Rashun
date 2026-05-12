@@ -4,6 +4,10 @@ import XCTest
 final class CopilotSourceTests: XCTestCase {
     let source = CopilotSource()
 
+    func testMetricBadge() {
+        XCTAssertEqual(source.metrics.first?.menuBarBadgeText, "1m")
+    }
+
     func testForecast_zeroBurnRate() {
         let usage = UsageResult(remaining: 300, limit: 300)
         let result = source.forecast(for: source.metrics[0].id, current: usage, history: [])

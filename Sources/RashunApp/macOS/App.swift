@@ -404,6 +404,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct IconRingMetric {
         let sourceName: String
         let metricTitle: String
+        let menuBarBadgeText: String?
         let percentRemaining: Double
         let hasUsage: Bool
         let sourceColorHex: UInt32
@@ -425,7 +426,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let image = ringMetersImage(
             metrics: metrics,
             colorMode: appearance.colorMode,
-            centerMode: appearance.centerContentMode
+            centerMode: appearance.centerContentMode,
+            showMetricBadges: appearance.showMetricBadges
         ) {
             button.image = image
         }
@@ -471,6 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return IconRingMetric(
                 sourceName: source.name,
                 metricTitle: metric.title,
+                menuBarBadgeText: metric.menuBarBadgeText,
                 percentRemaining: clampedPercent,
                 hasUsage: usage != nil,
                 sourceColorHex: source.menuBarBrandColorHex
@@ -492,7 +495,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func ringMetersImage(
         metrics: [IconRingMetric],
         colorMode: MenuBarColorMode,
-        centerMode: MenuBarCenterContentMode
+        centerMode: MenuBarCenterContentMode,
+        showMetricBadges: Bool
     ) -> NSImage? {
         let ringSize: CGFloat = 20
         let spacing: CGFloat = 3
@@ -521,7 +525,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 rect: rect.insetBy(dx: 0.7, dy: 0.7),
                 metric: metric,
                 colorMode: colorMode,
-                centerMode: centerMode
+                centerMode: centerMode,
+                showMetricBadges: showMetricBadges
             )
         }
 
@@ -533,7 +538,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rect: CGRect,
         metric: IconRingMetric,
         colorMode: MenuBarColorMode,
-        centerMode: MenuBarCenterContentMode
+        centerMode: MenuBarCenterContentMode,
+        showMetricBadges: Bool
     ) {
         let percent = metric.percentRemaining
         let clampedPercent = min(max(percent, 0), 100)
@@ -554,6 +560,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         guard progress > 0 else {
             drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
+            if showMetricBadges {
+                drawMetricBadgeIfNeeded(in: context, rect: rect, metric: metric, colorMode: colorMode)
+            }
             return
         }
 
@@ -596,6 +605,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
+        if showMetricBadges {
+            drawMetricBadgeIfNeeded(in: context, rect: rect, metric: metric, colorMode: colorMode)
+        }
     }
 
     private var brandPrimaryColor: NSColor { NSColor(calibratedRed: 147 / 255, green: 90 / 255, blue: 253 / 255, alpha: 1) }
@@ -733,6 +745,86 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             height: drawSize.height
         )
         image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+    }
+
+    private func drawMetricBadgeIfNeeded(
+        in context: CGContext,
+        rect: CGRect,
+        metric: IconRingMetric,
+        colorMode: MenuBarColorMode
+    ) {
+        guard let badgeText = metric.menuBarBadgeText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !badgeText.isEmpty else {
+            return
+        }
+
+        let maxTextWidth = rect.width - 4.0
+        var fontSize: CGFloat = badgeText.count > 5 ? 3.7 : badgeText.count > 2 ? 4.6 : 5.2
+        var font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let nsText = NSString(string: badgeText)
+        var textSize = nsText.size(withAttributes: attributes)
+        while textSize.width > maxTextWidth, fontSize > 3.2 {
+            fontSize -= 0.2
+            font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
+            textSize = nsText.size(withAttributes: [
+                .font: font,
+                .foregroundColor: NSColor.white
+            ])
+        }
+        let finalAttributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let horizontalPadding: CGFloat = 2.1
+        let badgeSize = CGSize(
+            width: min(max(textSize.width + horizontalPadding * 2, 8.0), rect.width - 1),
+            height: 7.0
+        )
+        let badgeRect = CGRect(
+            x: rect.maxX - badgeSize.width,
+            y: rect.minY,
+            width: badgeSize.width,
+            height: badgeSize.height
+        )
+        let badgePath = CGPath(
+            roundedRect: badgeRect,
+            cornerWidth: badgeRect.height / 2,
+            cornerHeight: badgeRect.height / 2,
+            transform: nil
+        )
+
+        context.saveGState()
+        context.addPath(badgePath)
+        context.setFillColor(badgeFillColor(for: metric, colorMode: colorMode).cgColor)
+        context.fillPath()
+
+        let textRect = CGRect(
+            x: badgeRect.midX - (textSize.width / 2),
+            y: badgeRect.midY - (textSize.height / 2) + 0.2,
+            width: textSize.width,
+            height: textSize.height
+        )
+
+        if colorMode == .monochrome {
+            context.setBlendMode(.clear)
+        }
+        nsText.draw(in: textRect, withAttributes: finalAttributes)
+        context.restoreGState()
+    }
+
+    private func badgeFillColor(for metric: IconRingMetric, colorMode: MenuBarColorMode) -> NSColor {
+        switch colorMode {
+        case .monochrome:
+            return NSColor.black.withAlphaComponent(0.95)
+        case .brandGradient:
+            return brandAccentColor
+        case .sourceSolid:
+            return colorFromHex(metric.sourceColorHex)
+        }
     }
 
     private func colorFromHex(_ hex: UInt32) -> NSColor {

@@ -37,10 +37,12 @@ public struct AISourceMetric: Sendable, Hashable {
     public let id: String
     public let title: String
     public let defaultEnabled: Bool
+    public let menuBarBadgeText: String?
 
-    public init(id: String, title: String, defaultEnabled: Bool = true) {
+    public init(id: String, title: String, defaultEnabled: Bool = true, menuBarBadgeText: String? = nil) {
         self.id = id
         self.title = title
         self.defaultEnabled = defaultEnabled
+        self.menuBarBadgeText = menuBarBadgeText
     }
 }

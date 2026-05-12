@@ -35,9 +35,9 @@ public struct CodexSource: AISource {
     public let name = "Codex"
     public let requirements = "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
     public let metrics = [
-        AISourceMetric(id: "codex-free-weekly", title: "Free Weekly Usage"),
-        AISourceMetric(id: "codex-pro-5h", title: "Pro 5 Hour"),
-        AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly"),
+        AISourceMetric(id: "codex-free-weekly", title: "Free Weekly Usage", menuBarBadgeText: "Free"),
+        AISourceMetric(id: "codex-pro-5h", title: "Pro 5 Hour", menuBarBadgeText: "5h"),
+        AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly", menuBarBadgeText: "7d"),
     ]
     public let menuBarBrandColorHex: UInt32 = 0x3C35FF
     public var agentConfigDirectory: String? { "~/.codex" }

@@ -231,6 +231,11 @@ final class PreferencesViewModel: ObservableObject {
         set { settings.setMenuBarCenterContentMode(newValue) }
     }
 
+    var menuBarShowMetricBadges: Bool {
+        get { menuBarAppearance.showMetricBadges }
+        set { settings.setMenuBarShowMetricBadges(newValue) }
+    }
+
     var menuBarSelectionCount: Int { menuBarAppearance.selectedMetrics.count }
 
     func menuBarMetricOptions() -> [MenuBarMetricOption] {

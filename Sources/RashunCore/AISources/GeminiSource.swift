@@ -39,11 +39,11 @@ public struct GeminiSource: AISource {
     public var agentInstructionFilePath: String? { "~/.gemini/AGENTS.md" }
     public var agentName: String { "Gemini CLI" }
     public let metrics: [AISourceMetric] = [
-        AISourceMetric(id: "gemini-2.5-flash", title: "2.5-Flash"),
-        AISourceMetric(id: "gemini-2.5-flash-lite", title: "2.5-Flash-Lite"),
-        AISourceMetric(id: "gemini-2.5-pro", title: "2.5-Pro"),
-        AISourceMetric(id: "gemini-3-flash-preview", title: "3-Flash-Preview"),
-        AISourceMetric(id: "gemini-3-pro-preview", title: "3-Pro-Preview"),
+        AISourceMetric(id: "gemini-2.5-flash", title: "2.5-Flash", menuBarBadgeText: "2.5"),
+        AISourceMetric(id: "gemini-2.5-flash-lite", title: "2.5-Flash-Lite", menuBarBadgeText: "2.5-Lite"),
+        AISourceMetric(id: "gemini-2.5-pro", title: "2.5-Pro", menuBarBadgeText: "2.5-Pro"),
+        AISourceMetric(id: "gemini-3-flash-preview", title: "3-Flash-Preview", menuBarBadgeText: "3"),
+        AISourceMetric(id: "gemini-3-pro-preview", title: "3-Pro-Preview", menuBarBadgeText: "3-Pro"),
     ]
 
     public init() {}
