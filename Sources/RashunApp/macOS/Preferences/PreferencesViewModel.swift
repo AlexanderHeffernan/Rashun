@@ -338,26 +338,44 @@ final class PreferencesViewModel: ObservableObject {
             sourceHealthCheckInProgress = false
             healthCheckSourceName = nil
         }
-        do {
-            guard let metricId = source.metrics.first?.id else {
-                throw source.unsupportedMetricError("default")
-            }
-            let usage = try await source.fetchUsage(for: metricId)
-            if source.metrics.count <= 1 {
-                SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
-            } else {
-                SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metricId, usage: usage)
-            }
-            settings.setEnabled(true, for: source.name)
-        } catch {
-            let metricId = source.metrics.first?.id ?? "default"
-            let presentation = source.mapFetchError(for: metricId, error)
-            if source.metrics.count <= 1 {
-                SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
-            } else {
-                SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metricId, presentation: presentation)
-            }
+        guard !source.metrics.isEmpty else {
+            let error = source.unsupportedMetricError("default")
+            let presentation = source.mapFetchError(for: "default", error)
+            SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
             sourceHealthCheckErrorMessage = "Could not enable \(source.name).\n\n\(presentation.detailedMessage)"
+            settings.setEnabled(false, for: source.name)
+            return
+        }
+
+        var firstFailure: (metricId: String, presentation: SourceFetchErrorPresentation)?
+        var didSucceed = false
+
+        for metric in source.metrics {
+            do {
+                let usage = try await source.fetchUsage(for: metric.id)
+                didSucceed = true
+                if source.metrics.count <= 1 {
+                    SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
+                } else {
+                    SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+                }
+            } catch {
+                let presentation = source.mapFetchError(for: metric.id, error)
+                if firstFailure == nil {
+                    firstFailure = (metric.id, presentation)
+                }
+                if source.metrics.count <= 1 {
+                    SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+                } else {
+                    SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+                }
+            }
+        }
+
+        if didSucceed {
+            settings.setEnabled(true, for: source.name)
+        } else if let failure = firstFailure {
+            sourceHealthCheckErrorMessage = "Could not enable \(source.name).\n\n\(failure.presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
         }
     }
