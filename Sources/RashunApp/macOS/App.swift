@@ -418,7 +418,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let placeholder = NSImage(systemSymbolName: "circle.dashed", accessibilityDescription: "No selected metrics") {
                 placeholder.isTemplate = true
                 button.image = placeholder
-                button.toolTip = "No menu bar metrics selected"
+                button.toolTip = nil
             }
             return
         }
@@ -432,12 +432,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) {
             button.image = image
         }
-        button.toolTip = metrics.map { metric in
-            let valueText = metric.hasUsage
-                ? "\(String(format: "%.1f", metric.percentRemaining))%"
-                : "N/A"
-            return "\(metric.sourceDisplayName) · \(metric.metricTitle): \(valueText)"
-        }.joined(separator: "\n")
+        button.toolTip = nil
     }
 
     private func selectedMetricsForStatusIcon() -> [IconRingMetric] {
