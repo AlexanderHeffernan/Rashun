@@ -76,7 +76,35 @@ public enum NotificationDefinitions {
             }
         )
 
-        var definitions = [percentRemainingBelow, recentSpike]
+        let metricReset = NotificationDefinition(
+            id: "metricReset",
+            title: "Metric reset",
+            detail: "Notifies when this metric resets to a higher remaining amount.",
+            inputs: [],
+            evaluate: { context in
+                guard let previous = context.previous else { return nil }
+
+                let current = context.current.percentRemaining
+                let previousPercent = previous.usage.percentRemaining
+                guard current > previousPercent else { return nil }
+                guard current >= 95 else { return nil }
+
+                let previousReset = previous.usage.resetDate
+                let currentReset = context.current.resetDate
+                if let previousReset, let currentReset {
+                    guard currentReset > previousReset else { return nil }
+                } else {
+                    guard previousPercent < 95 else { return nil }
+                }
+
+                let title = "\(sourceName) reset"
+                let body = "Remaining reset to \(String(format: "%.0f", current))%."
+                let cycleKey = currentReset.map { ISO8601DateFormatter().string(from: $0) }
+                return NotificationEvent(title: title, body: body, cooldownSeconds: nil, cycleKey: cycleKey)
+            }
+        )
+
+        var definitions = [percentRemainingBelow, recentSpike, metricReset]
         if pacingLookbackStart != nil {
             definitions.append(pacingAlert(sourceName: sourceName, pacingLookbackStart: pacingLookbackStart))
         }

@@ -222,6 +222,90 @@ final class NotificationTests: XCTestCase {
         XCTAssertTrue(pacing!.inputs.isEmpty)
     }
 
+    // MARK: - metricReset rule
+
+    func testMetricReset_firesWhenResetDateAdvancesAndRemainingIsNearFull() {
+        let rule = genericRule(id: "metricReset")
+        let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
+        let newReset = oldReset.addingTimeInterval(24 * 3600)
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            metricId: nil,
+            metricTitle: nil,
+            current: UsageResult(remaining: 100, limit: 100, resetDate: newReset),
+            previous: UsageSnapshot(
+                timestamp: Date().addingTimeInterval(-60),
+                usage: UsageResult(remaining: 20, limit: 100, resetDate: oldReset)
+            ),
+            history: [],
+            inputValue: { _, def in def }
+        )
+
+        let event = rule.evaluate(ctx)
+        XCTAssertNotNil(event)
+        XCTAssertNotNil(event?.cycleKey)
+        XCTAssertNil(event?.cooldownSeconds)
+    }
+
+    func testMetricReset_doesNotFireForSmallReplenishmentEvenWhenResetDateAdvances() {
+        let rule = genericRule(id: "metricReset")
+        let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
+        let newReset = oldReset.addingTimeInterval(3600)
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            metricId: nil,
+            metricTitle: nil,
+            current: UsageResult(remaining: 42, limit: 100, resetDate: newReset),
+            previous: UsageSnapshot(
+                timestamp: Date().addingTimeInterval(-60),
+                usage: UsageResult(remaining: 40, limit: 100, resetDate: oldReset)
+            ),
+            history: [],
+            inputValue: { _, def in def }
+        )
+
+        XCTAssertNil(rule.evaluate(ctx))
+    }
+
+    func testMetricReset_firesWithoutResetDateOnlyWhenCrossingNearFullThreshold() {
+        let rule = genericRule(id: "metricReset")
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            metricId: nil,
+            metricTitle: nil,
+            current: UsageResult(remaining: 96, limit: 100),
+            previous: UsageSnapshot(
+                timestamp: Date().addingTimeInterval(-60),
+                usage: UsageResult(remaining: 94, limit: 100)
+            ),
+            history: [],
+            inputValue: { _, def in def }
+        )
+
+        let event = rule.evaluate(ctx)
+        XCTAssertNotNil(event)
+        XCTAssertNil(event?.cycleKey)
+        XCTAssertNil(event?.cooldownSeconds)
+    }
+
+    func testMetricReset_doesNotFireForAmpStyleHourlyReplenishment() {
+        let rule = genericRule(id: "metricReset")
+        let ctx = NotificationContext(
+            sourceName: "AMP",
+            metricId: "amp-free",
+            metricTitle: "AMP",
+            current: UsageResult(remaining: 10.50, limit: 25),
+            previous: UsageSnapshot(
+                timestamp: Date().addingTimeInterval(-3600),
+                usage: UsageResult(remaining: 10.08, limit: 25)
+            ),
+            history: [],
+            inputValue: { _, def in def }
+        )
+
+        XCTAssertNil(rule.evaluate(ctx))
+    }
+
     // MARK: - Helpers
 
     private func genericRule(id: String) -> NotificationDefinition {
