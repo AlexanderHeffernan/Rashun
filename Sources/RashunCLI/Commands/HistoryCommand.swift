@@ -121,7 +121,7 @@ struct HistoryShowCommand: AsyncParsableCommand {
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("📜", fallback: "*")) \(formatter.colorize("\(source.name) Usage History", as: .bold))")
+        print("\(formatter.emoji("📜", fallback: "*")) \(formatter.colorize("\(source.displayName) Usage History", as: .bold))")
         print("")
 
         let dateFormatter = DateFormatter()

@@ -97,7 +97,7 @@ struct SetupAICommand: AsyncParsableCommand {
                 symbol = formatter.emoji("⏭️", fallback: "[-]")
             }
             let path = agent.instructionFilePath ?? "n/a"
-            print("  \(symbol) \(formatter.colorize(agent.source.name, as: .bold))  \(statusText)  \(formatter.colorize(path, as: .cyan))")
+            print("  \(symbol) \(formatter.colorize(agent.source.displayName, as: .bold))  \(statusText)  \(formatter.colorize(path, as: .cyan))")
         }
     }
 
@@ -135,7 +135,7 @@ struct SetupAICommand: AsyncParsableCommand {
 
         var items = withSkill.map { agent in
             SelectableItem(
-                label: agent.source.name,
+                label: agent.source.displayName,
                 detail: agent.instructionFilePath ?? "",
                 isSelected: true
             )
@@ -160,12 +160,12 @@ struct SetupAICommand: AsyncParsableCommand {
                 let result = try SkillInstaller.remove(for: agent.source)
                 switch result {
                 case .removed:
-                    print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.name, as: .bold))  removed")
+                    print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.displayName, as: .bold))  removed")
                 case .notInstalled:
-                    print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.name, as: .bold))  was not installed")
+                    print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.displayName, as: .bold))  was not installed")
                 }
             } else {
-                print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.name, as: .bold))  kept")
+                print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.displayName, as: .bold))  kept")
             }
         }
     }
@@ -203,14 +203,14 @@ struct SetupAICommand: AsyncParsableCommand {
             results.append(ActionResult(name: agent.source.name, action: action))
 
             if let formatter {
-                print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.name, as: .bold))  \(action)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
+                print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.displayName, as: .bold))  \(action)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
             }
         }
 
         for agent in manualAgents {
             results.append(ActionResult(name: agent.source.name, action: "manual"))
             if let formatter {
-                print("  \(formatter.emoji("✋", fallback: "[manual]")) \(formatter.colorize(agent.source.name, as: .bold))  manual setup required")
+                print("  \(formatter.emoji("✋", fallback: "[manual]")) \(formatter.colorize(agent.source.displayName, as: .bold))  manual setup required")
             }
         }
 
@@ -255,7 +255,7 @@ struct SetupAICommand: AsyncParsableCommand {
         print("\(formatter.colorize("Select an agent:", as: .bold))")
         print("")
         for (index, agent) in agents.enumerated() {
-            print("  \(index + 1). \(agent.source.name)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
+            print("  \(index + 1). \(agent.source.displayName)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
         }
         print("")
         print("Enter number: ", terminator: "")
@@ -272,7 +272,7 @@ struct SetupAICommand: AsyncParsableCommand {
         let skillText = SkillGenerator.generate(for: agent.source)
 
         print("")
-        print(formatter.colorize("─── Skill text for \(agent.source.name) ───", as: .bold))
+        print(formatter.colorize("─── Skill text for \(agent.source.displayName) ───", as: .bold))
         print("")
         print(skillText)
         print("")
@@ -303,7 +303,7 @@ struct SetupAICommand: AsyncParsableCommand {
             print("")
             print("The following agents could be set up once installed:")
             for agent in allAgents {
-                print("  • \(agent.source.name)  \(formatter.colorize(agent.configDirectory, as: .cyan))")
+                print("  • \(agent.source.displayName)  \(formatter.colorize(agent.configDirectory, as: .cyan))")
             }
             return
         }
@@ -315,7 +315,7 @@ struct SetupAICommand: AsyncParsableCommand {
         print("Select agents to install the Rashun skill to:")
         print(formatter.colorize("Note: agents already configured will be updated.", as: .cyan))
         if !manualAgents.isEmpty {
-            let names = manualAgents.map { $0.source.name }.joined(separator: ", ")
+            let names = manualAgents.map { $0.source.displayName }.joined(separator: ", ")
             print(formatter.colorize("Manual setup required for: \(names). Run `rashun setup ai --manual`.", as: .cyan))
         }
         print("")
@@ -329,7 +329,7 @@ struct SetupAICommand: AsyncParsableCommand {
             let alreadyInstalled = SkillInstaller.isInstalled(for: agent.source)
             let statusNote = alreadyInstalled ? " (already configured)" : ""
             return SelectableItem(
-                label: agent.source.name,
+                label: agent.source.displayName,
                 detail: (agent.instructionFilePath ?? "") + statusNote,
                 isSelected: true
             )
@@ -356,9 +356,9 @@ struct SetupAICommand: AsyncParsableCommand {
                 case .updated:
                     action = "updated"
                 }
-                print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.name, as: .bold))  \(action)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
+                print("  \(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize(agent.source.displayName, as: .bold))  \(action)  \(formatter.colorize(agent.instructionFilePath ?? "", as: .cyan))")
             } else {
-                print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.name, as: .bold))  skipped")
+                print("  \(formatter.emoji("⏭️", fallback: "[-]")) \(formatter.colorize(agent.source.displayName, as: .bold))  skipped")
             }
         }
 

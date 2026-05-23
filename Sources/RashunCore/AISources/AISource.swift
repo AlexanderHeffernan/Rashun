@@ -2,8 +2,10 @@ import Foundation
 
 /// Provider-level protocol for all AI usage sources.
 public protocol AISource: Sendable {
-    /// Unique provider name shown in UI (for example, "Gemini").
+    /// Stable provider identifier used for persistence, CLI resolution, and history keys (for example, "Gemini").
     var name: String { get }
+    /// Human-readable provider name shown in UI and CLI output. Defaults to `name`.
+    var displayName: String { get }
     /// Human-readable setup notes shown in Preferences.
     var requirements: String { get }
     /// Usage metrics exposed by this source. Single-metric sources return one element.
@@ -34,6 +36,8 @@ public protocol AISource: Sendable {
 }
 
 extension AISource {
+    public var displayName: String { name }
+
     /// Default fetch behavior throws unsupported-metric.
     /// Source implementations should override and return usage for known metric IDs.
     public func fetchUsage(for metricId: String) async throws -> UsageResult {
@@ -52,9 +56,9 @@ extension AISource {
     public func notificationDefinitions(for metricId: String) -> [NotificationDefinition] {
         let sourceLabel: String
         if metrics.count > 1, let metric = metrics.first(where: { $0.id == metricId }) {
-            sourceLabel = "\(name) - \(metric.title)"
+            sourceLabel = "\(displayName) - \(metric.title)"
         } else {
-            sourceLabel = name
+            sourceLabel = displayName
         }
 
         let pacingResolver = pacingLookbackStart(for: metricId)
@@ -79,7 +83,7 @@ extension AISource {
         let metricLabel = metrics.first(where: { $0.id == metricId })?.title ?? metricId
         return SourceFetchErrorPresentation(
             shortMessage: short,
-            detailedMessage: "Unable to fetch usage for \(name) (\(metricLabel)). \(fallback)"
+            detailedMessage: "Unable to fetch usage for \(displayName) (\(metricLabel)). \(fallback)"
         )
     }
 
@@ -109,7 +113,7 @@ extension AISource {
         NSError(
             domain: "AISource.UnsupportedMetric",
             code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "\(name) does not provide usage for metric '\(metricId)'."]
+            userInfo: [NSLocalizedDescriptionKey: "\(displayName) does not provide usage for metric '\(metricId)'."]
         )
     }
 }

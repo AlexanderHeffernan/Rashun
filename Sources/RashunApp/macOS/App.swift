@@ -207,7 +207,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let host = NSHostingView(
             rootView: MenuDropdownSourceCardView(
-                sourceName: source.name,
+                sourceName: source.displayName,
                 logoImage: logoImage(forSourceName: source.name),
                 sourceColorHex: source.menuBarBrandColorHex,
                 rows: rows
@@ -403,6 +403,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private struct IconRingMetric {
         let sourceName: String
+        let sourceDisplayName: String
         let metricTitle: String
         let menuBarBadgeText: String?
         let percentRemaining: Double
@@ -435,7 +436,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let valueText = metric.hasUsage
                 ? "\(String(format: "%.1f", metric.percentRemaining))%"
                 : "N/A"
-            return "\(metric.sourceName) · \(metric.metricTitle): \(valueText)"
+            return "\(metric.sourceDisplayName) · \(metric.metricTitle): \(valueText)"
         }.joined(separator: "\n")
     }
 
@@ -472,6 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let clampedPercent = usage.map { min(max($0.percentRemaining, 0), 100) } ?? 0
             return IconRingMetric(
                 sourceName: source.name,
+                sourceDisplayName: source.displayName,
                 metricTitle: metric.title,
                 menuBarBadgeText: metric.menuBarBadgeText,
                 percentRemaining: clampedPercent,

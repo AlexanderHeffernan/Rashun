@@ -78,9 +78,9 @@ struct StatusCommand: AsyncParsableCommand {
             }
 
             let formatter = OutputFormatter(noColor: global.noColor)
-            print(formatter.colorize(source.name, as: .bold))
+            print(formatter.colorize(source.displayName, as: .bold))
             for (metric, usage) in filteredMetrics {
-                let label = source.metrics.count > 1 ? metric.title : source.name
+                let label = source.metrics.count > 1 ? metric.title : source.displayName
                 let bar = formatter.progressBar(percent: usage.percentRemaining)
                 let color = colorForPercent(usage.percentRemaining)
                 let percent = String(format: "%5.1f%%", usage.percentRemaining)

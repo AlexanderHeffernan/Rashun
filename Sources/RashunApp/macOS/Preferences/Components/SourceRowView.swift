@@ -25,7 +25,7 @@ struct SourceRowView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                Toggle(source.name, isOn: Binding(
+                Toggle(source.displayName, isOn: Binding(
                     get: { isEnabled },
                     set: { model.sourceToggleChanged(source, enabled: $0) }
                 ))

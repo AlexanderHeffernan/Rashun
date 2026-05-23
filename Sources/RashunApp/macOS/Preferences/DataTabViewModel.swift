@@ -302,16 +302,18 @@ final class DataTabViewModel: ObservableObject {
 
         for source in sources {
             if source.metrics.count <= 1 {
-                displayToTargets[source.name] = [source.name]
+                displayToTargets[source.displayName] = [source.name]
                 knownTargetNames.insert(source.name)
                 continue
             }
 
             for metric in source.metrics {
-                let displayName = "\(source.name) - \(metric.title)"
+                let displayName = "\(source.displayName) - \(metric.title)"
+                let legacyDisplayName = "\(source.name) - \(metric.title)"
                 let metricScopeName = "\(source.name)::\(metric.id)"
-                displayToTargets[displayName] = [displayName, metricScopeName]
+                displayToTargets[displayName] = [displayName, legacyDisplayName, metricScopeName]
                 knownTargetNames.insert(displayName)
+                knownTargetNames.insert(legacyDisplayName)
                 knownTargetNames.insert(metricScopeName)
             }
         }

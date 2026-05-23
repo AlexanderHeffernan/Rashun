@@ -64,9 +64,9 @@ final class UsageHistoryViewModel: ObservableObject {
                 let metricId = source.metrics.first?.id ?? "default"
                 let forecastPoints = filteredForecastPoints(source: source, metricId: metricId, history: history, points: points, bounds: bounds, showForecast: showForecastLines)
                 if let current = history.last?.usage, let forecast = source.forecast(for: metricId, current: current, history: history) {
-                    summaries.append(forecast.summary)
+                    summaries.append(forecastSummary(label: source.displayName, original: forecast.summary))
                 }
-                chartSeries.append(ChartSeries(label: source.name, color: color, points: points, forecast: forecastPoints))
+                chartSeries.append(ChartSeries(label: source.displayName, color: color, points: points, forecast: forecastPoints))
                 continue
             }
 
@@ -79,12 +79,12 @@ final class UsageHistoryViewModel: ObservableObject {
                 let forecastPoints = filteredForecastPoints(source: source, metricId: metric.id, history: history, points: points, bounds: bounds, showForecast: showForecastLines)
 
                 if let current = history.last?.usage, let forecast = source.forecast(for: metric.id, current: current, history: history) {
-                    summaries.append(forecastSummary(label: "\(source.name) - \(metric.title)", original: forecast.summary))
+                    summaries.append(forecastSummary(label: "\(source.displayName) - \(metric.title)", original: forecast.summary))
                 }
 
                 chartSeries.append(
                     ChartSeries(
-                        label: "\(source.name) - \(metric.title)",
+                        label: "\(source.displayName) - \(metric.title)",
                         color: color,
                         points: points,
                         forecast: forecastPoints

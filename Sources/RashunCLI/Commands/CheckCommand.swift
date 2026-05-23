@@ -86,26 +86,26 @@ struct CheckCommand: AsyncParsableCommand {
 
     private func printHuman(source: AISource, checks: [MetricCheckResult]) throws {
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("🔍", fallback: "*")) Checking \(formatter.colorize(source.name, as: .bold))...")
+        print("\(formatter.emoji("🔍", fallback: "*")) Checking \(formatter.colorize(source.displayName, as: .bold))...")
         print("")
         print("Requirements: \(source.requirements)")
         print("")
 
         if checks.allSatisfy(\.isSuccess) {
-            print("\(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize("\(source.name) is healthy", as: .cyan))")
+            print("\(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize("\(source.displayName) is healthy", as: .cyan))")
         } else {
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize("\(source.name) check failed", as: .yellow))")
+            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize("\(source.displayName) check failed", as: .yellow))")
         }
 
         for check in checks {
             switch check {
             case let .success(metric, usage):
-                let label = source.metrics.count > 1 ? metric.title : source.name
+                let label = source.metrics.count > 1 ? metric.title : source.displayName
                 let percent = String(format: "%.1f%%", usage.percentRemaining)
                 let amounts = String(format: "(%.2f/%.2f)", usage.remaining, usage.limit)
                 print("   \(label): \(percent) remaining \(amounts)")
             case let .failure(metric, _, presentation):
-                let label = source.metrics.count > 1 ? metric.title : source.name
+                let label = source.metrics.count > 1 ? metric.title : source.displayName
                 print("   \(label): \(presentation.shortMessage)")
                 print("   \(presentation.detailedMessage)")
             }

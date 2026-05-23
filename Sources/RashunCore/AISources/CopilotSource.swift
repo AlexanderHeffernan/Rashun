@@ -2,6 +2,7 @@ import Foundation
 
 public struct CopilotSource: AISource {
     public let name = "Copilot"
+    public let displayName = "GitHub Copilot"
     public let requirements = "OS support: macOS/Linux/Windows. Requires GitHub CLI 'gh' configured, authenticated, and available on PATH (used to fetch auth token)."
     public let metrics = [AISourceMetric(id: "copilot-premium-interactions", title: "Copilot", menuBarBadgeText: "1m")]
     public let menuBarBrandColorHex: UInt32 = 0x2EA44F

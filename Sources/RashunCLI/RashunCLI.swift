@@ -40,7 +40,7 @@ struct RashunCLI: AsyncParsableCommand {
                     "rashun status",
                     "rashun --help"
                 ],
-                sources: allSources.map(\.name)
+                sources: allSources.map(\.displayName)
             ))
             return
         }
@@ -56,7 +56,7 @@ struct RashunCLI: AsyncParsableCommand {
         print("  rashun status           Check usage for all active sources")
         print("  rashun --help           See all commands")
         print("")
-        let sourceNames = allSources.map(\.name).joined(separator: ", ")
+        let sourceNames = allSources.map(\.displayName).joined(separator: ", ")
         print("Supported sources: \(sourceNames)")
     }
 }

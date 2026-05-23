@@ -32,8 +32,8 @@ struct SourcesCommand: AsyncParsableCommand {
                 : formatter.emoji("❌", fallback: "[x]")
 
             let displayName = healthy
-                ? formatter.colorize(source.name, as: .magenta)
-                : formatter.colorize(source.name, as: .yellow)
+                ? formatter.colorize(source.displayName, as: .magenta)
+                : formatter.colorize(source.displayName, as: .yellow)
 
             let statusText = healthy
                 ? "ready"
@@ -57,6 +57,7 @@ struct SourcesCommand: AsyncParsableCommand {
         let status = status(for: source)
         return SourceEntry(
             name: source.name,
+            displayName: source.displayName,
             requirements: source.requirements,
             metrics: source.metrics.map { MetricEntry(id: $0.id, title: $0.title) },
             healthy: status.healthy,
@@ -103,6 +104,7 @@ struct SourcesCommand: AsyncParsableCommand {
 
 private struct SourceEntry: Encodable {
     let name: String
+    let displayName: String
     let requirements: String
     let metrics: [MetricEntry]
     let healthy: Bool

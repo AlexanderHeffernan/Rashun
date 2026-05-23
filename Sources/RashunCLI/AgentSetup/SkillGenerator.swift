@@ -13,7 +13,7 @@ enum SkillGenerator {
         \(startMarker)
         ## Rashun — AI Usage Monitoring
 
-        You are \(agentName), which uses the "\(source.name)" quota. This project has
+        You are \(agentName), which uses the "\(source.displayName)" quota. This project has
         Rashun installed — a CLI tool that tracks your remaining AI usage quota.
 
         ### Routine usage check (do this quietly)

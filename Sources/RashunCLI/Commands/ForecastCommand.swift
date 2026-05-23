@@ -108,7 +108,7 @@ struct ForecastCommand: AsyncParsableCommand {
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("📈", fallback: "*")) \(formatter.colorize("\(source.name) Forecast", as: .bold))")
+        print("\(formatter.emoji("📈", fallback: "*")) \(formatter.colorize("\(source.displayName) Forecast", as: .bold))")
         for forecast in forecasts {
             if let result = forecast.forecast {
                 if source.metrics.count > 1 {

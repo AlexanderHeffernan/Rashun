@@ -245,7 +245,7 @@ final class PreferencesViewModel: ObservableObject {
                 .map { metric in
                 MenuBarMetricOption(
                     sourceName: source.name,
-                    sourceTitle: source.name,
+                    sourceTitle: source.displayName,
                     metricId: metric.id,
                     metricTitle: metric.title
                 )
@@ -342,7 +342,7 @@ final class PreferencesViewModel: ObservableObject {
             let error = source.unsupportedMetricError("default")
             let presentation = source.mapFetchError(for: "default", error)
             SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
-            sourceHealthCheckErrorMessage = "Could not enable \(source.name).\n\n\(presentation.detailedMessage)"
+            sourceHealthCheckErrorMessage = "Could not enable \(source.displayName).\n\n\(presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
             return
         }
@@ -375,7 +375,7 @@ final class PreferencesViewModel: ObservableObject {
         if didSucceed {
             settings.setEnabled(true, for: source.name)
         } else if let failure = firstFailure {
-            sourceHealthCheckErrorMessage = "Could not enable \(source.name).\n\n\(failure.presentation.detailedMessage)"
+            sourceHealthCheckErrorMessage = "Could not enable \(source.displayName).\n\n\(failure.presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
         }
     }
