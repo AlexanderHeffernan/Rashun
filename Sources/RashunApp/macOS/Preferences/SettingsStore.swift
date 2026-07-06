@@ -21,10 +21,11 @@ final class SettingsStore {
     private(set) var pollIntervalSeconds: TimeInterval = 120
     private(set) var autoUpdateCheckEnabled: Bool = true
     private(set) var menuBarAppearance = MenuBarAppearanceSettings()
+    private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: userDefaultsKey) else { return }
-        if let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) {
+        if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+           let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) {
             enabledMap = decoded
         }
         if let metricData = UserDefaults.standard.data(forKey: sourceMetricSettingsKey),
@@ -52,6 +53,8 @@ final class SettingsStore {
         if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
             autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
         }
+
+        forecastingMode = UsageForecastModePreference.current
 
         if let appearanceData = UserDefaults.standard.data(forKey: menuBarAppearanceKey),
            let decodedAppearance = try? JSONDecoder().decode(MenuBarAppearanceSettings.self, from: appearanceData) {
@@ -151,6 +154,12 @@ final class SettingsStore {
         } else {
             UpdateManager.shared.stopPeriodicChecks()
         }
+    }
+
+    func setForecastingMode(_ mode: UsageForecastEngine.Mode) {
+        forecastingMode = mode
+        UsageForecastModePreference.setCurrent(mode)
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
     func setMenuBarColorMode(_ mode: MenuBarColorMode) {

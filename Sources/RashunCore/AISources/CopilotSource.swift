@@ -6,6 +6,7 @@ public struct CopilotSource: AISource {
     public let requirements = "OS support: macOS/Linux/Windows. Requires GitHub CLI 'gh' configured, authenticated, and available on PATH (used to fetch auth token)."
     public let metrics = [AISourceMetric(id: "copilot-premium-interactions", title: "Copilot", menuBarBadgeText: "1m")]
     public let menuBarBrandColorHex: UInt32 = 0x2EA44F
+    public var pacingBehavior: SourcePacingBehavior { .resetWindow }
     public var agentConfigDirectory: String? { "~/.copilot" }
     public var agentInstructionFilePath: String? { "~/.copilot/instructions/rashun.instructions.md" }
     public var agentRequiresManualSetup: Bool { true }
@@ -107,75 +108,14 @@ public struct CopilotSource: AISource {
         guard let resetDate = current.resetDate ?? monthlyResetDate(reference: now) else {
             return nil
         }
-        let utc = TimeZone(secondsFromGMT: 0)!
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = utc
-
-        let yearMonth = calendar.dateComponents([.year, .month], from: now)
-        guard let cycleStart = calendar.date(from: DateComponents(
-            timeZone: utc,
-            year: yearMonth.year,
-            month: yearMonth.month,
-            day: 1,
-            hour: 0,
-            minute: 0,
-            second: 0
-        )) else { return nil }
-
-        let currentPercent = min(max(current.percentRemaining, 0), 100)
-        let usedPercentSoFar = 100 - currentPercent
-        let elapsedSinceCycleStart = max(now.timeIntervalSince(cycleStart), 1)
-        let burnRatePerSecond = usedPercentSoFar > 0 ? (usedPercentSoFar / elapsedSinceCycleStart) : 0
-
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateFormat = "MMM d, h:mm a"
-
-        let preReset = resetDate.addingTimeInterval(-1)
-        var points: [ForecastPoint] = [ForecastPoint(date: now, value: currentPercent)]
-
-        let projectedPreReset: Double
-        if burnRatePerSecond > 0 {
-            let secondsToPreReset = max(0, preReset.timeIntervalSince(now))
-            let secondsToZero = currentPercent / burnRatePerSecond
-            let projectionHorizon = min(secondsToPreReset, secondsToZero)
-            let steps = max(12, min(80, Int(projectionHorizon / 3600)))
-
-            for index in 1...steps {
-                let fraction = Double(index) / Double(steps)
-                let date = now.addingTimeInterval(projectionHorizon * fraction)
-                let value = max(currentPercent - burnRatePerSecond * date.timeIntervalSince(now), 0)
-                points.append(ForecastPoint(date: date, value: value))
-            }
-
-            if secondsToZero < secondsToPreReset {
-                points.append(ForecastPoint(date: preReset, value: 0))
-            }
-
-            projectedPreReset = max(currentPercent - burnRatePerSecond * secondsToPreReset, 0)
-        } else {
-            projectedPreReset = currentPercent
-            if preReset > now {
-                points.append(ForecastPoint(date: preReset, value: currentPercent))
-            }
-        }
-
-        points.append(ForecastPoint(date: resetDate, value: projectedPreReset))
-        points.append(ForecastPoint(date: resetDate, value: 100))
-
-        let summary: String
-        if burnRatePerSecond > 0 {
-            let secondsToZero = currentPercent / burnRatePerSecond
-            let zeroDate = now.addingTimeInterval(secondsToZero)
-            if secondsToZero.isFinite, zeroDate > now, zeroDate < resetDate {
-                summary = "Copilot: projected 0% by \(displayFormatter.string(from: zeroDate)); resets \(displayFormatter.string(from: resetDate))"
-            } else {
-                summary = "Copilot: projected \(String(format: "%.0f", projectedPreReset))% at reset (\(displayFormatter.string(from: resetDate)))"
-            }
-        } else {
-            summary = "Copilot: resets \(displayFormatter.string(from: resetDate))"
-        }
-
-        return ForecastResult(points: points, summary: summary)
+        return UsageForecastEngine.resetWindowForecast(
+            sourceLabel: displayName,
+            current: current,
+            history: history,
+            resetDate: resetDate,
+            historyWindowHours: 24 * 45,
+            now: now
+        )
     }
 
     private func fetchCopilotUserPayloadViaGhApi() throws -> [String: Any] {

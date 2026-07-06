@@ -3,7 +3,8 @@ import Foundation
 public enum NotificationDefinitions {
     public static func generic(
         sourceName: String,
-        pacingLookbackStart: ((NotificationContext, Date) -> Date?)? = nil
+        pacingLookbackStart: ((NotificationContext, Date) -> Date?)? = nil,
+        pacingAssessment: ((NotificationContext, Date) -> UsagePacingAssessment?)? = nil
     ) -> [NotificationDefinition] {
         let percentRemainingBelow = NotificationDefinition(
             id: "percentRemainingBelow",
@@ -105,26 +106,52 @@ public enum NotificationDefinitions {
         )
 
         var definitions = [percentRemainingBelow, recentSpike, metricReset]
-        if pacingLookbackStart != nil {
-            definitions.append(pacingAlert(sourceName: sourceName, pacingLookbackStart: pacingLookbackStart))
+        if pacingLookbackStart != nil || pacingAssessment != nil {
+            definitions.append(pacingAlert(
+                sourceName: sourceName,
+                pacingLookbackStart: pacingLookbackStart,
+                pacingAssessment: pacingAssessment
+            ))
         }
         return definitions
     }
 
     private static func pacingAlert(
         sourceName: String,
-        pacingLookbackStart: ((NotificationContext, Date) -> Date?)?
+        pacingLookbackStart: ((NotificationContext, Date) -> Date?)?,
+        pacingAssessment: ((NotificationContext, Date) -> UsagePacingAssessment?)?
     ) -> NotificationDefinition {
         NotificationDefinition(
             id: "pacingAlert",
-            title: "Pacing alert",
-            detail: "Notifies if current usage trend is projected to hit 0% before reset.",
+            title: "Pacing guidance",
+            detail: "Notifies when your current usage pace needs attention before reset.",
             inputs: [],
             evaluate: { context in
                 let now = Date()
                 guard let resetDate = context.current.resetDate, resetDate > now else {
                     return nil
                 }
+
+                if let assessment = pacingAssessment?(context, now) {
+                    guard assessment.confidence >= 0.35 else { return nil }
+                    guard [.conserveLightly, .conserve, .conserveHard].contains(assessment.recommendation) else { return nil }
+
+                    let formatter = DateFormatter()
+                    formatter.dateFormat = "MMM d, h:mm a"
+
+                    let title = "\(sourceName) \(assessment.recommendation.label.lowercased())"
+                    let body: String
+                    if let projectedZeroDate = assessment.projectedZeroDate {
+                        body = "\(assessment.recommendation.label): projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
+                    } else {
+                        body = "\(assessment.recommendation.label). Reset is \(formatter.string(from: resetDate))."
+                    }
+
+                    let cycleFormatter = ISO8601DateFormatter()
+                    let cycleKey = cycleFormatter.string(from: resetDate)
+                    return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
+                }
+
                 let defaultStart = context.current.cycleStartDate ?? now.addingTimeInterval(-24 * 3600)
                 let lookbackStart = pacingLookbackStart?(context, now) ?? defaultStart
                 let recent = context.history.filter { $0.timestamp >= lookbackStart && $0.timestamp <= now }
@@ -158,8 +185,8 @@ public enum NotificationDefinitions {
                 let formatter = DateFormatter()
                 formatter.dateFormat = "MMM d, h:mm a"
 
-                let title = "\(sourceName) pacing alert"
-                let body = "At current pace, projected 0% by \(formatter.string(from: projectedZeroDate)) before reset at \(formatter.string(from: resetDate))."
+                let title = "\(sourceName) conserve"
+                let body = "Conserve: projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
 
                 let cycleFormatter = ISO8601DateFormatter()
                 let cycleKey = cycleFormatter.string(from: resetDate)

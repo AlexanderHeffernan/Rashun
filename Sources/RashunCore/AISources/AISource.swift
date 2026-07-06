@@ -21,6 +21,10 @@ public protocol AISource: Sendable {
     func notificationDefinitions(for metricId: String) -> [NotificationDefinition]
     /// Metric-specific forecast.
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult?
+    /// How this source should participate in pacing guidance.
+    var pacingBehavior: SourcePacingBehavior { get }
+    /// Metric-specific pacing assessment.
+    func pacingAssessment(for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date) -> UsagePacingAssessment?
     /// Source-specific brand color used by source-solid menu bar rings.
     var menuBarBrandColorHex: UInt32 { get }
     /// Directory that indicates the agent is installed (e.g. "~/.config/amp").
@@ -62,6 +66,14 @@ extension AISource {
         }
 
         let pacingResolver = pacingLookbackStart(for: metricId)
+        let assessmentResolver: ((NotificationContext, Date) -> UsagePacingAssessment?)? = pacingBehavior == .none ? nil : { context, now in
+            pacingAssessment(
+                for: metricId,
+                current: context.current,
+                history: context.history,
+                now: now
+            )
+        }
         return NotificationDefinitions.generic(
             sourceName: sourceLabel,
             // Adapt source resolver signature to NotificationContext-based signature.
@@ -69,7 +81,8 @@ extension AISource {
                 { context, now in
                     resolver(context.current, context.history, now)
                 }
-            }
+            },
+            pacingAssessment: assessmentResolver
         )
     }
 
@@ -90,6 +103,25 @@ extension AISource {
     /// Forecasting is optional; default is no forecast for this metric.
     public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
         nil
+    }
+
+    public var pacingBehavior: SourcePacingBehavior { .none }
+
+    public func pacingAssessment(for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date) -> UsagePacingAssessment? {
+        switch pacingBehavior {
+        case .resetWindow:
+            guard let resetDate = current.resetDate else { return nil }
+            return UsageForecastEngine.resetWindowPacingAssessment(
+                current: current,
+                history: history,
+                resetDate: resetDate,
+                now: now
+            )
+        case .refillOnly:
+            return UsageForecastEngine.refillOnlyPacingAssessment(current: current)
+        case .none:
+            return nil
+        }
     }
 
     public var menuBarBrandColorHex: UInt32 { 0x935AFD }

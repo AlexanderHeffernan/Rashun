@@ -35,6 +35,7 @@ final class PreferencesViewModel: ObservableObject {
     @Published private(set) var sourceHealthCheckInProgress = false
     @Published private(set) var healthCheckSourceName: String?
     @Published private(set) var menuBarAppearance = MenuBarAppearanceSettings()
+    @Published private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
 
     private var settings: SettingsStore { .shared }
     private var updates: UpdateManager { .shared }
@@ -43,6 +44,7 @@ final class PreferencesViewModel: ObservableObject {
         registerObservers()
         pollMinutesText = formattedPollMinutes()
         menuBarAppearance = settings.menuBarAppearance
+        forecastingMode = settings.forecastingMode
         refreshUpdateStatus()
     }
 
@@ -71,6 +73,7 @@ final class PreferencesViewModel: ObservableObject {
         pollMinutesText = formattedPollMinutes()
         sanitizeMenuBarSelections()
         menuBarAppearance = settings.menuBarAppearance
+        forecastingMode = settings.forecastingMode
         refreshUpdateStatus()
     }
 
@@ -199,6 +202,11 @@ final class PreferencesViewModel: ObservableObject {
         set { settings.setAutoUpdateCheckEnabled(newValue) }
     }
 
+    var selectedForecastingMode: UsageForecastEngine.Mode {
+        get { forecastingMode }
+        set { settings.setForecastingMode(newValue) }
+    }
+
     var launchAtLoginEnabled: Bool { SMAppService.mainApp.status == .enabled }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -313,6 +321,7 @@ final class PreferencesViewModel: ObservableObject {
         pollMinutesText = formattedPollMinutes()
         sanitizeMenuBarSelections()
         menuBarAppearance = settings.menuBarAppearance
+        forecastingMode = settings.forecastingMode
     }
 
     private func sanitizeMenuBarSelections() {

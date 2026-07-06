@@ -297,28 +297,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult) -> PaceStatus? {
         let percent = min(max(usage.percentRemaining, 0), 100)
-        if Int(round(percent)) <= 0 {
-            return PaceStatus(score: -100, isExhausted: true)
+        let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
+        if let assessment = source.pacingAssessment(for: metric.id, current: usage, history: history, now: Date()) {
+            if assessment.recommendation == .limitReached {
+                return PaceStatus(score: assessment.score, isExhausted: true, overrideLabel: assessment.recommendation.label)
+            }
+            return PaceStatus(score: assessment.score, overrideLabel: assessment.recommendation.label)
         }
-        if let resetDate = usage.resetDate, resetDate > Date() {
-            let now = Date()
-            let cycleStart = usage.cycleStartDate ?? inferredCycleStartDate(metric: metric, resetDate: resetDate)
-            guard cycleStart < resetDate else { return PaceStatus(score: 0) }
 
-            let cycleDuration = resetDate.timeIntervalSince(cycleStart)
-            guard cycleDuration > 0 else { return PaceStatus(score: 0) }
-
-            let remainingFraction = min(max(resetDate.timeIntervalSince(now) / cycleDuration, 0), 1)
-            let idealPercent = remainingFraction * 100
-            let delta = percent - idealPercent
-            return PaceStatus(score: delta)
+        guard source.pacingBehavior != .none else {
+            return nil
         }
 
         if Int(round(percent)) >= 100 {
             return PaceStatus(score: 100)
         }
 
-        let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
         if let forecast = source.forecast(for: metric.id, current: usage, history: history),
            let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date {
             let hoursToFull = fullDate.timeIntervalSince(Date()) / 3600
@@ -333,20 +327,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         return nil
-    }
-
-    private func inferredCycleStartDate(metric: AISourceMetric, resetDate: Date) -> Date {
-        let lowered = "\(metric.id) \(metric.title)".lowercased()
-        if lowered.contains("5h") || lowered.contains("5 hour") {
-            return resetDate.addingTimeInterval(-5 * 3600)
-        }
-        if lowered.contains("weekly") || lowered.contains("7d") {
-            return resetDate.addingTimeInterval(-7 * 24 * 3600)
-        }
-        if lowered.contains("daily") || lowered.contains("24h") {
-            return resetDate.addingTimeInterval(-24 * 3600)
-        }
-        return resetDate.addingTimeInterval(-24 * 3600)
     }
 
     private func compactDateDescription(for date: Date, now: Date) -> String {
@@ -570,8 +550,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct PaceStatus {
         let score: Double
         var isExhausted: Bool = false
+        var overrideLabel: String?
 
         var label: String {
+            if let overrideLabel {
+                return overrideLabel
+            }
             if isExhausted {
                 return "Limit reached"
             }
@@ -1102,7 +1086,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let paceStatus = metric.paceStatus {
             return colorFromHex(paceStatus.colorHex)
         }
-        return brandPrimaryColor
+        return colorFromHex(metric.sourceColorHex)
     }
 
     private func darkerColor(_ color: NSColor) -> NSColor {

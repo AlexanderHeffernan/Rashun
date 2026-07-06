@@ -38,6 +38,7 @@ public struct GeminiSource: AISource {
     public var agentConfigDirectory: String? { "~/.gemini" }
     public var agentInstructionFilePath: String? { "~/.gemini/AGENTS.md" }
     public var agentName: String { "Gemini CLI" }
+    public var pacingBehavior: SourcePacingBehavior { .resetWindow }
     public let metrics: [AISourceMetric] = [
         AISourceMetric(id: "gemini-2.5-flash", title: "2.5-Flash", menuBarBadgeText: "2.5"),
         AISourceMetric(id: "gemini-2.5-flash-lite", title: "2.5-Flash-Lite", menuBarBadgeText: "2.5-Lite"),
@@ -226,7 +227,7 @@ public struct GeminiSource: AISource {
 
     public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
         guard let resetDate = current.resetDate, resetDate > Date() else { return nil }
-        return resetWindowForecast(
+        return UsageForecastEngine.resetWindowForecast(
             sourceLabel: name,
             current: current,
             history: history,
@@ -438,87 +439,6 @@ public struct GeminiSource: AISource {
         return String(text.prefix(200))
     }
 
-    private func resetWindowForecast(
-        sourceLabel: String,
-        current: UsageResult,
-        history: [UsageSnapshot],
-        resetDate: Date,
-        historyWindowHours: Double
-    ) -> ForecastResult? {
-        let now = Date()
-        guard resetDate > now else { return nil }
-
-        let currentPercent = min(max(current.percentRemaining, 0), 100)
-        var points: [ForecastPoint] = [ForecastPoint(date: now, value: currentPercent)]
-        let burnRate = burnRatePerSecond(from: history, now: now, currentPercent: currentPercent, lookbackHours: historyWindowHours)
-        let preReset = resetDate.addingTimeInterval(-1)
-
-        let projectedPreReset: Double
-        if burnRate > 0 {
-            let secondsToZero = currentPercent / burnRate
-            let secondsToPreReset = max(0, preReset.timeIntervalSince(now))
-            let horizon = min(secondsToZero, secondsToPreReset)
-            let steps = max(12, min(80, Int(horizon / 1800)))
-
-            if steps > 0, horizon > 0 {
-                for index in 1...steps {
-                    let fraction = Double(index) / Double(steps)
-                    let date = now.addingTimeInterval(horizon * fraction)
-                    let value = max(currentPercent - burnRate * date.timeIntervalSince(now), 0)
-                    points.append(ForecastPoint(date: date, value: value))
-                }
-            }
-
-            projectedPreReset = max(currentPercent - burnRate * secondsToPreReset, 0)
-        } else {
-            projectedPreReset = currentPercent
-            if preReset > now {
-                points.append(ForecastPoint(date: preReset, value: currentPercent))
-            }
-        }
-
-        points.append(ForecastPoint(date: resetDate, value: projectedPreReset))
-        points.append(ForecastPoint(date: resetDate, value: 100))
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, h:mm a"
-
-        let summary: String
-        if burnRate > 0 {
-            let secondsToZero = currentPercent / burnRate
-            let zeroDate = now.addingTimeInterval(secondsToZero)
-            if secondsToZero.isFinite, zeroDate > now, zeroDate < resetDate {
-                summary = "\(sourceLabel): projected 0% by \(formatter.string(from: zeroDate)); resets \(formatter.string(from: resetDate))"
-            } else {
-                summary = "\(sourceLabel): projected \(String(format: "%.0f", projectedPreReset))% at reset (\(formatter.string(from: resetDate)))"
-            }
-        } else {
-            summary = "\(sourceLabel): resets \(formatter.string(from: resetDate))"
-        }
-
-        return ForecastResult(points: points, summary: summary)
-    }
-
-    private func burnRatePerSecond(
-        from history: [UsageSnapshot],
-        now: Date,
-        currentPercent: Double,
-        lookbackHours: Double
-    ) -> Double {
-        let lookbackStart = now.addingTimeInterval(-(lookbackHours * 3600))
-        let recent = history.filter { $0.timestamp >= lookbackStart && $0.timestamp <= now }
-
-        var xs: [Double] = recent.map { $0.timestamp.timeIntervalSinceReferenceDate }
-        var ys: [Double] = recent.map { min(max($0.usage.percentRemaining, 0), 100) }
-
-        if xs.isEmpty || xs.last != now.timeIntervalSinceReferenceDate {
-            xs.append(now.timeIntervalSinceReferenceDate)
-            ys.append(currentPercent)
-        }
-
-        guard let slope = LinearRegression.slope(xs: xs, ys: ys) else { return 0 }
-        return max(0, -slope)
-    }
 }
 
 public enum GeminiFetchError: Error {

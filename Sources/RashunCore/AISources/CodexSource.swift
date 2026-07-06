@@ -53,6 +53,7 @@ public struct CodexSource: AISource {
         AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly", menuBarBadgeText: "7d"),
     ]
     public let menuBarBrandColorHex: UInt32 = 0x3C35FF
+    public var pacingBehavior: SourcePacingBehavior { .resetWindow }
     public var agentConfigDirectory: String? { "~/.codex" }
     public var agentInstructionFilePath: String? { "~/.codex/AGENTS.md" }
 
@@ -326,7 +327,7 @@ public struct CodexSource: AISource {
 
     public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
         guard let resetDate = current.resetDate, resetDate > Date() else { return nil }
-        return resetWindowForecast(
+        return UsageForecastEngine.resetWindowForecast(
             sourceLabel: name,
             current: current,
             history: history,
@@ -452,103 +453,6 @@ public struct CodexSource: AISource {
         if let value = raw as? Int { return Double(value) }
         if let number = raw as? NSNumber { return number.doubleValue }
         return nil
-    }
-
-    private func resetWindowForecast(
-        sourceLabel: String,
-        current: UsageResult,
-        history: [UsageSnapshot],
-        resetDate: Date,
-        historyWindowHours: Double
-    ) -> ForecastResult? {
-        let now = Date()
-        guard resetDate > now else { return nil }
-
-        let currentPercent = min(max(current.percentRemaining, 0), 100)
-        var points: [ForecastPoint] = [ForecastPoint(date: now, value: currentPercent)]
-        let filteredHistory = historyForCurrentCycle(history, current: current)
-        let burnRate = burnRatePerSecond(from: filteredHistory, now: now, currentPercent: currentPercent, lookbackHours: historyWindowHours)
-        let preReset = resetDate.addingTimeInterval(-1)
-
-        let projectedPreReset: Double
-        if burnRate > 0 {
-            let secondsToZero = currentPercent / burnRate
-            let secondsToPreReset = max(0, preReset.timeIntervalSince(now))
-            let horizon = min(secondsToZero, secondsToPreReset)
-            let steps = max(12, min(80, Int(horizon / 1800)))
-
-            if steps > 0, horizon > 0 {
-                for index in 1...steps {
-                    let fraction = Double(index) / Double(steps)
-                    let date = now.addingTimeInterval(horizon * fraction)
-                    let value = max(currentPercent - burnRate * date.timeIntervalSince(now), 0)
-                    points.append(ForecastPoint(date: date, value: value))
-                }
-            }
-
-            projectedPreReset = max(currentPercent - burnRate * secondsToPreReset, 0)
-        } else {
-            projectedPreReset = currentPercent
-            if preReset > now {
-                points.append(ForecastPoint(date: preReset, value: currentPercent))
-            }
-        }
-
-        points.append(ForecastPoint(date: resetDate, value: projectedPreReset))
-        points.append(ForecastPoint(date: resetDate, value: 100))
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, h:mm a"
-
-        let summary: String
-        if burnRate > 0 {
-            let secondsToZero = currentPercent / burnRate
-            let zeroDate = now.addingTimeInterval(secondsToZero)
-            if secondsToZero.isFinite, zeroDate > now, zeroDate < resetDate {
-                summary = "\(sourceLabel): projected 0% by \(formatter.string(from: zeroDate)); resets \(formatter.string(from: resetDate))"
-            } else {
-                summary = "\(sourceLabel): projected \(String(format: "%.0f", projectedPreReset))% at reset (\(formatter.string(from: resetDate)))"
-            }
-        } else {
-            summary = "\(sourceLabel): resets \(formatter.string(from: resetDate))"
-        }
-
-        return ForecastResult(points: points, summary: summary)
-    }
-
-    private func historyForCurrentCycle(_ history: [UsageSnapshot], current: UsageResult) -> [UsageSnapshot] {
-        let epsilon: TimeInterval = 1
-        return history.filter { snapshot in
-            if let currentReset = current.resetDate {
-                guard let snapshotReset = snapshot.usage.resetDate else { return false }
-                return abs(snapshotReset.timeIntervalSince(currentReset)) <= epsilon
-            }
-            if let cycleStart = current.cycleStartDate {
-                return snapshot.timestamp >= cycleStart
-            }
-            return true
-        }
-    }
-
-    private func burnRatePerSecond(
-        from history: [UsageSnapshot],
-        now: Date,
-        currentPercent: Double,
-        lookbackHours: Double
-    ) -> Double {
-        let lookbackStart = now.addingTimeInterval(-(lookbackHours * 3600))
-        let recent = history.filter { $0.timestamp >= lookbackStart && $0.timestamp <= now }
-
-        var xs: [Double] = recent.map { $0.timestamp.timeIntervalSinceReferenceDate }
-        var ys: [Double] = recent.map { min(max($0.usage.percentRemaining, 0), 100) }
-
-        if xs.isEmpty || xs.last != now.timeIntervalSinceReferenceDate {
-            xs.append(now.timeIntervalSinceReferenceDate)
-            ys.append(currentPercent)
-        }
-
-        guard let slope = LinearRegression.slope(xs: xs, ys: ys) else { return 0 }
-        return max(0, -slope)
     }
 
     private func readAuth() throws -> CodexAuth {

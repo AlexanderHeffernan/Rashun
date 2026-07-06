@@ -17,6 +17,8 @@ struct GeneralTabView: View {
                 sectionDivider
                 refreshSection
                 sectionDivider
+                forecastingSection
+                sectionDivider
                 menuBarSection
             }
         }
@@ -72,6 +74,37 @@ struct GeneralTabView: View {
         Rectangle()
             .fill(BrandPalette.primary.opacity(0.22))
             .frame(height: 1)
+    }
+
+    private var forecastingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Forecasting")
+
+            HStack(alignment: .center, spacing: 10) {
+                Text("Mode")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(BrandPalette.textPrimary)
+
+                Picker(
+                    "",
+                    selection: Binding(
+                        get: { model.selectedForecastingMode },
+                        set: { model.selectedForecastingMode = $0 }
+                    )
+                ) {
+                    Text("Simple").tag(UsageForecastEngine.Mode.simple)
+                    Text("Smart").tag(UsageForecastEngine.Mode.smart)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+
+            Text("Smart adapts to your usage hours and smooths short bursts; Simple uses the cycle average.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(BrandPalette.textSecondary.opacity(0.9))
+                .padding(.leading, 30)
+        }
     }
 
     private var menuBarSection: some View {
