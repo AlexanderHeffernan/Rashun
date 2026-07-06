@@ -164,6 +164,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 MenuDropdownMetricRowModel(
                     title: "No metrics enabled",
                     valueText: "--",
+                    detailText: nil,
                     progress: 0,
                     hasValue: false,
                     hasWarning: hasWarning
@@ -174,21 +175,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             rows = metrics.map { metric in
                 let warning = metricHasWarning(source: source, metricId: metric.id)
                 let rowTitle = sourceHasSingleMetric ? "Remaining" : metric.title
+                let usage = usageResultForIcon(sourceName: source.name, metricId: metric.id)
                 if loadingSources.contains(source.name) {
+                    if let usage {
+                        let percent = min(max(usage.percentRemaining, 0), 100)
+                        return MenuDropdownMetricRowModel(
+                            title: rowTitle,
+                            valueText: "\(Int(round(percent)))%",
+                            detailText: refreshingTimingText(source: source, metric: metric, usage: usage),
+                            progress: percent / 100,
+                            hasValue: true,
+                            hasWarning: warning
+                        )
+                    }
+
                     return MenuDropdownMetricRowModel(
                         title: rowTitle,
                         valueText: "Refreshing",
+                        detailText: nil,
                         progress: 0,
                         hasValue: false,
                         hasWarning: warning
                     )
                 }
 
-                if let usage = usageResultForIcon(sourceName: source.name, metricId: metric.id) {
+                if let usage {
                     let percent = min(max(usage.percentRemaining, 0), 100)
                     return MenuDropdownMetricRowModel(
                         title: rowTitle,
                         valueText: "\(Int(round(percent)))%",
+                        detailText: metricTimingText(source: source, metric: metric, usage: usage),
                         progress: percent / 100,
                         hasValue: true,
                         hasWarning: warning
@@ -198,6 +214,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return MenuDropdownMetricRowModel(
                     title: rowTitle,
                     valueText: "--",
+                    detailText: nil,
                     progress: 0,
                     hasValue: false,
                     hasWarning: warning
@@ -217,6 +234,57 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         host.frame = NSRect(origin: .zero, size: fit)
         return host
     }
+
+    private func refreshingTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
+        guard let timingText = metricTimingText(source: source, metric: metric, usage: usage) else {
+            return nil
+        }
+        return "\(timingText) • Refreshing"
+    }
+
+    private func metricTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
+        let percent = min(max(usage.percentRemaining, 0), 100)
+        guard Int(round(percent)) < 100 else {
+            return nil
+        }
+
+        let now = Date()
+        if let resetDate = usage.resetDate, resetDate > now {
+            return "Resets \(compactDateDescription(for: resetDate, now: now))"
+        }
+
+        let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
+        guard let forecast = source.forecast(for: metric.id, current: usage, history: history),
+              let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date,
+              fullDate > now else {
+            return nil
+        }
+
+        return "Reaches 100% \(compactDateDescription(for: fullDate, now: now))"
+    }
+
+    private func compactDateDescription(for date: Date, now: Date) -> String {
+        let interval = date.timeIntervalSince(now)
+        if interval < 24 * 3600,
+           let relative = Self.menuRelativeFormatter.string(from: interval) {
+            return "in \(relative)"
+        }
+        return Self.menuDateFormatter.string(from: date)
+    }
+
+    private static let menuRelativeFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter
+    }()
+
+    private static let menuDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE 'at' h:mm a"
+        return formatter
+    }()
 
     @objc func refreshClicked() {
         Task { await refresh() }
