@@ -5,6 +5,7 @@ struct UsageChartRepresentable: NSViewRepresentable {
     let series: [ChartSeries]
     let visibleStartDate: Date?
     let visibleEndDate: Date?
+    let onHorizontalScroll: (CGFloat, CGFloat) -> Void
 
     func makeNSView(context: Context) -> UsageChartView {
         let view = UsageChartView()
@@ -19,5 +20,6 @@ struct UsageChartRepresentable: NSViewRepresentable {
         nsView.visibleStartDate = visibleStartDate
         nsView.visibleEndDate = visibleEndDate
         nsView.showLegend = false
+        nsView.onHorizontalScroll = onHorizontalScroll
     }
 }

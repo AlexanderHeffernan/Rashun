@@ -15,7 +15,6 @@ struct UsageHistoryRootView: View {
                     header
                     rangeSelector
                     chartCard
-                    summaryCard
                 }
                 .frame(maxWidth: 1100, alignment: .topLeading)
                 .padding(.horizontal, 26)
@@ -58,6 +57,7 @@ struct UsageHistoryRootView: View {
                         emptyState("Not enough data yet. Refresh a source to build history.")
                     } else {
                         chartView
+                        chartToolbar
                     }
                 }
             }
@@ -126,6 +126,59 @@ struct UsageHistoryRootView: View {
         }
     }
 
+    private var chartToolbar: some View {
+        HStack(spacing: 10) {
+            if model.supportsViewportScrolling {
+                Text("Scroll sideways or use arrows")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(BrandPalette.textSecondary)
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 6) {
+                    chartNavigationButton(
+                        systemName: "chevron.left",
+                        label: "Show earlier history",
+                        isEnabled: model.canMoveViewportBackward
+                    ) {
+                        model.moveViewport(.backward)
+                    }
+                    chartNavigationButton(
+                        systemName: "chevron.right",
+                        label: "Show later history",
+                        isEnabled: model.canMoveViewportForward
+                    ) {
+                        model.moveViewport(.forward)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: model.supportsViewportScrolling ? 30 : 0, alignment: .trailing)
+    }
+
+    private func chartNavigationButton(systemName: String, label: String, isEnabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(BrandPalette.textPrimary)
+                .frame(width: 30, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(BrandPalette.cardAlt.opacity(0.9))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(BrandPalette.primary.opacity(0.34), lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .disabled(!isEnabled)
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.42)
+        .accessibilityLabel(label)
+        .help(label)
+    }
+
     private func lineStyleKey(label: String, dashed: Bool) -> some View {
         HStack(spacing: 6) {
             Path { path in
@@ -148,28 +201,10 @@ struct UsageHistoryRootView: View {
         UsageChartRepresentable(
             series: model.visibleSeries,
             visibleStartDate: model.visibleStartDate,
-            visibleEndDate: model.visibleEndDate
+            visibleEndDate: model.visibleEndDate,
+            onHorizontalScroll: model.scrollViewport
         )
         .frame(height: 360)
-    }
-
-    private var summaryCard: some View {
-        BrandCard(title: "Forecast Insights") {
-            if model.summaryLines.isEmpty {
-                Text("No forecast insights available.")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(BrandPalette.textSecondary)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.summaryLines, id: \.self) { line in
-                        Text(line)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(BrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-        }
     }
 }
 

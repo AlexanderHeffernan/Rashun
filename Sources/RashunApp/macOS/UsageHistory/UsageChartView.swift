@@ -22,6 +22,7 @@ final class UsageChartView: NSView {
     var showLegend = false {
         didSet { needsDisplay = true }
     }
+    var onHorizontalScroll: ((CGFloat, CGFloat) -> Void)?
 
     private let paddingTop: CGFloat = 18
     private let paddingBottom: CGFloat = 35
@@ -73,6 +74,16 @@ final class UsageChartView: NSView {
         _ = event
         hoverDate = nil
         needsDisplay = true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let horizontalDelta = event.scrollingDeltaX
+        if abs(horizontalDelta) > abs(event.scrollingDeltaY), abs(horizontalDelta) > 0 {
+            onHorizontalScroll?(horizontalDelta, max(chartRect.width, 1))
+            return
+        }
+
+        super.scrollWheel(with: event)
     }
 
     override func draw(_ dirtyRect: NSRect) {

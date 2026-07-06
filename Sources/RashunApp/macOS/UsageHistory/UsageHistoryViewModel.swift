@@ -5,16 +5,19 @@ import RashunCore
 @MainActor
 final class UsageHistoryViewModel: ObservableObject {
     @Published var timeRange: ChartTimeRange = .week {
-        didSet { reloadChart() }
+        didSet {
+            viewportOffset = 0
+            reloadChart()
+        }
     }
     @Published private(set) var series: [ChartSeries] = []
-    @Published private(set) var summaryLines: [String] = []
     @Published private(set) var visibleStartDate: Date?
     @Published private(set) var visibleEndDate: Date?
     @Published private(set) var hasEnabledSources = false
     @Published private(set) var hiddenSeriesLabels: Set<String> = []
 
     private var currentSources: [AISource] = []
+    private var viewportOffset: TimeInterval = 0
 
     private static let palette: [NSColor] = [
         .systemBlue, .systemGreen, .systemOrange, .systemPurple, .systemRed
@@ -22,6 +25,20 @@ final class UsageHistoryViewModel: ObservableObject {
 
     var visibleSeries: [ChartSeries] {
         series.filter { !hiddenSeriesLabels.contains($0.label) }
+    }
+
+    var supportsViewportScrolling: Bool {
+        timeRange != .all
+    }
+
+    var canMoveViewportBackward: Bool {
+        guard let limits = viewportOffsetLimits() else { return false }
+        return viewportOffset > limits.min
+    }
+
+    var canMoveViewportForward: Bool {
+        guard let limits = viewportOffsetLimits() else { return false }
+        return viewportOffset < limits.max
     }
 
     func isSeriesVisible(_ label: String) -> Bool {
@@ -46,9 +63,10 @@ final class UsageHistoryViewModel: ObservableObject {
         hasEnabledSources = !enabledSources.isEmpty
 
         var chartSeries: [ChartSeries] = []
-        var summaries: [String] = []
         let now = Date()
-        let bounds = timeRange.rangeBounds(now: now)
+        let baseBounds = timeRange.rangeBounds(now: now)
+        clampViewportOffset(to: viewportOffsetLimits(baseBounds: baseBounds))
+        let bounds = shiftedBounds(for: baseBounds)
         let showForecastLines = timeRange != .all
         var seriesIndex = 0
 
@@ -63,9 +81,6 @@ final class UsageHistoryViewModel: ObservableObject {
                 let points = filterPoints(history, bounds: bounds)
                 let metricId = source.metrics.first?.id ?? "default"
                 let forecastPoints = filteredForecastPoints(source: source, metricId: metricId, history: history, points: points, bounds: bounds, showForecast: showForecastLines)
-                if let current = history.last?.usage, let forecast = source.forecast(for: metricId, current: current, history: history) {
-                    summaries.append(forecastSummary(label: source.displayName, original: forecast.summary))
-                }
                 chartSeries.append(ChartSeries(label: source.displayName, color: color, points: points, forecast: forecastPoints))
                 continue
             }
@@ -77,10 +92,6 @@ final class UsageHistoryViewModel: ObservableObject {
 
                 let points = filterPoints(history, bounds: bounds)
                 let forecastPoints = filteredForecastPoints(source: source, metricId: metric.id, history: history, points: points, bounds: bounds, showForecast: showForecastLines)
-
-                if let current = history.last?.usage, let forecast = source.forecast(for: metric.id, current: current, history: history) {
-                    summaries.append(forecastSummary(label: "\(source.displayName) - \(metric.title)", original: forecast.summary))
-                }
 
                 chartSeries.append(
                     ChartSeries(
@@ -96,9 +107,115 @@ final class UsageHistoryViewModel: ObservableObject {
         series = chartSeries
         let availableLabels = Set(chartSeries.map(\.label))
         hiddenSeriesLabels = hiddenSeriesLabels.intersection(availableLabels)
-        summaryLines = summaries
         visibleStartDate = bounds.start
         visibleEndDate = bounds.end
+    }
+
+    func scrollViewport(byHorizontalPixels pixels: CGFloat, visibleWidth: CGFloat) {
+        guard timeRange != .all,
+              visibleWidth > 0,
+              let visibleStartDate,
+              let visibleEndDate else {
+            return
+        }
+
+        let duration = visibleEndDate.timeIntervalSince(visibleStartDate)
+        guard duration > 0 else { return }
+
+        setViewportOffset(viewportOffset - TimeInterval(pixels / visibleWidth) * duration)
+        reloadChart()
+    }
+
+    func moveViewport(_ direction: ViewportDirection) {
+        guard timeRange != .all,
+              let visibleStartDate,
+              let visibleEndDate else {
+            return
+        }
+
+        let duration = visibleEndDate.timeIntervalSince(visibleStartDate)
+        guard duration > 0 else { return }
+
+        setViewportOffset(viewportOffset + duration * 0.85 * direction.multiplier)
+        reloadChart()
+    }
+
+    private func setViewportOffset(_ proposedOffset: TimeInterval) {
+        viewportOffset = proposedOffset
+        clampViewportOffset(to: viewportOffsetLimits())
+    }
+
+    private func clampViewportOffset(to limits: (min: TimeInterval, max: TimeInterval)?) {
+        guard let limits else {
+            viewportOffset = 0
+            return
+        }
+        viewportOffset = min(max(viewportOffset, limits.min), limits.max)
+    }
+
+    private func viewportOffsetLimits(baseBounds: (start: Date?, end: Date?)? = nil) -> (min: TimeInterval, max: TimeInterval)? {
+        guard timeRange != .all else { return nil }
+
+        let bounds = baseBounds ?? timeRange.rangeBounds(now: Date())
+        guard let baseStart = bounds.start,
+              let baseEnd = bounds.end,
+              baseEnd > baseStart,
+              let dataRange = availableDataRange() else {
+            return nil
+        }
+
+        let duration = baseEnd.timeIntervalSince(baseStart)
+        let edgeInset = duration * 0.05
+
+        return (
+            min: dataRange.earliest.timeIntervalSince(baseEnd) + edgeInset,
+            max: dataRange.latest.timeIntervalSince(baseStart) - edgeInset
+        )
+    }
+
+    private func shiftedBounds(for bounds: (start: Date?, end: Date?)) -> (start: Date?, end: Date?) {
+        guard viewportOffset != 0 else { return bounds }
+        return (
+            bounds.start?.addingTimeInterval(viewportOffset),
+            bounds.end?.addingTimeInterval(viewportOffset)
+        )
+    }
+
+    private func availableDataRange() -> (earliest: Date, latest: Date)? {
+        let enabledSources = currentSources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
+        var dates: [Date] = []
+
+        for source in enabledSources {
+            let enabledMetrics = source.metrics
+                .filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+
+            if source.metrics.count <= 1 {
+                let history = UsageHistoryStore.shared.history(for: source.name)
+                let metricId = source.metrics.first?.id ?? "default"
+                dates.append(contentsOf: history.map(\.timestamp))
+                dates.append(contentsOf: forecastDates(source: source, metricId: metricId, history: history))
+                continue
+            }
+
+            for metric in enabledMetrics {
+                let history = loadMetricHistory(source: source, metric: metric)
+                dates.append(contentsOf: history.map(\.timestamp))
+                dates.append(contentsOf: forecastDates(source: source, metricId: metric.id, history: history))
+            }
+        }
+
+        guard let earliest = dates.min(), let latest = dates.max() else { return nil }
+        return (earliest, latest)
+    }
+
+    private func forecastDates(source: AISource, metricId: String, history: [UsageSnapshot]) -> [Date] {
+        guard timeRange != .all,
+              let current = history.last?.usage,
+              let forecast = source.forecast(for: metricId, current: current, history: history) else {
+            return []
+        }
+
+        return forecast.points.map(\.date)
     }
 
     private func metricHistorySeriesName(source: AISource, metric: AISourceMetric) -> String {
@@ -211,10 +328,18 @@ final class UsageHistoryViewModel: ObservableObject {
         return points.sorted(by: { $0.date < $1.date })
     }
 
-    private func forecastSummary(label: String, original: String) -> String {
-        if let separatorRange = original.range(of: ":") {
-            return "\(label)\(original[separatorRange.lowerBound...])"
+}
+
+enum ViewportDirection {
+    case backward
+    case forward
+
+    var multiplier: TimeInterval {
+        switch self {
+        case .backward:
+            return -1
+        case .forward:
+            return 1
         }
-        return "\(label): \(original)"
     }
 }
