@@ -9,6 +9,7 @@ struct MenuDropdownMetricRowModel: Identifiable {
     let valueText: String
     let detailText: String?
     let progress: Double
+    let colorHex: UInt32?
     let hasValue: Bool
     let hasWarning: Bool
 }
@@ -46,6 +47,8 @@ struct MenuDropdownSourceCardView: View {
 
     @ViewBuilder
     private func menuMetricRow(_ row: MenuDropdownMetricRowModel) -> some View {
+        let rowColor = Color(hex: row.colorHex ?? sourceColorHex)
+
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Text(row.title)
@@ -62,7 +65,7 @@ struct MenuDropdownSourceCardView: View {
                             .frame(height: 5)
 
                         Capsule()
-                            .fill(sourceColor)
+                            .fill(rowColor)
                             .frame(width: proxy.size.width * clamped, height: 5)
                     }
                 }
@@ -76,7 +79,7 @@ struct MenuDropdownSourceCardView: View {
 
                 Text(row.valueText)
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(row.hasValue ? sourceColor : .secondary.opacity(0.85))
+                    .foregroundColor(row.hasValue ? rowColor : .secondary.opacity(0.85))
             }
 
             if let detailText = row.detailText {

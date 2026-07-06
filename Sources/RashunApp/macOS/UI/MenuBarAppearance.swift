@@ -5,11 +5,13 @@ enum MenuBarColorMode: String, Codable, CaseIterable {
     case monochrome
     case brandGradient
     case sourceSolid
+    case pace
 }
 
 enum MenuBarCenterContentMode: String, Codable, CaseIterable {
     case logo
     case percentage
+    case pacePoints
 }
 
 struct MenuBarMetricSelection: Codable, Hashable {

@@ -158,6 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func sourceMenuView(source: AISource, hasWarning: Bool) -> NSView {
         let metrics = enabledMetrics(for: source)
+        let colorMode = SettingsStore.shared.menuBarAppearance.colorMode
         let rows: [MenuDropdownMetricRowModel]
         if metrics.isEmpty {
             rows = [
@@ -166,6 +167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     valueText: "--",
                     detailText: nil,
                     progress: 0,
+                    colorHex: nil,
                     hasValue: false,
                     hasWarning: hasWarning
                 )
@@ -184,6 +186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             valueText: "\(Int(round(percent)))%",
                             detailText: refreshingTimingText(source: source, metric: metric, usage: usage),
                             progress: percent / 100,
+                            colorHex: metricColorHex(source: source, metric: metric, usage: usage, colorMode: colorMode),
                             hasValue: true,
                             hasWarning: warning
                         )
@@ -194,6 +197,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         valueText: "Refreshing",
                         detailText: nil,
                         progress: 0,
+                        colorHex: nil,
                         hasValue: false,
                         hasWarning: warning
                     )
@@ -206,6 +210,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         valueText: "\(Int(round(percent)))%",
                         detailText: metricTimingText(source: source, metric: metric, usage: usage),
                         progress: percent / 100,
+                        colorHex: metricColorHex(source: source, metric: metric, usage: usage, colorMode: colorMode),
                         hasValue: true,
                         hasWarning: warning
                     )
@@ -216,6 +221,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     valueText: "--",
                     detailText: nil,
                     progress: 0,
+                    colorHex: nil,
                     hasValue: false,
                     hasWarning: warning
                 )
@@ -235,32 +241,107 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return host
     }
 
+    private func metricColorHex(
+        source: AISource,
+        metric: AISourceMetric,
+        usage: UsageResult,
+        colorMode: MenuBarColorMode
+    ) -> UInt32 {
+        if colorMode == .pace,
+           let status = paceStatus(source: source, metric: metric, usage: usage) {
+            return status.colorHex
+        }
+        return source.menuBarBrandColorHex
+    }
+
     private func refreshingTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
-        guard let timingText = metricTimingText(source: source, metric: metric, usage: usage) else {
-            return nil
+        let timingText = metricTimingText(source: source, metric: metric, usage: usage)
+        guard let timingText else {
+            return "Refreshing"
         }
         return "\(timingText) • Refreshing"
     }
 
     private func metricTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
+        let paceLabel = paceStatus(source: source, metric: metric, usage: usage)?.detailText
         let percent = min(max(usage.percentRemaining, 0), 100)
         guard Int(round(percent)) < 100 else {
-            return nil
+            return paceLabel
         }
 
         let now = Date()
+        let baseText: String?
         if let resetDate = usage.resetDate, resetDate > now {
-            return "Resets \(compactDateDescription(for: resetDate, now: now))"
+            baseText = "Resets \(compactDateDescription(for: resetDate, now: now))"
+        } else {
+            let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
+            if let forecast = source.forecast(for: metric.id, current: usage, history: history),
+               let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date,
+               fullDate > now {
+                baseText = "Reaches 100% \(compactDateDescription(for: fullDate, now: now))"
+            } else {
+                baseText = nil
+            }
+        }
+
+        guard let paceLabel else {
+            return baseText
+        }
+        guard let baseText else {
+            return paceLabel
+        }
+        return "\(baseText) • \(paceLabel)"
+    }
+
+    private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult) -> PaceStatus? {
+        let percent = min(max(usage.percentRemaining, 0), 100)
+        if let resetDate = usage.resetDate, resetDate > Date() {
+            let now = Date()
+            let cycleStart = usage.cycleStartDate ?? inferredCycleStartDate(metric: metric, resetDate: resetDate)
+            guard cycleStart < resetDate else { return PaceStatus(score: 0) }
+
+            let cycleDuration = resetDate.timeIntervalSince(cycleStart)
+            guard cycleDuration > 0 else { return PaceStatus(score: 0) }
+
+            let remainingFraction = min(max(resetDate.timeIntervalSince(now) / cycleDuration, 0), 1)
+            let idealPercent = remainingFraction * 100
+            let delta = percent - idealPercent
+            return PaceStatus(score: delta)
+        }
+
+        if Int(round(percent)) >= 100 {
+            return PaceStatus(score: 100)
         }
 
         let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
-        guard let forecast = source.forecast(for: metric.id, current: usage, history: history),
-              let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date,
-              fullDate > now else {
-            return nil
+        if let forecast = source.forecast(for: metric.id, current: usage, history: history),
+           let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date {
+            let hoursToFull = fullDate.timeIntervalSince(Date()) / 3600
+            if hoursToFull <= 6 {
+                let urgency = 30 + ((6 - max(hoursToFull, 0)) / 6) * 50
+                return PaceStatus(score: urgency)
+            }
+            if percent < 25 {
+                return PaceStatus(score: -min(60, (25 - percent) * 2.4))
+            }
+            return PaceStatus(score: 0)
         }
 
-        return "Reaches 100% \(compactDateDescription(for: fullDate, now: now))"
+        return nil
+    }
+
+    private func inferredCycleStartDate(metric: AISourceMetric, resetDate: Date) -> Date {
+        let lowered = "\(metric.id) \(metric.title)".lowercased()
+        if lowered.contains("5h") || lowered.contains("5 hour") {
+            return resetDate.addingTimeInterval(-5 * 3600)
+        }
+        if lowered.contains("weekly") || lowered.contains("7d") {
+            return resetDate.addingTimeInterval(-7 * 24 * 3600)
+        }
+        if lowered.contains("daily") || lowered.contains("24h") {
+            return resetDate.addingTimeInterval(-24 * 3600)
+        }
+        return resetDate.addingTimeInterval(-24 * 3600)
     }
 
     private func compactDateDescription(for date: Date, now: Date) -> String {
@@ -477,8 +558,72 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let percentRemaining: Double
         let hasUsage: Bool
         let sourceColorHex: UInt32
+        let paceStatus: PaceStatus?
     }
 
+    private struct PaceStatus {
+        let score: Double
+
+        var label: String {
+            if score >= 30 {
+                return "Push hard"
+            }
+            if score >= 15 {
+                return "Push"
+            }
+            if score > 5 {
+                return "Push lightly"
+            }
+            if score <= -30 {
+                return "Conserve hard"
+            }
+            if score <= -15 {
+                return "Conserve"
+            }
+            if score < -5 {
+                return "Conserve lightly"
+            }
+            return "On pace"
+        }
+
+        var detailText: String {
+            let rounded = Int(round(score))
+            if rounded > 0 {
+                return "\(label) (+\(rounded) pts)"
+            }
+            return "\(label) (\(rounded) pts)"
+        }
+
+        var colorHex: UInt32 {
+            let clampedScore = min(max(score, -100), 100)
+            if abs(clampedScore) <= 5 {
+                return Self.onPaceColorHex
+            }
+            if clampedScore > 0 {
+                return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.pushColorHex, fraction: clampedScore / 100)
+            }
+            return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.conserveColorHex, fraction: abs(clampedScore) / 100)
+        }
+
+        private static let pushColorHex: UInt32 = 0x0DE2CF
+        private static let onPaceColorHex: UInt32 = 0x955CFE
+        private static let conserveColorHex: UInt32 = 0xFF4D6D
+
+        private static func interpolateHex(from start: UInt32, to end: UInt32, fraction: Double) -> UInt32 {
+            let t = min(max(fraction, 0), 1)
+            let startR = Double((start >> 16) & 0xFF)
+            let startG = Double((start >> 8) & 0xFF)
+            let startB = Double(start & 0xFF)
+            let endR = Double((end >> 16) & 0xFF)
+            let endG = Double((end >> 8) & 0xFF)
+            let endB = Double(end & 0xFF)
+
+            let red = UInt32(round(startR + (endR - startR) * t))
+            let green = UInt32(round(startG + (endG - startG) * t))
+            let blue = UInt32(round(startB + (endB - startB) * t))
+            return (red << 16) | (green << 8) | blue
+        }
+    }
     private func updateStatusIcon() {
         guard let button = statusItem?.button else { return }
         let metrics = selectedMetricsForStatusIcon()
@@ -541,7 +686,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 menuBarBadgeText: metric.menuBarBadgeText,
                 percentRemaining: clampedPercent,
                 hasUsage: usage != nil,
-                sourceColorHex: source.menuBarBrandColorHex
+                sourceColorHex: source.menuBarBrandColorHex,
+                paceStatus: usage.flatMap { paceStatus(source: source, metric: metric, usage: $0) }
             )
         }
     }
@@ -667,6 +813,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             context.setLineCap(.round)
             context.setStrokeColor(colorFromHex(metric.sourceColorHex).cgColor)
             context.strokePath()
+        case .pace:
+            context.addPath(progressPath)
+            context.setLineWidth(lineWidth)
+            context.setLineCap(.round)
+            context.setStrokeColor(paceColor(for: metric).cgColor)
+            context.strokePath()
         }
 
         drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
@@ -682,7 +834,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch mode {
         case .monochrome:
             return NSColor.black.withAlphaComponent(0.25)
-        case .brandGradient, .sourceSolid:
+        case .brandGradient, .sourceSolid, .pace:
             return NSColor(calibratedWhite: 0.45, alpha: 0.28)
         }
     }
@@ -693,20 +845,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colorMode: MenuBarColorMode,
         centerMode: MenuBarCenterContentMode
     ) {
-        let foreground: NSColor = colorMode == .monochrome
-            ? NSColor.black.withAlphaComponent(0.95)
-            : NSColor.white.withAlphaComponent(0.96)
+        let foreground: NSColor
+        switch colorMode {
+        case .monochrome:
+            foreground = NSColor.black.withAlphaComponent(0.95)
+        case .pace:
+            foreground = paceColor(for: metric)
+        case .brandGradient, .sourceSolid:
+            foreground = NSColor.white.withAlphaComponent(0.96)
+        }
 
         let centerRect = rect.insetBy(dx: 3.8, dy: 3.8)
         switch centerMode {
         case .logo:
             if let image = logoImage(for: metric) {
-                drawCenteredImage(image, in: centerRect)
+                drawCenteredImage(image, in: centerRect, tint: colorMode == .pace ? foreground : nil)
                 return
             }
             drawPercentageCenter(metric: metric, in: centerRect, color: foreground)
         case .percentage:
             drawPercentageCenter(metric: metric, in: centerRect, color: foreground)
+        case .pacePoints:
+            drawPacePointsCenter(metric: metric, in: centerRect, color: foreground)
         }
     }
 
@@ -778,6 +938,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         drawCenterText(text, in: rect, color: color, size: fontSize, weight: .semibold)
     }
 
+    private func drawPacePointsCenter(metric: IconRingMetric, in rect: CGRect, color: NSColor) {
+        guard let status = metric.paceStatus else {
+            drawCenterText("--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
+            return
+        }
+
+        let value = Int(round(status.score))
+        let text = value > 0 ? "+\(value)" : "\(value)"
+        let fontSize: CGFloat
+        if abs(value) >= 100 {
+            fontSize = 4.8
+        } else if abs(value) >= 10 {
+            fontSize = 5.8
+        } else {
+            fontSize = 6.8
+        }
+        drawCenterText(text, in: rect, color: color, size: fontSize, weight: .bold)
+    }
+
     private func drawCenterText(_ text: String, in rect: CGRect, color: NSColor, size: CGFloat, weight: NSFont.Weight) {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
         let attributes: [NSAttributedString.Key: Any] = [
@@ -795,7 +974,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         nsText.draw(in: drawRect, withAttributes: attributes)
     }
 
-    private func drawCenteredImage(_ image: NSImage, in rect: CGRect) {
+    private func drawCenteredImage(_ image: NSImage, in rect: CGRect, tint: NSColor? = nil) {
         guard image.size.width > 0, image.size.height > 0 else {
             image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
             return
@@ -809,7 +988,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             width: drawSize.width,
             height: drawSize.height
         )
-        image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+        guard let tint else {
+            image.draw(in: drawRect, from: .zero, operation: .sourceOver, fraction: 1)
+            return
+        }
+
+        tint.setFill()
+        drawRect.fill()
+        image.draw(in: drawRect, from: .zero, operation: .destinationIn, fraction: 1)
     }
 
     private func drawMetricBadgeIfNeeded(
@@ -886,10 +1072,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .monochrome:
             return NSColor.black.withAlphaComponent(0.95)
         case .brandGradient:
-            return brandAccentColor
+            return darkerColor(brandAccentColor)
         case .sourceSolid:
-            return colorFromHex(metric.sourceColorHex)
+            return darkerColor(colorFromHex(metric.sourceColorHex))
+        case .pace:
+            return darkerColor(paceColor(for: metric))
         }
+    }
+
+    private func paceColor(for metric: IconRingMetric) -> NSColor {
+        if let paceStatus = metric.paceStatus {
+            return colorFromHex(paceStatus.colorHex)
+        }
+        return brandPrimaryColor
+    }
+
+    private func darkerColor(_ color: NSColor) -> NSColor {
+        let converted = color.usingColorSpace(.sRGB) ?? color
+        return NSColor(
+            calibratedRed: max(0, converted.redComponent * 0.58),
+            green: max(0, converted.greenComponent * 0.58),
+            blue: max(0, converted.blueComponent * 0.58),
+            alpha: converted.alphaComponent
+        )
     }
 
     private func colorFromHex(_ hex: UInt32) -> NSColor {

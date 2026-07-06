@@ -91,7 +91,8 @@ struct GeneralTabView: View {
                     )
                 ) {
                     Text("Monochrome").tag(MenuBarColorMode.monochrome)
-                    Text("Color").tag(MenuBarColorMode.sourceSolid)
+                    Text("Source Color").tag(MenuBarColorMode.sourceSolid)
+                    Text("Pace Color").tag(MenuBarColorMode.pace)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
@@ -112,6 +113,7 @@ struct GeneralTabView: View {
                 ) {
                     Text("Logo").tag(MenuBarCenterContentMode.logo)
                     Text("Remaining Percentage").tag(MenuBarCenterContentMode.percentage)
+                    Text("Pace Points").tag(MenuBarCenterContentMode.pacePoints)
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
