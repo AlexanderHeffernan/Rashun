@@ -10,6 +10,12 @@ final class UsageChartView: NSView {
         let isForecast: Bool
     }
 
+    private enum XAxisTickStride {
+        case hours(Int)
+        case days(Int)
+        case months(Int)
+    }
+
     var series: [ChartSeries] = [] {
         didSet { needsDisplay = true }
     }
@@ -175,10 +181,7 @@ final class UsageChartView: NSView {
             path.line(to: NSPoint(x: rect.maxX, y: y))
         }
 
-        let totalSeconds = end.timeIntervalSince(start)
-        let gridLines = 5
-        for i in 0...gridLines {
-            let date = start.addingTimeInterval(totalSeconds * Double(i) / Double(gridLines))
+        for date in xAxisTicks(start: start, end: end) {
             let x = xFor(date, in: rect, start: start, end: end)
             path.move(to: NSPoint(x: x, y: rect.minY))
             path.line(to: NSPoint(x: x, y: rect.maxY))
@@ -202,24 +205,96 @@ final class UsageChartView: NSView {
     private func drawXAxisLabels(in rect: NSRect, start: Date, end: Date) {
         let totalSeconds = end.timeIntervalSince(start)
         let formatter = DateFormatter()
-        if totalSeconds < 24 * 3600 {
-            formatter.dateFormat = "HH:mm"
-        } else if totalSeconds < 7 * 24 * 3600 {
-            formatter.dateFormat = "EEE HH:mm"
-        } else {
+        if totalSeconds <= 36 * 3600 {
+            formatter.dateFormat = "h a MMM d"
+        } else if totalSeconds <= 10 * 24 * 3600 {
             formatter.dateFormat = "MMM d"
+        } else if totalSeconds <= 45 * 24 * 3600 {
+            formatter.dateFormat = "MMM d"
+        } else {
+            formatter.dateFormat = "MMM yyyy"
         }
 
         let attrs = axisLabelAttributes()
-        let count = 5
-        for i in 0...count {
-            let date = start.addingTimeInterval(totalSeconds * Double(i) / Double(count))
+        for date in xAxisTicks(start: start, end: end) {
             let label = formatter.string(from: date)
             let size = label.size(withAttributes: attrs)
+            let centeredX = xFor(date, in: rect, start: start, end: end) - size.width / 2
+            let clampedX = min(max(centeredX, rect.minX), rect.maxX - size.width)
             label.draw(
-                at: NSPoint(x: xFor(date, in: rect, start: start, end: end) - size.width / 2, y: rect.minY - size.height - 4),
+                at: NSPoint(x: clampedX, y: rect.minY - size.height - 4),
                 withAttributes: attrs
             )
+        }
+    }
+
+    private func xAxisTicks(start: Date, end: Date, calendar: Calendar = .current) -> [Date] {
+        guard end > start else { return [] }
+        let stride = xAxisTickStride(duration: end.timeIntervalSince(start))
+        var ticks: [Date] = []
+        var cursor = firstXAxisTick(onOrAfter: start, stride: stride, calendar: calendar)
+        var safety = 0
+
+        while cursor <= end, safety < 160 {
+            ticks.append(cursor)
+            guard let next = nextXAxisTick(after: cursor, stride: stride, calendar: calendar),
+                  next > cursor else {
+                break
+            }
+            cursor = next
+            safety += 1
+        }
+
+        return ticks
+    }
+
+    private func xAxisTickStride(duration: TimeInterval) -> XAxisTickStride {
+        if duration <= 36 * 3600 {
+            return .hours(3)
+        }
+        if duration <= 10 * 24 * 3600 {
+            return .days(1)
+        }
+        if duration <= 45 * 24 * 3600 {
+            return .days(3)
+        }
+        return .months(1)
+    }
+
+    private func firstXAxisTick(onOrAfter date: Date, stride: XAxisTickStride, calendar: Calendar) -> Date {
+        switch stride {
+        case let .hours(step):
+            guard let hourStart = calendar.dateInterval(of: .hour, for: date)?.start else { return date }
+            let firstHour = hourStart < date ? calendar.date(byAdding: .hour, value: 1, to: hourStart) ?? date : hourStart
+            let hour = calendar.component(.hour, from: firstHour)
+            let remainder = hour % step
+            if remainder == 0 { return firstHour }
+            return calendar.date(byAdding: .hour, value: step - remainder, to: firstHour) ?? firstHour
+        case let .days(step):
+            guard let dayStart = calendar.dateInterval(of: .day, for: date)?.start else { return date }
+            var firstDay = dayStart < date ? calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date : dayStart
+            if step > 1 {
+                let ordinal = calendar.ordinality(of: .day, in: .era, for: firstDay) ?? 0
+                let remainder = ordinal % step
+                if remainder != 0 {
+                    firstDay = calendar.date(byAdding: .day, value: step - remainder, to: firstDay) ?? firstDay
+                }
+            }
+            return firstDay
+        case .months:
+            guard let monthStart = calendar.dateInterval(of: .month, for: date)?.start else { return date }
+            return monthStart < date ? calendar.date(byAdding: .month, value: 1, to: monthStart) ?? date : monthStart
+        }
+    }
+
+    private func nextXAxisTick(after date: Date, stride: XAxisTickStride, calendar: Calendar) -> Date? {
+        switch stride {
+        case let .hours(step):
+            return calendar.date(byAdding: .hour, value: step, to: date)
+        case let .days(step):
+            return calendar.date(byAdding: .day, value: step, to: date)
+        case let .months(step):
+            return calendar.date(byAdding: .month, value: step, to: date)
         }
     }
 
