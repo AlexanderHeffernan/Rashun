@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     var results: [String: [String: String]] = [:]
     var latestUsageResults: [String: [String: UsageResult]] = [:]
+    var sourceHeaderDetails: [String: String] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
     private var isSleepSuspended = false
@@ -231,6 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let host = NSHostingView(
             rootView: MenuDropdownSourceCardView(
                 sourceName: source.displayName,
+                headerDetailText: sourceHeaderDetails[source.name],
                 logoImage: logoImage(forSourceName: source.name),
                 sourceColorHex: source.menuBarBrandColorHex,
                 rows: rows
@@ -295,6 +297,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult) -> PaceStatus? {
         let percent = min(max(usage.percentRemaining, 0), 100)
+        if Int(round(percent)) <= 0 {
+            return PaceStatus(score: -100, isExhausted: true)
+        }
         if let resetDate = usage.resetDate, resetDate > Date() {
             let now = Date()
             let cycleStart = usage.cycleStartDate ?? inferredCycleStartDate(metric: metric, resetDate: resetDate)
@@ -466,6 +471,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     results[name] = metricDisplays
                     latestUsageResults[name] = metricUsages
                     usageResultsBySource[name] = metricUsages
+                    sourceHeaderDetails[name] = await headerDetailText(for: source)
 
                     if source.metrics.count > 1 {
                         for metric in source.metrics {
@@ -563,8 +569,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private struct PaceStatus {
         let score: Double
+        var isExhausted: Bool = false
 
         var label: String {
+            if isExhausted {
+                return "Limit reached"
+            }
             if score >= 30 {
                 return "Push hard"
             }
@@ -587,6 +597,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         var detailText: String {
+            if isExhausted {
+                return label
+            }
             let rounded = Int(round(score))
             if rounded > 0 {
                 return "\(label) (+\(rounded) pts)"
@@ -595,6 +608,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         var colorHex: UInt32 {
+            if isExhausted {
+                return Self.conserveColorHex
+            }
             let clampedScore = min(max(score, -100), 100)
             if abs(clampedScore) <= 5 {
                 return Self.onPaceColorHex
@@ -602,12 +618,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if clampedScore > 0 {
                 return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.pushColorHex, fraction: clampedScore / 100)
             }
-            return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.conserveColorHex, fraction: abs(clampedScore) / 100)
+            // Ease toward red faster so bad pacing reads clearly red well before -100.
+            let fraction = (abs(clampedScore) / 100).squareRoot()
+            return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.conserveColorHex, fraction: fraction)
         }
 
         private static let pushColorHex: UInt32 = 0x0DE2CF
         private static let onPaceColorHex: UInt32 = 0x955CFE
-        private static let conserveColorHex: UInt32 = 0xFF4D6D
+        private static let conserveColorHex: UInt32 = 0xFF1E33
 
         private static func interpolateHex(from start: UInt32, to end: UInt32, fraction: Double) -> UInt32 {
             let t = min(max(fraction, 0), 1)
@@ -1269,6 +1287,33 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             throw SourceMetricFetchError(metricId: firstError.metricId, underlying: firstError.error, errorsByMetric: errorsByMetric)
         }
         return MetricFetchResult(usages: usages, errorsByMetric: errorsByMetric)
+    }
+
+    private func headerDetailText(for source: AISource) async -> String? {
+        guard source.name == "Codex",
+              let balance = await CodexSource.latestResetBalance(),
+              balance.count > 0 else {
+            return nil
+        }
+
+        var parts = ["\(balance.count) \(balance.count == 1 ? "reset" : "resets")"]
+        if let nextExpiration = balance.nextExpiration {
+            parts.append("next exp. \(compactDaysDescription(for: nextExpiration, now: Date()))")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func compactDaysDescription(for date: Date, now: Date) -> String {
+        let seconds = date.timeIntervalSince(now)
+        guard seconds > 0 else { return "now" }
+        if seconds < 24 * 3600 {
+            if let relative = Self.menuRelativeFormatter.string(from: seconds) {
+                return "in \(relative)"
+            }
+            return Self.menuDateFormatter.string(from: date)
+        }
+        let days = Int(ceil(seconds / (24 * 3600)))
+        return days == 1 ? "1 day" : "\(days) days"
     }
 
 }

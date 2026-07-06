@@ -4,6 +4,18 @@ import FoundationNetworking
 #endif
 
 public struct CodexSource: AISource {
+    private actor ResetBalanceCache {
+        private var lastValue: CodexResetBalance?
+
+        func set(_ value: CodexResetBalance?) {
+            lastValue = value
+        }
+
+        func value() -> CodexResetBalance? {
+            lastValue
+        }
+    }
+
     private actor UsageCache {
         private var inFlight: Task<[String: UsageResult], Error>?
         private var lastValue: (timestamp: Date, usages: [String: UsageResult])?
@@ -31,6 +43,7 @@ public struct CodexSource: AISource {
     }
 
     private static let usageCache = UsageCache()
+    private static let resetBalanceCache = ResetBalanceCache()
 
     public let name = "Codex"
     public let requirements = "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
@@ -44,6 +57,10 @@ public struct CodexSource: AISource {
     public var agentInstructionFilePath: String? { "~/.codex/AGENTS.md" }
 
     public init() {}
+
+    public static func latestResetBalance() async -> CodexResetBalance? {
+        await resetBalanceCache.value()
+    }
 
     public func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
         { current, _, _ in
@@ -122,6 +139,7 @@ public struct CodexSource: AISource {
     }
 
     private let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
+    private let resetCreditsURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
     private let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
     private let oauthClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
@@ -166,6 +184,26 @@ public struct CodexSource: AISource {
             parsed["codex-pro-weekly"] = usage
         }
         return parsed
+    }
+
+    public func parseResetBalance(from data: Data, now: Date = Date()) -> CodexResetBalance? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        return parseResetBalance(fromJSONObject: object, now: now)
+    }
+
+    public func parseResetBalance(fromJSONObject object: Any, now: Date = Date()) -> CodexResetBalance? {
+        if let explicit = explicitRateLimitResetCredits(in: object, now: now) {
+            return explicit
+        }
+
+        return resetBalanceCandidates(in: object, keyPath: [])
+            .compactMap { parseResetBalanceCandidate($0, now: now) }
+            .max { lhs, rhs in
+                if lhs.count == rhs.count {
+                    return (lhs.nextExpiration ?? .distantFuture) > (rhs.nextExpiration ?? .distantFuture)
+                }
+                return lhs.count < rhs.count
+            }
     }
 
     private func parseUsageWindow(_ window: CodexRateLimitWindow?) -> UsageResult? {
@@ -534,21 +572,21 @@ public struct CodexSource: AISource {
 
         for attempt in 0..<2 {
             var request = URLRequest(url: usageURL)
-            request.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            if let accountID = auth.tokens.accountID, !accountID.isEmpty {
-                request.addValue(accountID, forHTTPHeaderField: "chatgpt-account-id")
-            }
-            request.addValue("application/json", forHTTPHeaderField: "Accept")
-            request.addValue(
-                "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
-                forHTTPHeaderField: "User-Agent"
-            )
+            addCodexAPIHeaders(to: &request, accessToken: accessToken, accountID: auth.tokens.accountID)
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Non-HTTP response")
             }
             if http.statusCode == 200 {
+                let fallbackResetBalance = parseResetBalance(from: data)
+                await Self.resetBalanceCache.set(fallbackResetBalance)
+                if let resetBalance = try? await fetchResetCreditsBalance(
+                    accessToken: accessToken,
+                    accountID: auth.tokens.accountID
+                ) {
+                    await Self.resetBalanceCache.set(resetBalance)
+                }
                 let decoded = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
                 if parseProUsageByMetric(from: decoded).isEmpty {
                     throw CodexFetchError.usagePayloadInvalid
@@ -563,6 +601,32 @@ public struct CodexSource: AISource {
         }
 
         throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Failed after token refresh")
+    }
+
+    private func fetchResetCreditsBalance(accessToken: String, accountID: String?) async throws -> CodexResetBalance? {
+        var request = URLRequest(url: resetCreditsURL)
+        addCodexAPIHeaders(to: &request, accessToken: accessToken, accountID: accountID)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Non-HTTP reset credits response")
+        }
+        guard http.statusCode == 200 else {
+            throw CodexFetchError.usageAPIStatus(statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
+        }
+        return parseResetBalance(from: data)
+    }
+
+    private func addCodexAPIHeaders(to request: inout URLRequest, accessToken: String, accountID: String?) {
+        request.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        if let accountID, !accountID.isEmpty {
+            request.addValue(accountID, forHTTPHeaderField: "chatgpt-account-id")
+        }
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        request.addValue(
+            "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+            forHTTPHeaderField: "User-Agent"
+        )
     }
 
     private func refreshAccessToken(auth: CodexAuth) async throws -> String {
@@ -621,6 +685,191 @@ public struct CodexSource: AISource {
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return String(singleLine.prefix(maxLength))
+    }
+
+    private func explicitRateLimitResetCredits(in value: Any, now: Date) -> CodexResetBalance? {
+        if let dictionary = value as? [String: Any] {
+            if let credits = dictionary["rate_limit_reset_credits"] {
+                return parseRateLimitResetCredits(credits, now: now)
+            }
+
+            for nested in dictionary.values {
+                if let parsed = explicitRateLimitResetCredits(in: nested, now: now) {
+                    return parsed
+                }
+            }
+        }
+
+        if let array = value as? [Any] {
+            for nested in array {
+                if let parsed = explicitRateLimitResetCredits(in: nested, now: now) {
+                    return parsed
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func parseRateLimitResetCredits(_ value: Any, now: Date) -> CodexResetBalance? {
+        if let array = value as? [Any] {
+            let expirations = array
+                .compactMap { resetExpiration(in: $0) }
+                .filter { $0 > now }
+            return CodexResetBalance(count: expirations.count, nextExpiration: expirations.min())
+        }
+
+        guard let dictionary = value as? [String: Any] else { return nil }
+        if let credits = dictionary["credits"] ?? dictionary["data"] ?? dictionary["items"] {
+            return parseRateLimitResetCredits(credits, now: now)
+        }
+
+        if let count = resetCount(in: dictionary) {
+            return CodexResetBalance(
+                count: count,
+                nextExpiration: resetExpirations(in: dictionary).filter { $0 > now }.min()
+            )
+        }
+
+        return nil
+    }
+
+    private func resetBalanceCandidates(in value: Any, keyPath: [String]) -> [Any] {
+        if let dictionary = value as? [String: Any] {
+            var candidates: [Any] = []
+            for (key, nested) in dictionary {
+                let lowered = key.lowercased()
+                if isRateLimitKey(lowered) {
+                    continue
+                }
+                if isResetBalanceKey(lowered) {
+                    candidates.append(nested)
+                }
+                candidates.append(contentsOf: resetBalanceCandidates(in: nested, keyPath: keyPath + [lowered]))
+            }
+            return candidates
+        }
+
+        if let array = value as? [Any] {
+            return array.flatMap { resetBalanceCandidates(in: $0, keyPath: keyPath) }
+        }
+
+        return []
+    }
+
+    private func isRateLimitKey(_ key: String) -> Bool {
+        key == "rate_limit"
+            || key == "rate_limits"
+            || key == "primary"
+            || key == "secondary"
+            || key == "primary_window"
+            || key == "secondary_window"
+            || key == "code_review_rate_limit"
+            || key == "additional_rate_limits"
+    }
+
+    private func isResetBalanceKey(_ key: String) -> Bool {
+        (key.contains("credit") || key.contains("bank") || key.contains("reset"))
+            && !key.contains("reset_at")
+            && !key.contains("resets_at")
+            && !key.contains("reset_time")
+            && !key.contains("rate_limit")
+    }
+
+    private func parseResetBalanceCandidate(_ value: Any, now: Date) -> CodexResetBalance? {
+        if let array = value as? [Any] {
+            let activeExpirations = array.compactMap { resetExpiration(in: $0) }.filter { $0 > now }
+            if !activeExpirations.isEmpty {
+                return CodexResetBalance(count: activeExpirations.count, nextExpiration: activeExpirations.min())
+            }
+            let nested = array.compactMap { parseResetBalanceCandidate($0, now: now) }
+            guard !nested.isEmpty else { return nil }
+            let count = nested.reduce(0) { $0 + $1.count }
+            return CodexResetBalance(count: count, nextExpiration: nested.compactMap(\.nextExpiration).min())
+        }
+
+        guard let dictionary = value as? [String: Any] else { return nil }
+        let nestedArrays = ["grants", "items", "data", "credits", "resets", "banked_resets", "bankable_resets"]
+            .compactMap { dictionary[$0] }
+            .compactMap { parseResetBalanceCandidate($0, now: now) }
+
+        if !nestedArrays.isEmpty {
+            let nestedCount = nestedArrays.reduce(0) { $0 + $1.count }
+            let explicitCount = resetCount(in: dictionary)
+            return CodexResetBalance(
+                count: explicitCount ?? nestedCount,
+                nextExpiration: resetExpirations(in: dictionary).filter { $0 > now }.min()
+                    ?? nestedArrays.compactMap(\.nextExpiration).min()
+            )
+        }
+
+        guard let count = resetCount(in: dictionary), count > 0 else { return nil }
+        return CodexResetBalance(
+            count: count,
+            nextExpiration: resetExpirations(in: dictionary).filter { $0 > now }.min()
+        )
+    }
+
+    private func resetCount(in dictionary: [String: Any]) -> Int? {
+        let keys = [
+            "available", "available_count", "remaining", "remaining_count", "balance",
+            "count", "quantity", "num_credits", "credits", "resets", "banked", "banked_count",
+        ]
+        for key in keys {
+            if let value = numericValue(dictionary[key]) {
+                return max(0, Int(value.rounded(.down)))
+            }
+        }
+        return nil
+    }
+
+    private func resetExpiration(in value: Any) -> Date? {
+        if let dictionary = value as? [String: Any] {
+            return resetExpirations(in: dictionary).min()
+        }
+        return resetExpirationValue(value)
+    }
+
+    private func resetExpirations(in value: Any) -> [Date] {
+        if let dictionary = value as? [String: Any] {
+            return dictionary.flatMap { key, nested -> [Date] in
+                let normalizedKey = key.replacingOccurrences(of: "_", with: "").lowercased()
+                if normalizedKey.contains("expire") || normalizedKey.contains("expiration") {
+                    return resetExpirationValue(nested).map { [$0] } ?? resetExpirations(in: nested)
+                }
+                if nested is [String: Any] || nested is [Any] {
+                    return resetExpirations(in: nested)
+                }
+                return []
+            }
+        }
+
+        if let array = value as? [Any] {
+            return array.flatMap { resetExpirations(in: $0) }
+        }
+
+        return []
+    }
+
+    private func resetExpirationValue(_ raw: Any?) -> Date? {
+        if let value = numericValue(raw) {
+            let seconds = value > 10_000_000_000 ? value / 1000 : value
+            return Date(timeIntervalSince1970: seconds)
+        }
+        guard let string = raw as? String, !string.isEmpty else { return nil }
+        if let numeric = Double(string) {
+            let seconds = numeric > 10_000_000_000 ? numeric / 1000 : numeric
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: string) {
+            return date
+        }
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        return standard.date(from: string)
     }
 }
 
@@ -695,6 +944,16 @@ public struct CodexUsageResponse: Decodable {
     private enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
         case rateLimit = "rate_limit"
+    }
+}
+
+public struct CodexResetBalance: Sendable, Equatable {
+    public let count: Int
+    public let nextExpiration: Date?
+
+    public init(count: Int, nextExpiration: Date? = nil) {
+        self.count = count
+        self.nextExpiration = nextExpiration
     }
 }
 

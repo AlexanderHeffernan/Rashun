@@ -72,6 +72,138 @@ final class CodexSourceTests: XCTestCase {
         XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 100)
     }
 
+    func testParseResetBalanceParsesCreditsObject() throws {
+        let data = Data("""
+        {
+          "plan_type": "pro",
+          "rate_limit": {
+            "primary_window": { "used_percent": 10, "reset_at": 1783300000 },
+            "secondary_window": { "used_percent": 12, "reset_at": 1783800000 }
+          },
+          "credits": {
+            "available": 3,
+            "next_expiration_at": "2026-08-05T01:00:00Z"
+          }
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 3)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_891_600, accuracy: 0.001)
+    }
+
+    func testParseResetBalanceParsesRateLimitResetCredits() throws {
+        let data = Data("""
+        {
+          "plan_type": "pro",
+          "rate_limit_reset_credits": [
+            { "expires_at": "2026-08-01T00:00:00Z" },
+            { "expires_at": "2026-08-10T00:00:00Z" },
+            { "expires_at": "2026-06-01T00:00:00Z" }
+          ]
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 2)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_542_400, accuracy: 0.001)
+    }
+
+    func testParseResetBalanceParsesNestedRateLimitResetCredits() throws {
+        let data = Data("""
+        {
+          "rate_limit": {
+            "primary_window": { "used_percent": 10, "reset_at": 1783300000 },
+            "secondary_window": { "used_percent": 12, "reset_at": 1783800000 },
+            "rate_limit_reset_credits": [
+              { "expires_at": "2026-08-05T01:00:00Z" }
+            ]
+          }
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 1)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_891_600, accuracy: 0.001)
+    }
+
+    func testParseResetBalanceParsesNestedCreditExpiration() throws {
+        let data = Data("""
+        {
+          "rate_limit_reset_credits": [
+            {
+              "rate_limit_reset_credit": {
+                "expiresAt": "2026-08-05T01:00:00Z"
+              }
+            }
+          ]
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 1)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_891_600, accuracy: 0.001)
+    }
+
+    func testParseResetBalanceParsesWhamResetCreditsResponse() throws {
+        let data = Data("""
+        {
+          "credits": [
+            {
+              "id": "RateLimitResetCredit_1",
+              "reset_type": "codex_rate_limits",
+              "status": "available",
+              "granted_at": "2026-06-27T00:11:01.944811Z",
+              "expires_at": "2026-07-27T00:11:01.944811Z",
+              "redeem_started_at": null,
+              "redeemed_at": null,
+              "title": "Full reset (Weekly + 5 hr)"
+            },
+            {
+              "id": "RateLimitResetCredit_2",
+              "reset_type": "codex_rate_limits",
+              "status": "available",
+              "granted_at": "2026-07-01T20:33:55.453066Z",
+              "expires_at": "2026-07-31T20:33:55.453066Z",
+              "redeem_started_at": null,
+              "redeemed_at": null,
+              "title": "Full reset (Weekly + 5 hr)"
+            }
+          ],
+          "available_count": 2,
+          "total_earned_count": 0
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 2)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_111_061.944811, accuracy: 0.001)
+    }
+
+    func testParseResetBalanceCountsActiveCreditGrants() throws {
+        let data = Data("""
+        {
+          "usage_resets": {
+            "grants": [
+              { "expires_at": "2026-08-01T00:00:00Z" },
+              { "expires_at": "2026-08-10T00:00:00Z" },
+              { "expires_at": "2026-06-01T00:00:00Z" }
+            ]
+          }
+        }
+        """.utf8)
+
+        let balance = source.parseResetBalance(from: data, now: Date(timeIntervalSince1970: 1_783_300_000))
+
+        XCTAssertEqual(balance?.count, 2)
+        XCTAssertEqual(balance?.nextExpiration?.timeIntervalSince1970 ?? 0, 1_785_542_400, accuracy: 0.001)
+    }
+
     func testParseLatestRateLimitSampleParsesPayloadLevelRateLimits() {
         let line = #"{"timestamp":"2026-03-02T23:13:10.936Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":"codex","primary":{"used_percent":4.0,"window_minutes":10080,"resets_at":1772691486}}}}"#
         let sample = source.parseLatestRateLimitSample(from: line)

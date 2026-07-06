@@ -16,6 +16,7 @@ struct MenuDropdownMetricRowModel: Identifiable {
 
 struct MenuDropdownSourceCardView: View {
     let sourceName: String
+    let headerDetailText: String?
     let logoImage: NSImage?
     let sourceColorHex: UInt32
     let rows: [MenuDropdownMetricRowModel]
@@ -34,6 +35,13 @@ struct MenuDropdownSourceCardView: View {
                 Text(sourceName)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
+
+                if let headerDetailText {
+                    Text(headerDetailText)
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundColor(.secondary.opacity(0.78))
+                        .lineLimit(1)
+                }
             }
 
             ForEach(rows) { row in
