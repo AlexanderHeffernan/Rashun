@@ -332,8 +332,12 @@ public struct CodexSource: AISource {
             current: current,
             history: history,
             resetDate: resetDate,
-            historyWindowHours: 72
+            historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24
         )
+    }
+
+    public func forecastHistoryWindowHours(for metricId: String) -> Double? {
+        72
     }
 
     public func newestSessionFiles(in root: URL, limit: Int) -> [URL]? {

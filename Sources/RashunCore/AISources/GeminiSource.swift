@@ -232,8 +232,12 @@ public struct GeminiSource: AISource {
             current: current,
             history: history,
             resetDate: resetDate,
-            historyWindowHours: 24
+            historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24
         )
+    }
+
+    public func forecastHistoryWindowHours(for metricId: String) -> Double? {
+        24
     }
 
     private func readCredentials() throws -> GeminiOAuthCredentials {

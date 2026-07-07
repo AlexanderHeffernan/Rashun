@@ -86,6 +86,38 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertGreaterThan(assessment!.confidence, 0.35)
     }
 
+    func testPacingAssessmentClampsDisplayedScore() {
+        let now = fixedDate(dayOffset: 1, hour: 8)
+        let reset = fixedDate(dayOffset: 3, hour: 10)
+        let cycleStart = fixedDate(hour: 22)
+        let current = UsageResult(
+            remaining: 50,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: cycleStart
+        )
+        let history = [
+            UsageSnapshot(timestamp: fixedDate(hour: 22), usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(hour: 23), usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 0), usage: UsageResult(remaining: 80, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 2), usage: UsageResult(remaining: 70, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 4), usage: UsageResult(remaining: 60, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: now, usage: current),
+        ]
+
+        let assessment = UsageForecastEngine.resetWindowPacingAssessment(
+            current: current,
+            history: history,
+            resetDate: reset,
+            now: now,
+            mode: .simple
+        )
+
+        XCTAssertNotNil(assessment)
+        XCTAssertEqual(assessment?.score, -100)
+        XCTAssertEqual(assessment?.recommendation, .conserveHard)
+    }
+
     func testAmpRefillSourceDoesNotExposePacingAssessment() {
         let source = AmpSource()
         let assessment = source.pacingAssessment(

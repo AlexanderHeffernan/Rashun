@@ -21,6 +21,8 @@ public protocol AISource: Sendable {
     func notificationDefinitions(for metricId: String) -> [NotificationDefinition]
     /// Metric-specific forecast.
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult?
+    /// Metric-specific history window used for reset-window forecasting and pacing.
+    func forecastHistoryWindowHours(for metricId: String) -> Double?
     /// How this source should participate in pacing guidance.
     var pacingBehavior: SourcePacingBehavior { get }
     /// Metric-specific pacing assessment.
@@ -105,6 +107,10 @@ extension AISource {
         nil
     }
 
+    public func forecastHistoryWindowHours(for metricId: String) -> Double? {
+        nil
+    }
+
     public var pacingBehavior: SourcePacingBehavior { .none }
 
     public func pacingAssessment(for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date) -> UsagePacingAssessment? {
@@ -115,6 +121,7 @@ extension AISource {
                 current: current,
                 history: history,
                 resetDate: resetDate,
+                historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24,
                 now: now
             )
         case .refillOnly:

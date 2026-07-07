@@ -113,9 +113,13 @@ public struct CopilotSource: AISource {
             current: current,
             history: history,
             resetDate: resetDate,
-            historyWindowHours: 24 * 45,
+            historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24,
             now: now
         )
+    }
+
+    public func forecastHistoryWindowHours(for metricId: String) -> Double? {
+        24 * 45
     }
 
     private func fetchCopilotUserPayloadViaGhApi() throws -> [String: Any] {

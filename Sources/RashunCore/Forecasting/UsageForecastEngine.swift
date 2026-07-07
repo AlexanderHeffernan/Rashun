@@ -158,6 +158,7 @@ public enum UsageForecastEngine {
         current: UsageResult,
         history: [UsageSnapshot],
         resetDate: Date,
+        historyWindowHours: Double = 24,
         now: Date = Date(),
         calendar: Calendar = .current,
         mode: Mode = UsageForecastModePreference.current
@@ -181,7 +182,7 @@ public enum UsageForecastEngine {
             from: filteredHistory,
             current: current,
             now: now,
-            lookbackHours: 24,
+            lookbackHours: historyWindowHours,
             calendar: calendar,
             activeProfile: activeProfile,
             mode: mode
@@ -380,7 +381,8 @@ public enum UsageForecastEngine {
     }
 
     private static func assessment(score: Double, confidence: Double, zeroDate: Date?, activeSecondsUntilReset: TimeInterval) -> UsagePacingAssessment {
-        let recommendation = recommendation(for: score, zeroDate: zeroDate, confidence: confidence)
+        let clampedScore = clampedPacingScore(score)
+        let recommendation = recommendation(for: clampedScore, zeroDate: zeroDate, confidence: confidence)
         let activeHours = activeSecondsUntilReset / 3600
         let message: String
         if recommendation == .limitReached {
@@ -396,7 +398,7 @@ public enum UsageForecastEngine {
         }
 
         return UsagePacingAssessment(
-            score: score,
+            score: clampedScore,
             recommendation: recommendation,
             confidence: confidence,
             projectedZeroDate: zeroDate,
@@ -423,6 +425,10 @@ public enum UsageForecastEngine {
 
     private static func clampedPercent(_ value: Double) -> Double {
         min(max(value, 0), 100)
+    }
+
+    private static func clampedPacingScore(_ value: Double) -> Double {
+        min(max(value, -100), 100)
     }
 
     private struct ActiveHoursProfile {
