@@ -118,6 +118,94 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertEqual(assessment?.recommendation, .conserveHard)
     }
 
+    func testSmartForecastLearnsDifferentHourlyBurnRates() {
+        let now = fixedDate(dayOffset: 3, hour: 8)
+        let reset = fixedDate(dayOffset: 3, hour: 14)
+        let current = UsageResult(
+            remaining: 60,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: fixedDate(dayOffset: 3, hour: 6)
+        )
+        let history = [
+            UsageSnapshot(timestamp: fixedDate(hour: 7), usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(hour: 8), usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 7), usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 8), usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 2, hour: 7), usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 2, hour: 8), usage: UsageResult(remaining: 82, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 7), usage: UsageResult(remaining: 66, limit: 100, resetDate: reset)),
+            UsageSnapshot(timestamp: now, usage: current),
+        ]
+
+        let smart = UsageForecastEngine.resetWindowForecast(
+            sourceLabel: "Test",
+            current: current,
+            history: history,
+            resetDate: reset,
+            historyWindowHours: 24 * 7,
+            now: now,
+            mode: .smart
+        )
+        let simple = UsageForecastEngine.resetWindowForecast(
+            sourceLabel: "Test",
+            current: current,
+            history: history,
+            resetDate: reset,
+            historyWindowHours: 24 * 7,
+            now: now,
+            mode: .simple
+        )
+
+        XCTAssertNotNil(smart)
+        XCTAssertNotNil(simple)
+        XCTAssertGreaterThan(smart!.points[smart!.points.count - 2].value, simple!.points[simple!.points.count - 2].value)
+    }
+
+    func testSmartForecastLearnsDifferentWeekdayHourlyBurnRates() {
+        let mondayNow = fixedDate(dayOffset: 7, hour: 8)
+        let mondayReset = fixedDate(dayOffset: 7, hour: 14)
+        let thursdayNow = fixedDate(dayOffset: 10, hour: 8)
+        let thursdayReset = fixedDate(dayOffset: 10, hour: 14)
+        let mondayCurrent = UsageResult(
+            remaining: 70,
+            limit: 100,
+            resetDate: mondayReset,
+            cycleStartDate: fixedDate(dayOffset: 7, hour: 6)
+        )
+        let thursdayCurrent = UsageResult(
+            remaining: 70,
+            limit: 100,
+            resetDate: thursdayReset,
+            cycleStartDate: fixedDate(dayOffset: 10, hour: 6)
+        )
+        let mondayHistory = weekdayProfileHistory(resetDate: mondayReset)
+        let thursdayHistory = weekdayProfileHistory(resetDate: thursdayReset)
+
+        let monday = UsageForecastEngine.resetWindowForecast(
+            sourceLabel: "Test",
+            current: mondayCurrent,
+            history: mondayHistory,
+            resetDate: mondayReset,
+            historyWindowHours: 24 * 21,
+            now: mondayNow,
+            mode: .smart
+        )
+        let thursday = UsageForecastEngine.resetWindowForecast(
+            sourceLabel: "Test",
+            current: thursdayCurrent,
+            history: thursdayHistory,
+            resetDate: thursdayReset,
+            historyWindowHours: 24 * 21,
+            now: thursdayNow,
+            mode: .smart
+        )
+
+        XCTAssertNotNil(monday)
+        XCTAssertNotNil(thursday)
+        XCTAssertLessThan(monday!.points[monday!.points.count - 2].value, thursday!.points[thursday!.points.count - 2].value)
+    }
+
     func testAmpRefillSourceDoesNotExposePacingAssessment() {
         let source = AmpSource()
         let assessment = source.pacingAssessment(
@@ -142,5 +230,17 @@ final class UsageForecastEngineTests: XCTestCase {
         components.minute = 0
         components.second = 0
         return calendar.date(from: components)!
+    }
+
+    private func weekdayProfileHistory(resetDate: Date) -> [UsageSnapshot] {
+        [
+            UsageSnapshot(timestamp: fixedDate(dayOffset: -7, hour: 8), usage: UsageResult(remaining: 100, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: -7, hour: 9), usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(hour: 8), usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(hour: 9), usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 8), usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 9), usage: UsageResult(remaining: 75, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(timestamp: fixedDate(dayOffset: 10, hour: 7), usage: UsageResult(remaining: 72, limit: 100, resetDate: resetDate)),
+        ]
     }
 }

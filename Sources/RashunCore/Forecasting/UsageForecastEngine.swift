@@ -432,12 +432,14 @@ public enum UsageForecastEngine {
     }
 
     private struct ActiveHoursProfile {
-        let activeHours: Set<Int>
+        let hourlyWeights: [Double]
+        let weekdayHourWeights: [Double]
         let confidence: Double
 
         init(history: [UsageSnapshot], current: UsageResult, now: Date, calendar: Calendar, mode: Mode) {
             guard mode == .smart else {
-                activeHours = Set(0..<24)
+                hourlyWeights = Array(repeating: 1, count: 24)
+                weekdayHourWeights = Array(repeating: 1, count: 7 * 24)
                 confidence = 1
                 return
             }
@@ -450,12 +452,17 @@ public enum UsageForecastEngine {
                 .suffix(1500)
 
             var usageByHour: [Int: Double] = [:]
+            var usageByWeekdayHour: [Int: Double] = [:]
+            var evidenceByWeekdayHour: [Int: Int] = [:]
             var evidenceCount = 0
             for pair in zip(points.dropLast(), points.dropFirst()) {
                 let drop = pair.0.value - pair.1.value
                 guard drop >= 0.05 else { continue }
                 let hour = calendar.component(.hour, from: pair.1.date)
+                let weekdayHour = Self.weekdayHourIndex(for: pair.1.date, calendar: calendar)
                 usageByHour[hour, default: 0] += drop
+                usageByWeekdayHour[weekdayHour, default: 0] += drop
+                evidenceByWeekdayHour[weekdayHour, default: 0] += 1
                 evidenceCount += 1
             }
 
@@ -464,23 +471,79 @@ public enum UsageForecastEngine {
                 .map(\.key)
 
             guard evidenceCount >= 4, meaningfulHours.count >= 2 else {
-                activeHours = Set(8...23)
+                let fallbackHourlyWeights = (0..<24).map { (8...23).contains($0) ? 1.0 : 0.0 }
+                hourlyWeights = fallbackHourlyWeights
+                weekdayHourWeights = (0..<7).flatMap { _ in fallbackHourlyWeights }
                 confidence = min(0.5, Double(evidenceCount) / 8.0)
                 return
             }
 
-            var expanded = Set<Int>()
-            for hour in meaningfulHours {
-                expanded.insert((hour + 23) % 24)
-                expanded.insert(hour)
-                expanded.insert((hour + 1) % 24)
+            var smoothedUsage = Array(repeating: 0.0, count: 24)
+            for hour in 0..<24 {
+                let previous = usageByHour[(hour + 23) % 24, default: 0]
+                let current = usageByHour[hour, default: 0]
+                let next = usageByHour[(hour + 1) % 24, default: 0]
+                smoothedUsage[hour] = (previous * 0.25) + (current * 0.5) + (next * 0.25)
             }
-            activeHours = expanded
+
+            let averageUsage = smoothedUsage.reduce(0, +) / 24
+            let learnedHourlyWeights = smoothedUsage.map { usage in
+                guard averageUsage > 0 else { return 0.0 }
+                return min(max(usage / averageUsage, 0.05), 4.0)
+            }
+
+            var rawWeekdayHourWeights = Array(repeating: 0.0, count: 7 * 24)
+            for weekday in 0..<7 {
+                for hour in 0..<24 {
+                    let previous = Self.weekdayHourIndex(weekday: weekday, hour: (hour + 23) % 24)
+                    let current = Self.weekdayHourIndex(weekday: weekday, hour: hour)
+                    let next = Self.weekdayHourIndex(weekday: weekday, hour: (hour + 1) % 24)
+                    let smoothedWeekdayUsage =
+                        (usageByWeekdayHour[previous, default: 0] * 0.25) +
+                        (usageByWeekdayHour[current, default: 0] * 0.5) +
+                        (usageByWeekdayHour[next, default: 0] * 0.25)
+                    let weekdayEvidence =
+                        evidenceByWeekdayHour[previous, default: 0] +
+                        evidenceByWeekdayHour[current, default: 0] +
+                        evidenceByWeekdayHour[next, default: 0]
+                    let baselineUsage = smoothedUsage[hour]
+                    let baselineWeight = learnedHourlyWeights[hour]
+
+                    if weekdayEvidence >= 2, baselineUsage > 0, smoothedWeekdayUsage > 0 {
+                        let adjustment = min(max(smoothedWeekdayUsage / baselineUsage, 0.35), 2.5)
+                        rawWeekdayHourWeights[current] = min(max(baselineWeight * adjustment, 0.05), 4.0)
+                    } else {
+                        rawWeekdayHourWeights[current] = baselineWeight
+                    }
+                }
+            }
+            let weekdayAverage = rawWeekdayHourWeights.reduce(0, +) / Double(rawWeekdayHourWeights.count)
+            weekdayHourWeights = rawWeekdayHourWeights.map { weight in
+                guard weekdayAverage > 0 else { return weight }
+                return min(max(weight / weekdayAverage, 0.05), 4.0)
+            }
+            hourlyWeights = learnedHourlyWeights
             confidence = min(1, Double(evidenceCount) / 16.0)
         }
 
         func contains(_ date: Date, calendar: Calendar) -> Bool {
-            activeHours.contains(calendar.component(.hour, from: date))
+            weight(for: date, calendar: calendar) > 0
+        }
+
+        func weight(for date: Date, calendar: Calendar) -> Double {
+            let index = Self.weekdayHourIndex(for: date, calendar: calendar)
+            guard weekdayHourWeights.indices.contains(index) else { return 0 }
+            return weekdayHourWeights[index]
+        }
+
+        private static func weekdayHourIndex(for date: Date, calendar: Calendar) -> Int {
+            let weekday = max(0, calendar.component(.weekday, from: date) - 1)
+            let hour = calendar.component(.hour, from: date)
+            return weekdayHourIndex(weekday: weekday, hour: hour)
+        }
+
+        private static func weekdayHourIndex(weekday: Int, hour: Int) -> Int {
+            (weekday * 24) + hour
         }
     }
 
@@ -493,8 +556,9 @@ public enum UsageForecastEngine {
                 break
             }
             let segmentEnd = min(end, hourInterval.end)
-            if activeProfile.contains(cursor, calendar: calendar), segmentEnd > cursor {
-                total += segmentEnd.timeIntervalSince(cursor)
+            let weight = activeProfile.weight(for: cursor, calendar: calendar)
+            if weight > 0, segmentEnd > cursor {
+                total += segmentEnd.timeIntervalSince(cursor) * weight
             }
             cursor = segmentEnd
         }
@@ -510,12 +574,14 @@ public enum UsageForecastEngine {
                 return min(limit, cursor.addingTimeInterval(remaining))
             }
 
-            if activeProfile.contains(cursor, calendar: calendar) {
+            let weight = activeProfile.weight(for: cursor, calendar: calendar)
+            if weight > 0 {
                 let available = min(limit, hourInterval.end).timeIntervalSince(cursor)
-                if remaining <= available {
-                    return cursor.addingTimeInterval(remaining)
+                let weightedAvailable = available * weight
+                if remaining <= weightedAvailable {
+                    return cursor.addingTimeInterval(remaining / weight)
                 }
-                remaining -= max(available, 0)
+                remaining -= max(weightedAvailable, 0)
             }
 
             cursor = min(limit, hourInterval.end)
