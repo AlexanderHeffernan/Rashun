@@ -8,6 +8,7 @@ final class UsageChartView: NSView {
         let label: String
         let value: Double?
         let isForecast: Bool
+        let paceGuide: Double?
     }
 
     private enum XAxisTickStride {
@@ -112,6 +113,7 @@ final class UsageChartView: NSView {
         NSBezierPath(rect: chart).addClip()
 
         for s in series {
+            drawLine(s.paceGuide, color: s.color.withAlphaComponent(0.42), in: chart, start: startDate, end: endDate, dashed: true, lineWidth: 1.25, dashPattern: [2, 5])
             drawArea(s.points, color: s.color, in: chart, start: startDate, end: endDate)
             drawLine(s.points, color: s.color, in: chart, start: startDate, end: endDate)
             drawLine(s.forecast, color: s.color.withAlphaComponent(0.78), in: chart, start: startDate, end: endDate, dashed: true)
@@ -136,7 +138,8 @@ final class UsageChartView: NSView {
     private func effectiveDateRange() -> (Date, Date)? {
         let actualPoints = series.flatMap(\.points)
         let forecastPoints = series.flatMap(\.forecast)
-        let allPoints = actualPoints + forecastPoints
+        let paceGuidePoints = series.flatMap(\.paceGuide)
+        let allPoints = actualPoints + forecastPoints + paceGuidePoints
         guard let earliest = allPoints.min(by: { $0.date < $1.date })?.date,
               let latest = allPoints.max(by: { $0.date < $1.date })?.date else {
             return nil
@@ -324,15 +327,24 @@ final class UsageChartView: NSView {
         }
     }
 
-    private func drawLine(_ points: [ChartPoint], color: NSColor, in rect: NSRect, start: Date, end: Date, dashed: Bool = false) {
+    private func drawLine(
+        _ points: [ChartPoint],
+        color: NSColor,
+        in rect: NSRect,
+        start: Date,
+        end: Date,
+        dashed: Bool = false,
+        lineWidth: CGFloat = 2,
+        dashPattern: [CGFloat] = [6, 4]
+    ) {
         guard points.count >= 2 else { return }
 
         let path = NSBezierPath()
-        path.lineWidth = 2
+        path.lineWidth = lineWidth
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         if dashed {
-            path.setLineDash([6, 4], count: 2, phase: 0)
+            path.setLineDash(dashPattern, count: dashPattern.count, phase: 0)
         }
 
         for (i, point) in points.enumerated() {
@@ -374,6 +386,7 @@ final class UsageChartView: NSView {
     private func drawHoverTooltip(at date: Date, in rect: NSRect, start: Date, end: Date) {
         let values = series.map { hoverValue(for: $0, at: date) }
         let anyForecast = values.contains(where: { $0.isForecast })
+        let anyPaceGuide = values.contains(where: { $0.paceGuide != nil })
 
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "EEE, MMM d 'at' HH:mm:ss"
@@ -402,9 +415,15 @@ final class UsageChartView: NSView {
                 usageText = "\(value.label): —"
             }
             lines.append((usageText, valueAttrs))
+            if let paceGuide = value.paceGuide {
+                lines.append(("\(value.label) pace guide: \(String(format: "%.1f", paceGuide))%", footnoteAttrs))
+            }
         }
         if anyForecast {
             lines.append(("Forecast values are projected estimates.", footnoteAttrs))
+        }
+        if anyPaceGuide {
+            lines.append(("Pace guide shows target remaining usage through reset.", footnoteAttrs))
         }
 
         let lineSpacing: CGFloat = 3
@@ -454,14 +473,15 @@ final class UsageChartView: NSView {
         let lastActualDate = series.points.last?.date
         let actualValue = value(at: date, from: series.points)
         let forecastValue = value(at: date, from: series.forecast)
+        let paceGuideValue = value(at: date, from: series.paceGuide)
 
         if let lastActualDate, date <= lastActualDate, let actualValue {
-            return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false)
+            return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false, paceGuide: paceGuideValue)
         }
         if let forecastValue {
-            return HoverSeriesValue(label: series.label, value: forecastValue, isForecast: true)
+            return HoverSeriesValue(label: series.label, value: forecastValue, isForecast: true, paceGuide: paceGuideValue)
         }
-        return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false)
+        return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false, paceGuide: paceGuideValue)
     }
 
     private func value(at date: Date, from points: [ChartPoint]) -> Double? {

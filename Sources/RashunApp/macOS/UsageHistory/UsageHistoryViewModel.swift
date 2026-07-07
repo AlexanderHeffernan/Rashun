@@ -82,9 +82,11 @@ final class UsageHistoryViewModel: ObservableObject {
                 let points = allPoints(history)
                 let metricId = source.metrics.first?.id ?? "default"
                 let forecastPoints = forecastPoints(source: source, metricId: metricId, history: history, points: points, showForecast: showForecastLines)
+                let paceGuidePoints = paceGuidePoints(history: history, showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
-                chartSeries.append(ChartSeries(label: source.displayName, color: color, points: points, forecast: forecastPoints))
+                dates.append(contentsOf: paceGuidePoints.map(\.date))
+                chartSeries.append(ChartSeries(label: source.displayName, color: color, points: points, forecast: forecastPoints, paceGuide: paceGuidePoints))
                 continue
             }
 
@@ -95,15 +97,18 @@ final class UsageHistoryViewModel: ObservableObject {
 
                 let points = allPoints(history)
                 let forecastPoints = forecastPoints(source: source, metricId: metric.id, history: history, points: points, showForecast: showForecastLines)
+                let paceGuidePoints = paceGuidePoints(history: history, showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
+                dates.append(contentsOf: paceGuidePoints.map(\.date))
 
                 chartSeries.append(
                     ChartSeries(
                         label: "\(source.displayName) - \(metric.title)",
                         color: color,
                         points: points,
-                        forecast: forecastPoints
+                        forecast: forecastPoints,
+                        paceGuide: paceGuidePoints
                     )
                 )
             }
@@ -224,7 +229,8 @@ final class UsageHistoryViewModel: ObservableObject {
                 label: rawSeries.label,
                 color: rawSeries.color,
                 points: clippedPoints(rawSeries.points, bounds: bounds),
-                forecast: clippedPoints(rawSeries.forecast, bounds: bounds)
+                forecast: clippedPoints(rawSeries.forecast, bounds: bounds),
+                paceGuide: clippedPoints(rawSeries.paceGuide, bounds: bounds)
             )
         }
         visibleStartDate = bounds.start
@@ -286,6 +292,23 @@ final class UsageHistoryViewModel: ObservableObject {
         }
 
         return sourceForecastPoints
+    }
+
+    private func paceGuidePoints(history: [UsageSnapshot], showGuide: Bool) -> [ChartPoint] {
+        guard showGuide,
+              let current = history.last?.usage,
+              let resetDate = current.resetDate,
+              let guide = UsageForecastEngine.resetWindowPaceGuide(
+                current: current,
+                history: history,
+                resetDate: resetDate
+              ) else {
+            return []
+        }
+
+        return guide.points
+            .map { ChartPoint(date: $0.date, value: $0.value) }
+            .sorted(by: { $0.date < $1.date })
     }
 
     private func clippedPoints(_ sortedPoints: [ChartPoint], bounds: (start: Date?, end: Date?)) -> [ChartPoint] {

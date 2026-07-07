@@ -224,6 +224,42 @@ public enum UsageForecastEngine {
         )
     }
 
+    public static func resetWindowPaceGuide(
+        current: UsageResult,
+        history: [UsageSnapshot],
+        resetDate: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        mode: Mode = UsageForecastModePreference.current
+    ) -> PaceGuideResult? {
+        guard resetDate > now else { return nil }
+        let cycleStart = current.cycleStartDate ?? historyForCurrentCycle(history, current: current).first?.timestamp
+        guard let cycleStart, cycleStart < resetDate else { return nil }
+
+        let activeProfile = ActiveHoursProfile(history: history, current: current, now: now, calendar: calendar, mode: mode)
+        let activeTotal = activeSeconds(from: cycleStart, to: resetDate, calendar: calendar, activeProfile: activeProfile)
+        guard activeTotal > 0 else { return nil }
+
+        let guideStart = cycleStart
+        let totalSeconds = resetDate.timeIntervalSince(guideStart)
+        let steps = max(12, min(80, Int(totalSeconds / 1800)))
+        var points: [ForecastPoint] = []
+
+        for index in 0...steps {
+            let fraction = Double(index) / Double(steps)
+            let date = guideStart.addingTimeInterval(totalSeconds * fraction)
+            let activeElapsed = activeSeconds(from: cycleStart, to: date, calendar: calendar, activeProfile: activeProfile)
+            let value = max(100 - (activeElapsed / activeTotal) * 100, 0)
+            points.append(ForecastPoint(date: date, value: value))
+        }
+
+        if points.last?.date != resetDate {
+            points.append(ForecastPoint(date: resetDate, value: 0))
+        }
+
+        return PaceGuideResult(points: points)
+    }
+
     public static func refillOnlyPacingAssessment(current: UsageResult) -> UsagePacingAssessment? {
         let percent = clampedPercent(current.percentRemaining)
         if Int(round(percent)) <= 0 {

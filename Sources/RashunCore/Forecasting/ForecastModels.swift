@@ -19,3 +19,11 @@ public struct ForecastResult: Sendable {
         self.summary = summary
     }
 }
+
+public struct PaceGuideResult: Sendable {
+    public let points: [ForecastPoint]
+
+    public init(points: [ForecastPoint]) {
+        self.points = points
+    }
+}

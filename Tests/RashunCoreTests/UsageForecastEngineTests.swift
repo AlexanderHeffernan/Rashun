@@ -206,6 +206,32 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertLessThan(monday!.points[monday!.points.count - 2].value, thursday!.points[thursday!.points.count - 2].value)
     }
 
+    func testResetWindowPaceGuideRunsFromFullToEmptyAtReset() {
+        let now = fixedDate(hour: 12)
+        let reset = fixedDate(dayOffset: 1, hour: 12)
+        let cycleStart = fixedDate(hour: 0)
+        let current = UsageResult(
+            remaining: 70,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: cycleStart
+        )
+
+        let guide = UsageForecastEngine.resetWindowPaceGuide(
+            current: current,
+            history: [],
+            resetDate: reset,
+            now: now,
+            mode: .simple
+        )
+
+        XCTAssertNotNil(guide)
+        XCTAssertEqual(guide?.points.first?.date, cycleStart)
+        XCTAssertEqual(guide?.points.first?.value ?? -1, 100, accuracy: 0.001)
+        XCTAssertEqual(guide?.points.last?.date, reset)
+        XCTAssertEqual(guide?.points.last?.value ?? -1, 0, accuracy: 0.001)
+    }
+
     func testAmpRefillSourceDoesNotExposePacingAssessment() {
         let source = AmpSource()
         let assessment = source.pacingAssessment(

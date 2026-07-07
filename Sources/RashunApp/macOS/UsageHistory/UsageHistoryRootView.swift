@@ -53,7 +53,7 @@ struct UsageHistoryRootView: View {
                     legend
                     if model.visibleSeries.isEmpty {
                         emptyState("All sources are hidden. Click a legend item to show it.")
-                    } else if model.visibleSeries.allSatisfy({ $0.points.isEmpty && $0.forecast.isEmpty }) {
+                    } else if model.visibleSeries.allSatisfy({ $0.points.isEmpty && $0.forecast.isEmpty && $0.paceGuide.isEmpty }) {
                         emptyState("Not enough data yet. Refresh a source to build history.")
                     } else {
                         chartView
@@ -121,6 +121,7 @@ struct UsageHistoryRootView: View {
                 HStack(spacing: 12) {
                     lineStyleKey(label: "Recorded", dashed: false)
                     lineStyleKey(label: "Forecasted", dashed: true)
+                    lineStyleKey(label: "Pace guide", dashed: true, lineWidth: 1.25, dash: [2, 5])
                 }
             }
         }
@@ -179,7 +180,7 @@ struct UsageHistoryRootView: View {
         .help(label)
     }
 
-    private func lineStyleKey(label: String, dashed: Bool) -> some View {
+    private func lineStyleKey(label: String, dashed: Bool, lineWidth: CGFloat = 2, dash: [CGFloat] = [5, 4]) -> some View {
         HStack(spacing: 6) {
             Path { path in
                 path.move(to: CGPoint(x: 0, y: 5))
@@ -187,7 +188,7 @@ struct UsageHistoryRootView: View {
             }
             .stroke(
                 BrandPalette.textSecondary.opacity(0.95),
-                style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: dashed ? [5, 4] : [])
+                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: dashed ? dash : [])
             )
             .frame(width: 22, height: 10)
 
