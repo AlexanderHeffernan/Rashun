@@ -41,4 +41,30 @@ final class SourceErrorMappingTests: XCTestCase {
         XCTAssertEqual(mapped.shortMessage, "Gemini API error (403)")
         XCTAssertTrue(mapped.detailedMessage.contains("HTTP 403"))
     }
+
+    func testCursorMapping_stateDatabaseMissing() {
+        let source = CursorSource()
+        let error = CursorFetchError.stateDatabaseMissing(path: "/Users/test/Library/Application Support/Cursor/User/globalStorage/state.vscdb")
+        let mapped = source.mapFetchError(for: source.metrics[0].id, error)
+        XCTAssertEqual(mapped.shortMessage, "Cursor state database missing")
+        XCTAssertTrue(mapped.detailedMessage.contains("state.vscdb"))
+    }
+
+    func testCursorMapping_accessTokenExpired() {
+        let source = CursorSource()
+        let error = CursorFetchError.accessTokenExpired(statusCode: 401)
+        let mapped = source.mapFetchError(for: source.metrics[0].id, error)
+        XCTAssertEqual(mapped.shortMessage, "Cursor auth expired")
+        XCTAssertTrue(mapped.detailedMessage.contains("HTTP 401"))
+        XCTAssertTrue(mapped.detailedMessage.contains("Open Cursor"))
+    }
+
+    func testCursorMapping_apiNotAvailableOnFreePlan() {
+        let source = CursorSource()
+        let error = CursorFetchError.metricNotAvailableOnPlan(metricId: "cursor-api", plan: "free")
+        let mapped = source.mapFetchError(for: "cursor-api", error)
+        XCTAssertEqual(mapped.shortMessage, "API models unavailable on Free")
+        XCTAssertTrue(mapped.detailedMessage.contains("Free plan"))
+        XCTAssertTrue(mapped.detailedMessage.contains("Pro"))
+    }
 }

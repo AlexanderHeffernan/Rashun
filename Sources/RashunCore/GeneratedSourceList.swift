@@ -4,5 +4,6 @@ public let allSources: [AISource] = [
     AmpSource(),
     CodexSource(),
     CopilotSource(),
+    CursorSource(),
     GeminiSource(),
 ]

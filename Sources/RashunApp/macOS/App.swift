@@ -348,7 +348,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private static let menuDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
-        formatter.dateFormat = "EEE 'at' h:mm a"
+        formatter.dateFormat = "EEE MMM d 'at' h:mm a"
         return formatter
     }()
 

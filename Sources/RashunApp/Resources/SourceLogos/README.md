@@ -8,6 +8,7 @@ Convention:
   - `Copilot` -> `copilot.png`
   - `Codex` -> `codex.png`
   - `Gemini` -> `gemini.png`
+  - `Cursor` -> `cursor.png`
 
 Fallback behavior:
 - In `Logo` center mode, if the PNG logo is missing, the ring center falls back to showing the numeric percentage.

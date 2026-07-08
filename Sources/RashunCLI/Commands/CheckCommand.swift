@@ -79,6 +79,8 @@ struct CheckCommand: AsyncParsableCommand {
             return "source_not_configured"
         case GeminiFetchError.credentialsMissing, GeminiFetchError.accessTokenExpiredNoRefresh, GeminiFetchError.oauthClientUnavailable, GeminiFetchError.projectResolutionFailed:
             return "source_not_configured"
+        case CursorFetchError.stateDatabaseMissing, CursorFetchError.sqlite3NotFound, CursorFetchError.accessTokenMissing:
+            return "source_not_configured"
         default:
             return "fetch_failed"
         }
