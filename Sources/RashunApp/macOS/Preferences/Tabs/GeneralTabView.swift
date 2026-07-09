@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import RashunCore
 
@@ -7,6 +8,9 @@ struct GeneralTabView: View {
     var body: some View {
         TabScrollContainer {
             appBehaviorCard
+            #if DEBUG
+            developerCard
+            #endif
         }
     }
 
@@ -196,4 +200,21 @@ struct GeneralTabView: View {
                 .foregroundColor(BrandPalette.textSecondary)
         }
     }
+
+    #if DEBUG
+    private var developerCard: some View {
+        BrandCard(title: "Developer") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Creates a confirmed Codex Pro Weekly reset sample and plays the reset celebration.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(BrandPalette.textSecondary.opacity(0.9))
+
+                Button("Simulate Codex Weekly Reset") {
+                    (NSApp.delegate as? AppDelegate)?.simulateCodexWeeklyResetForTesting()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+    #endif
 }

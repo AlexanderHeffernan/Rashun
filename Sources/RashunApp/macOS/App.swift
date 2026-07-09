@@ -16,6 +16,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let errorsByMetric: [String: Error]
     }
 
+    private struct ResetCelebration: Hashable {
+        let sourceName: String
+        let metricId: String
+        let sourceColorHex: UInt32
+    }
+
     var statusItem: NSStatusItem?
     var menu: NSMenu?
     var pollTimer: Timer?
@@ -28,6 +34,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var sourceHeaderDetails: [String: String] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
+    private var usageSampleStabilityGate = UsageSampleStabilityGate()
+    private let statusRingSize: CGFloat = 20
+    private let statusRingSpacing: CGFloat = 3
+    private let resetConfirmationDelayNanoseconds: UInt64 = 2_200_000_000
+    #if DEBUG
+    private var simulatedCodexWeeklyResetSample: UsageResult?
+    private var simulatedCodexWeeklyResetBaseline: UsageResult?
+    #endif
     private var isSleepSuspended = false
     private var isLockSuspended = false
     private var lastResumeRefreshTriggerDate: Date?
@@ -409,6 +423,69 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openPreferences(tab: nil)
     }
 
+    #if DEBUG
+    func simulateCodexWeeklyResetForTesting() {
+        guard let source = sources.first(where: { $0.name == "Codex" }),
+              let metric = source.metrics.first(where: { $0.id == "codex-pro-weekly" }) else {
+            return
+        }
+
+        let now = Date()
+        // Keep a dedicated low baseline for each two-click test sequence. Using
+        // the last displayed value would make later runs start at 100% and skip
+        // the extreme-jump path this control is meant to exercise.
+        let stabilityBaseline = simulatedCodexWeeklyResetBaseline ?? UsageResult(
+            remaining: 25,
+            limit: 100,
+            resetDate: now
+        )
+        simulatedCodexWeeklyResetBaseline = stabilityBaseline
+        let reset = simulatedCodexWeeklyResetSample ?? UsageResult(
+            remaining: 100,
+            limit: 100,
+            resetDate: (stabilityBaseline.resetDate ?? now).addingTimeInterval(7 * 24 * 3600),
+            cycleStartDate: now
+        )
+        simulatedCodexWeeklyResetSample = reset
+        let scope = "\(source.name)::\(metric.id)"
+
+        guard let verifiedReset = usageSampleStabilityGate.verifiedUsage(
+            scope: scope,
+            incoming: reset,
+            previousAccepted: stabilityBaseline
+        ) else {
+            return
+        }
+        simulatedCodexWeeklyResetSample = nil
+        simulatedCodexWeeklyResetBaseline = nil
+
+        var displayedUsages = latestUsageResults[source.name] ?? [:]
+        displayedUsages[metric.id] = verifiedReset.usage
+        latestUsageResults[source.name] = displayedUsages
+        results[source.name] = displayedUsages.mapValues(\.formatted)
+        SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: verifiedReset.usage)
+        lastRefreshDate = now
+        updateMenu()
+        updateStatusIcon()
+        NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+
+        Task {
+            let celebrations = await evaluateNotifications(
+                sources: [source],
+                results: [source.name: [metric.id: verifiedReset.usage]],
+                previousOverrides: [source.name: [metric.id: verifiedReset.previousAccepted]],
+                resetCurrentOverrides: verifiedReset.confirmedResetUsage.map {
+                    [source.name: [metric.id: $0]]
+                } ?? [:],
+                confirmedResetMetricIds: verifiedReset.wasConfirmed
+                    ? [source.name: [metric.id]]
+                    : [:]
+            )
+            playResetCelebrations(celebrations)
+        }
+    }
+    #endif
+
     func openPreferences(tab: PreferencesTab?) {
         PreferencesWindowController.shared.configure(withSources: sources)
         if let tab {
@@ -425,6 +502,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         var percentValues: [Double] = []
         var usageResultsBySource: [String: [String: UsageResult]] = [:]
+        var notificationPreviousOverrides: [String: [String: UsageResult]] = [:]
+        var notificationResetCurrentOverrides: [String: [String: UsageResult]] = [:]
+        var confirmedResetMetricIds: [String: Set<String>] = [:]
 
         await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
             for source in enabled {
@@ -446,10 +526,72 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 switch result {
                 case let .success(fetchResult):
-                    let metricUsages = fetchResult.usages
-                    let metricDisplays = metricUsages.mapValues { $0.formatted }
+                    var metricUsages: [String: UsageResult] = [:]
+                    var potentialResetMetrics: [(metricId: String, previousAccepted: UsageResult)] = []
+                    let previousUsages = latestUsageResults[name] ?? [:]
+
+                    func recordVerifiedUsage(_ verifiedUsage: UsageSampleStabilityGate.VerifiedUsage, metricId: String) {
+                        metricUsages[metricId] = verifiedUsage.usage
+                        if verifiedUsage.wasConfirmed {
+                            notificationPreviousOverrides[name, default: [:]][metricId] = verifiedUsage.previousAccepted
+                        }
+                        if let resetUsage = verifiedUsage.confirmedResetUsage {
+                            notificationResetCurrentOverrides[name, default: [:]][metricId] = resetUsage
+                        }
+                        if verifiedUsage.wasConfirmed, verifiedUsage.confirmedResetUsage != nil {
+                            confirmedResetMetricIds[name, default: []].insert(metricId)
+                        }
+                    }
+
+                    for (metricId, incomingUsage) in fetchResult.usages {
+                        let scope = "\(name)::\(metricId)"
+                        let previousAccepted = stablePreviousUsage(
+                            source: source,
+                            metricId: metricId,
+                            displayedUsage: previousUsages[metricId]
+                        )
+                        if let verifiedUsage = usageSampleStabilityGate.verifiedUsage(
+                            scope: scope,
+                            incoming: incomingUsage,
+                            previousAccepted: previousAccepted
+                        ) {
+                            recordVerifiedUsage(verifiedUsage, metricId: metricId)
+                        } else if let previousAccepted {
+                            potentialResetMetrics.append((metricId, previousAccepted))
+                        }
+                    }
+
+                    // Codex intentionally shares a short source cache between
+                    // its metrics. Wait it out, then re-fetch only metrics that
+                    // claimed a reset so the confirmation is genuinely fresh.
+                    if !potentialResetMetrics.isEmpty {
+                        try? await Task.sleep(nanoseconds: resetConfirmationDelayNanoseconds)
+                        for potentialReset in potentialResetMetrics {
+                            guard let confirmationUsage = try? await source.fetchUsage(for: potentialReset.metricId),
+                                  let verifiedUsage = usageSampleStabilityGate.verifiedUsage(
+                                      scope: "\(name)::\(potentialReset.metricId)",
+                                      incoming: confirmationUsage,
+                                      previousAccepted: potentialReset.previousAccepted
+                                  ) else {
+                                continue
+                            }
+                            recordVerifiedUsage(verifiedUsage, metricId: potentialReset.metricId)
+                        }
+                    }
+
+                    guard !metricUsages.isEmpty else {
+                        loadingSources.remove(name)
+                        updateMenu()
+                        updateStatusIcon()
+                        continue
+                    }
+                    var displayedUsages = previousUsages
+                    for (metricId, usage) in metricUsages {
+                        displayedUsages[metricId] = usage
+                    }
+                    let metricDisplays = displayedUsages.mapValues { $0.formatted }
                     results[name] = metricDisplays
-                    latestUsageResults[name] = metricUsages
+                    latestUsageResults[name] = displayedUsages
                     usageResultsBySource[name] = metricUsages
                     sourceHeaderDetails[name] = await headerDetailText(for: source)
 
@@ -505,7 +647,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         lastRefreshDate = Date()
-        await evaluateNotifications(sources: enabled, results: usageResultsBySource)
+        let celebrations = await evaluateNotifications(
+            sources: enabled,
+            results: usageResultsBySource,
+            previousOverrides: notificationPreviousOverrides,
+            resetCurrentOverrides: notificationResetCurrentOverrides,
+            confirmedResetMetricIds: confirmedResetMetricIds
+        )
+        playResetCelebrations(celebrations)
 
         if percentValues.isEmpty {
             latestUsageResults = latestUsageResults.filter { key, _ in
@@ -519,6 +668,61 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func enabledMetrics(for source: AISource) -> [AISourceMetric] {
         source.metrics.filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+    }
+
+    private func stablePreviousUsage(
+        source: AISource,
+        metricId: String,
+        displayedUsage: UsageResult?
+    ) -> UsageResult? {
+        let scope = source.metrics.count <= 1 ? source.name : "\(source.name)::\(metricId)"
+        let persistedHistory = UsageHistoryStore.shared.history(for: scope).last?.usage
+        let sourceHealth: UsageResult?
+        if source.metrics.count <= 1 {
+            sourceHealth = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage
+        } else {
+            sourceHealth = SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.lastSuccessfulUsage
+        }
+
+        // An in-memory value can be stale or come from a non-polling path.
+        // The lowest recent persisted reading is the safe baseline for an
+        // apparent reset: it can only make a near-full jump more cautious.
+        return [displayedUsage, persistedHistory, sourceHealth]
+            .compactMap { $0 }
+            .min { $0.percentRemaining < $1.percentRemaining }
+    }
+
+    private func playResetCelebrations(_ celebrations: [ResetCelebration]) {
+        for celebration in Set(celebrations) {
+            ResetCelebrationController.shared.celebrate(
+                sourceColorHex: celebration.sourceColorHex,
+                anchor: statusItemRingScreenPoint(
+                    sourceName: celebration.sourceName,
+                    metricId: celebration.metricId
+                )
+            )
+        }
+    }
+
+    private func statusItemRingScreenPoint(sourceName: String, metricId: String) -> CGPoint? {
+        let metrics = selectedMetricsForStatusIcon()
+        guard let index = metrics.firstIndex(where: {
+            $0.sourceName == sourceName && $0.metricId == metricId
+        }),
+        let button = statusItem?.button,
+        let window = button.window else {
+            return nil
+        }
+
+        let layoutWidth = statusRingSize * CGFloat(metrics.count) + statusRingSpacing * CGFloat(max(0, metrics.count - 1))
+        guard layoutWidth > 0 else { return nil }
+        let imageRect = button.cell?.imageRect(forBounds: button.bounds) ?? button.bounds
+        let scale = min(imageRect.width / layoutWidth, imageRect.height / statusRingSize)
+        let renderedWidth = layoutWidth * scale
+        let renderedOriginX = imageRect.midX - renderedWidth / 2
+        let x = renderedOriginX + (CGFloat(index) * (statusRingSize + statusRingSpacing) + statusRingSize / 2) * scale
+        let pointInWindow = button.convert(NSPoint(x: x, y: imageRect.midY), to: nil)
+        return window.convertPoint(toScreen: pointInWindow)
     }
 
     private func metricHistorySeriesName(source: AISource, metric: AISourceMetric) -> String {
@@ -539,6 +743,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct IconRingMetric {
         let sourceName: String
         let sourceDisplayName: String
+        let metricId: String
         let metricTitle: String
         let menuBarBadgeText: String?
         let percentRemaining: Double
@@ -684,6 +889,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return IconRingMetric(
                 sourceName: source.name,
                 sourceDisplayName: source.displayName,
+                metricId: metric.id,
                 metricTitle: metric.title,
                 menuBarBadgeText: metric.menuBarBadgeText,
                 percentRemaining: clampedPercent,
@@ -711,13 +917,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         centerMode: MenuBarCenterContentMode,
         showMetricBadges: Bool
     ) -> NSImage? {
-        let ringSize: CGFloat = 20
-        let spacing: CGFloat = 3
         let count = metrics.count
         guard count > 0 else { return nil }
 
-        let width = ringSize * CGFloat(count) + spacing * CGFloat(max(0, count - 1))
-        let size = NSSize(width: width, height: ringSize)
+        let width = statusRingSize * CGFloat(count) + statusRingSpacing * CGFloat(max(0, count - 1))
+        let size = NSSize(width: width, height: statusRingSize)
         let image = NSImage(size: size)
         image.isTemplate = colorMode == .monochrome
 
@@ -728,10 +932,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for index in 0..<count {
             let metric = metrics[index]
             let rect = CGRect(
-                x: CGFloat(index) * (ringSize + spacing),
+                x: CGFloat(index) * (statusRingSize + statusRingSpacing),
                 y: 0,
-                width: ringSize,
-                height: ringSize
+                width: statusRingSize,
+                height: statusRingSize
             )
             drawRing(
                 in: context,
@@ -1106,7 +1310,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return NSColor(calibratedRed: red, green: green, blue: blue, alpha: 1)
     }
 
-    private func evaluateNotifications(sources: [AISource], results: [String: [String: UsageResult]]) async {
+    private func evaluateNotifications(
+        sources: [AISource],
+        results: [String: [String: UsageResult]],
+        previousOverrides: [String: [String: UsageResult]] = [:],
+        resetCurrentOverrides: [String: [String: UsageResult]] = [:],
+        confirmedResetMetricIds: [String: Set<String>] = [:]
+    ) async -> [ResetCelebration] {
+        var celebrations: [ResetCelebration] = []
         for source in sources {
             let metricUsages = results[source.name] ?? [:]
             for metric in enabledMetrics(for: source) {
@@ -1119,12 +1330,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
                 let rules = SettingsStore.shared.ruleSettings(for: scopedName)
                 let history = UsageHistoryStore.shared.history(for: scopedName)
-                let previous = history.last
+                let previous = previousOverrides[source.name]?[metric.id].map {
+                    UsageSnapshot(timestamp: Date(), usage: $0)
+                } ?? history.last
                 let definitions = source.notificationDefinitions(for: metric.id)
 
                 for rule in rules where rule.isEnabled {
                     guard let definition = definitions.first(where: { $0.id == rule.ruleId }) else { continue }
                     let ruleId = rule.ruleId
+                    guard ruleId != "metricReset" || confirmedResetMetricIds[source.name]?.contains(metric.id) == true else {
+                        continue
+                    }
                     let valueProvider: (String, Double) -> Double = { inputId, defaultValue in
                         SettingsStore.shared.ruleInputValue(sourceName: scopedName, ruleId: ruleId, inputId: inputId, defaultValue: defaultValue)
                     }
@@ -1133,7 +1349,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         sourceName: source.name,
                         metricId: metric.id,
                         metricTitle: metric.title,
-                        current: current,
+                        current: ruleId == "metricReset"
+                            ? resetCurrentOverrides[source.name]?[metric.id] ?? current
+                            : current,
                         previous: previous,
                         history: history,
                         inputValue: valueProvider
@@ -1142,20 +1360,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     guard let event = definition.evaluate(ctx) else { continue }
 
                     let state = SettingsStore.shared.ruleState(sourceName: scopedName, ruleId: ruleId)
-                    if shouldSend(event: event, state: state) {
-                        NotificationManager.shared.sendNotification(
-                            title: event.title,
-                            body: event.body,
-                            route: .usageHistory
+                    guard shouldSend(event: event, state: state) else { continue }
+                    NotificationManager.shared.sendNotification(
+                        title: event.title,
+                        body: event.body,
+                        route: .usageHistory
+                    )
+                    let newState = NotificationRuleState(lastFiredAt: Date(), lastFiredCycleKey: event.cycleKey)
+                    SettingsStore.shared.setRuleState(newState, sourceName: scopedName, ruleId: ruleId)
+                    if ruleId == "metricReset" {
+                        celebrations.append(
+                            ResetCelebration(
+                                sourceName: source.name,
+                                metricId: metric.id,
+                                sourceColorHex: source.menuBarBrandColorHex
+                            )
                         )
-                        let newState = NotificationRuleState(lastFiredAt: Date(), lastFiredCycleKey: event.cycleKey)
-                        SettingsStore.shared.setRuleState(newState, sourceName: scopedName, ruleId: ruleId)
                     }
                 }
 
                 UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
             }
         }
+        return celebrations
     }
 
     private func shouldSend(event: NotificationEvent, state: NotificationRuleState?) -> Bool {
@@ -1304,6 +1531,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 @MainActor
 extension AppDelegate: @preconcurrency UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _: UNUserNotificationCenter,
+        willPresent _: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+
     func userNotificationCenter(
         _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,

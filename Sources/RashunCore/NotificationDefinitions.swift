@@ -89,7 +89,7 @@ public enum NotificationDefinitions {
                 let previousPercent = previous.usage.percentRemaining
                 guard current > previousPercent else { return nil }
                 guard current >= 95 else { return nil }
-
+                guard current - previousPercent >= 20 else { return nil }
                 let previousReset = previous.usage.resetDate
                 let currentReset = context.current.resetDate
                 if let previousReset, let currentReset {

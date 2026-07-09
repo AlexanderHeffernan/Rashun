@@ -267,7 +267,7 @@ final class NotificationTests: XCTestCase {
         XCTAssertNil(rule.evaluate(ctx))
     }
 
-    func testMetricReset_firesWithoutResetDateOnlyWhenCrossingNearFullThreshold() {
+    func testMetricReset_doesNotFireForSmallNearFullCorrectionWithoutResetDate() {
         let rule = genericRule(id: "metricReset")
         let ctx = NotificationContext(
             sourceName: "Test",
@@ -282,11 +282,28 @@ final class NotificationTests: XCTestCase {
             inputValue: { _, def in def }
         )
 
-        let event = rule.evaluate(ctx)
-        XCTAssertNotNil(event)
-        XCTAssertNil(event?.cycleKey)
-        XCTAssertNil(event?.cooldownSeconds)
+        XCTAssertNil(rule.evaluate(ctx))
     }
+
+    func testMetricReset_requiresLargeQuotaIncrease() {
+        let rule = genericRule(id: "metricReset")
+        let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
+        let ctx = NotificationContext(
+            sourceName: "Test",
+            metricId: nil,
+            metricTitle: nil,
+            current: UsageResult(remaining: 100, limit: 100, resetDate: oldReset.addingTimeInterval(24 * 3600)),
+            previous: UsageSnapshot(
+                timestamp: Date().addingTimeInterval(-60),
+                usage: UsageResult(remaining: 85, limit: 100, resetDate: oldReset)
+            ),
+            history: [],
+            inputValue: { _, def in def }
+        )
+
+        XCTAssertNil(rule.evaluate(ctx))
+    }
+
 
     func testMetricReset_doesNotFireForAmpStyleHourlyReplenishment() {
         let rule = genericRule(id: "metricReset")

@@ -13,6 +13,7 @@ Usage: ./build.sh [options]
 
 Options:
   --test       Generate source list and run tests
+  --debug      Build with the Swift debug configuration (enables developer controls)
   --open       On macOS, open the built Rashun.app after packaging
   --cli-only   Build only the CLI target
     --link-cli   Create/update a user-level 'rashun' command link (~/.local/bin)
@@ -28,10 +29,12 @@ RUN_TESTS=false
 OPEN_APP=false
 CLI_ONLY=false
 LINK_CLI=false
+CONFIGURATION=release
 
 for arg in "$@"; do
     case "$arg" in
         --test) RUN_TESTS=true ;;
+        --debug) CONFIGURATION=debug ;;
         --open) OPEN_APP=true ;;
         --cli-only) CLI_ONLY=true ;;
         --link-cli) LINK_CLI=true ;;
@@ -99,8 +102,8 @@ if [ "$(uname -s)" = "Darwin" ]; then
 fi
 
 if [ "$CLI_ONLY" = true ] || [ "$is_macos" = false ]; then
-    swift build -c release --product RashunCLI
-    BIN_DIR=$(swift build -c release --show-bin-path)
+    swift build -c "$CONFIGURATION" --product RashunCLI
+    BIN_DIR=$(swift build -c "$CONFIGURATION" --show-bin-path)
     if [ "$LINK_CLI" = true ]; then
         install_user_cli_link "$BIN_DIR/RashunCLI"
     fi
@@ -109,9 +112,9 @@ if [ "$CLI_ONLY" = true ] || [ "$is_macos" = false ]; then
 fi
 
 # macOS full build: build app + CLI, then package Rashun.app
-swift build -c release --product Rashun
-swift build -c release --product RashunCLI
-BIN_DIR=$(swift build -c release --show-bin-path)
+swift build -c "$CONFIGURATION" --product Rashun
+swift build -c "$CONFIGURATION" --product RashunCLI
+BIN_DIR=$(swift build -c "$CONFIGURATION" --show-bin-path)
 
 rm -rf Rashun.app
 mkdir -p Rashun.app/Contents/{MacOS,Resources}
