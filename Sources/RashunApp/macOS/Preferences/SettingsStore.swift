@@ -13,6 +13,8 @@ final class SettingsStore {
     private let pollIntervalKey = "ai.pollIntervalSeconds.v1"
     private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
     private let menuBarAppearanceKey = "ai.menuBarAppearance.v1"
+    private let trackingEnabledKey = "ai.trackingEnabled.v1"
+    private let showTrackingSessionInMenuBarKey = "ai.showTrackingSessionInMenuBar.v1"
     private var enabledMap: [String: Bool] = [:]
     private var sourceMetricEnabledMap: [String: [String: Bool]] = [:]
     private var notificationSettings: [String: [NotificationRuleSetting]] = [:]
@@ -22,6 +24,8 @@ final class SettingsStore {
     private(set) var autoUpdateCheckEnabled: Bool = true
     private(set) var menuBarAppearance = MenuBarAppearanceSettings()
     private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
+    private(set) var trackingEnabled = true
+    private(set) var showTrackingSessionInMenuBar = true
 
     private func load() {
         if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
@@ -53,6 +57,8 @@ final class SettingsStore {
         if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
             autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
         }
+        if UserDefaults.standard.object(forKey: trackingEnabledKey) != nil { trackingEnabled = UserDefaults.standard.bool(forKey: trackingEnabledKey) }
+        if UserDefaults.standard.object(forKey: showTrackingSessionInMenuBarKey) != nil { showTrackingSessionInMenuBar = UserDefaults.standard.bool(forKey: showTrackingSessionInMenuBarKey) }
 
         forecastingMode = UsageForecastModePreference.current
 
@@ -143,6 +149,18 @@ final class SettingsStore {
     func setPollIntervalSeconds(_ seconds: TimeInterval) {
         pollIntervalSeconds = max(30, seconds)
         UserDefaults.standard.set(pollIntervalSeconds, forKey: pollIntervalKey)
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setTrackingEnabled(_ enabled: Bool) {
+        trackingEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: trackingEnabledKey)
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func setShowTrackingSessionInMenuBar(_ show: Bool) {
+        showTrackingSessionInMenuBar = show
+        UserDefaults.standard.set(show, forKey: showTrackingSessionInMenuBarKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 

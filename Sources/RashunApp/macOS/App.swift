@@ -46,6 +46,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var isLockSuspended = false
     private var lastResumeRefreshTriggerDate: Date?
     private let resumeRefreshDebounceSeconds: TimeInterval = 8
+    private let trackedUsageStore = TrackedUsageStore.shared
+    private var isStoppingTrackingSession = false
+    private var trackingCompletionSummary: String?
+    private var trackingIndicatorPulseTimer: Timer?
+    private var trackingIndicatorPulsePhase = 0.0
 
     private var isPollingSuspended: Bool {
         isSleepSuspended || isLockSuspended
@@ -109,7 +114,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             _ = await NotificationManager.shared.requestAuthorization()
             UpdateManager.shared.startPeriodicChecks()
-            await refresh()
+            await refresh(origin: trackedUsageStore.activeSession == nil ? .poll : .recovery)
         }
 
         schedulePollTimer()
@@ -122,6 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        trackingCompletionSummary = nil
         updateMenu()
     }
 
@@ -158,6 +164,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu?.addItem(NSMenuItem.separator())
 
+        if SettingsStore.shared.trackingEnabled || trackedUsageStore.activeSession != nil {
+            addTrackingMenuSection()
+            menu?.addItem(NSMenuItem.separator())
+        }
+
         let refreshItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         let refreshButton = RefreshButton(target: self, action: #selector(refreshClicked))
         refreshButton.update(loading: !loadingSources.isEmpty, lastRefresh: lastRefreshDate)
@@ -169,6 +180,73 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu?.addItem(withTitle: "Preferences...", action: #selector(AppDelegate.showPreferences), keyEquivalent: ",")
         menu?.addItem(NSMenuItem.separator())
         menu?.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
+    }
+
+    private func addTrackingMenuSection() {
+        if let session = trackedUsageStore.activeSession {
+            let elapsed = Date().timeIntervalSince(session.startedAt)
+            let title = "● Tracking \(session.labelNameSnapshot) • \(compactDuration(elapsed))"
+            let indicator = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            indicator.isEnabled = false
+            menu?.addItem(indicator)
+            for metric in TrackedUsageAttributionEngine.results(for: session) {
+                menu?.addItem(withTitle: "   \(metric.sourceName) \(metric.metricTitle): \(String(format: "%.1f", metric.percentagePointsConsumed))%", action: nil, keyEquivalent: "")
+            }
+            let stopItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            let stopButton = TrackingMenuButton(target: self, action: #selector(stopTrackingSession))
+            stopButton.update(title: isStoppingTrackingSession ? "Stopping…" : "Stop Session", isEnabled: !isStoppingTrackingSession)
+            stopItem.view = stopButton
+            menu?.addItem(stopItem)
+        } else {
+            menu?.addItem(withTitle: "Start Session…", action: #selector(startTrackingSession), keyEquivalent: "")
+        }
+        menu?.addItem(withTitle: "Tracked Usage…", action: #selector(showTrackedUsage), keyEquivalent: "")
+    }
+
+    private func compactDuration(_ interval: TimeInterval) -> String {
+        let minutes = max(0, Int(interval / 60))
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+
+    @objc private func startTrackingSession() {
+        let alert = NSAlert()
+        alert.messageText = "Start tracked session"
+        alert.informativeText = "Choose a label for this observed usage session."
+        let labels = trackedUsageStore.labels.filter { $0.archivedAt == nil }
+        guard !labels.isEmpty else { openPreferences(tab: .tracking); return }
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 28), pullsDown: false)
+        for label in labels { picker.addItem(withTitle: label.name); picker.lastItem?.representedObject = label.id.uuidString }
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "Start")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Manage Labels…")
+        let response = alert.runModal()
+        if response == .alertThirdButtonReturn { openPreferences(tab: .tracking); return }
+        guard response == .alertFirstButtonReturn, let identifier = picker.selectedItem?.representedObject as? String, let id = UUID(uuidString: identifier), let label = labels.first(where: { $0.id == id }) else { return }
+        _ = trackedUsageStore.start(label: label)
+        updateMenu()
+        updateStatusIcon()
+        NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+        Task { await refreshForTrackingBoundary(origin: .start) }
+    }
+
+    @objc private func stopTrackingSession() {
+        guard !isStoppingTrackingSession else { return }
+        isStoppingTrackingSession = true
+        updateMenu()
+        Task {
+            await refreshForTrackingBoundary(origin: .stop)
+            _ = trackedUsageStore.stop()
+            isStoppingTrackingSession = false
+            trackingCompletionSummary = nil
+            updateMenu()
+            updateStatusIcon()
+            NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+        }
+    }
+
+    @objc private func showTrackedUsage() {
+        TrackedUsageWindowController.shared.showWindowAndBringToFront()
     }
 
     private func sourceMenuView(source: AISource, hasWarning: Bool) -> NSView {
@@ -494,8 +572,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         PreferencesWindowController.shared.showWindowAndBringToFront()
     }
 
-    func refresh() async {
-        guard loadingSources.isEmpty else { return }
+    @discardableResult
+    func refresh(origin: TrackedUsageObservationOrigin = .poll) async -> Bool {
+        guard loadingSources.isEmpty else { return false }
         let enabled = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
         for source in enabled { loadingSources.insert(source.name) }
         updateMenu()
@@ -505,6 +584,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var notificationPreviousOverrides: [String: [String: UsageResult]] = [:]
         var notificationResetCurrentOverrides: [String: [String: UsageResult]] = [:]
         var confirmedResetMetricIds: [String: Set<String>] = [:]
+        var trackedObservations: [TrackedUsageObservation] = []
 
         await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
             for source in enabled {
@@ -595,6 +675,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     usageResultsBySource[name] = metricUsages
                     sourceHeaderDetails[name] = await headerDetailText(for: source)
 
+                    if SettingsStore.shared.trackingEnabled, let activeSession = trackedUsageStore.activeSession {
+                        let timestamp = Date()
+                        let shouldRecord = origin != .poll || !activeSession.observations.isEmpty
+                        let observations: [TrackedUsageObservation] = shouldRecord ? metricUsages.map { metricID, usage in
+                            let title = source.metrics.first(where: { $0.id == metricID })?.title ?? metricID
+                            return TrackedUsageObservation(timestamp: timestamp, sourceName: source.name, metricID: metricID, metricTitle: title, remaining: usage.remaining, limit: usage.limit, resetDate: usage.resetDate, cycleStartDate: usage.cycleStartDate, origin: origin)
+                        } : []
+                        trackedObservations.append(contentsOf: observations)
+                    }
+
                     if source.metrics.count > 1 {
                         for metric in source.metrics {
                             guard let metricUsage = metricUsages[metric.id] else { continue }
@@ -646,6 +736,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        trackedUsageStore.append(contentsOf: trackedObservations)
+
         lastRefreshDate = Date()
         let celebrations = await evaluateNotifications(
             sources: enabled,
@@ -664,6 +756,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusIcon()
 
         NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+        return true
+    }
+
+    private func refreshForTrackingBoundary(origin: TrackedUsageObservationOrigin) async {
+        while true {
+            while !loadingSources.isEmpty {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            if await refresh(origin: origin) {
+                return
+            }
+        }
     }
 
     private func enabledMetrics(for source: AISource) -> [AISourceMetric] {
@@ -833,6 +937,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private func updateStatusIcon() {
         guard let button = statusItem?.button else { return }
+        updateTrackingSessionTitle(on: button)
         let metrics = selectedMetricsForStatusIcon()
         if metrics.isEmpty {
             if let placeholder = NSImage(systemSymbolName: "circle.dashed", accessibilityDescription: "No selected metrics") {
@@ -853,6 +958,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.image = image
         }
         button.toolTip = nil
+    }
+
+    private func updateTrackingSessionTitle(on button: NSStatusBarButton) {
+        guard SettingsStore.shared.showTrackingSessionInMenuBar,
+              let session = trackedUsageStore.activeSession,
+              let label = trackedUsageStore.labels.first(where: { $0.id == session.labelID }) else {
+            trackingIndicatorPulseTimer?.invalidate()
+            trackingIndicatorPulseTimer = nil
+            button.title = ""
+            button.imagePosition = .imageOnly
+            return
+        }
+        applyTrackingSessionTitle(session: session, color: NSColor(hexString: label.colorHex) ?? .systemPurple, alpha: 1, button: button)
+        if trackingIndicatorPulseTimer == nil {
+            trackingIndicatorPulseTimer = Timer.scheduledTimer(timeInterval: 0.12, target: self, selector: #selector(pulseTrackingIndicator), userInfo: nil, repeats: true)
+        }
+    }
+
+    @objc private func pulseTrackingIndicator() {
+        guard let button = statusItem?.button,
+              let active = trackedUsageStore.activeSession,
+              SettingsStore.shared.showTrackingSessionInMenuBar,
+              let current = trackedUsageStore.labels.first(where: { $0.id == active.labelID }) else { return }
+        trackingIndicatorPulsePhase += 0.28
+        applyTrackingSessionTitle(session: active, color: NSColor(hexString: current.colorHex) ?? .systemPurple, alpha: 0.56 + 0.44 * ((sin(trackingIndicatorPulsePhase) + 1) / 2), button: button)
+    }
+
+    private func applyTrackingSessionTitle(session: TrackedSession, color: NSColor, alpha: CGFloat, button: NSStatusBarButton) {
+        button.attributedTitle = NSAttributedString(
+            string: "● \(session.labelNameSnapshot) ",
+            attributes: [.foregroundColor: color.withAlphaComponent(alpha), .font: NSFont.systemFont(ofSize: 12, weight: .semibold)]
+        )
+        button.imagePosition = .imageRight
     }
 
     private func selectedMetricsForStatusIcon() -> [IconRingMetric] {
@@ -1527,6 +1665,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return days == 1 ? "1 day" : "\(days) days"
     }
 
+}
+
+private extension NSColor {
+    convenience init?(hexString: String) {
+        let value = hexString.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard let number = UInt64(value, radix: 16) else { return nil }
+        self.init(red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255, blue: CGFloat(number & 255) / 255, alpha: 1)
+    }
 }
 
 @MainActor

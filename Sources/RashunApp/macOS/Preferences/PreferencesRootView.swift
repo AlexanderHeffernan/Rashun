@@ -4,6 +4,7 @@ import RashunCore
 enum PreferencesTab: String, CaseIterable, Hashable {
     case general = "General"
     case sources = "Sources"
+    case tracking = "Tracking"
     case data = "Data"
     case updates = "Updates"
 }
@@ -121,6 +122,8 @@ struct PreferencesRootView: View {
             GeneralTabView(model: model)
         case .sources:
             SourcesTabView(model: model)
+        case .tracking:
+            TrackingTabView()
         case .data:
             DataTabView(model: model)
         case .updates:

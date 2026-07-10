@@ -36,6 +36,8 @@ final class PreferencesViewModel: ObservableObject {
     @Published private(set) var healthCheckSourceName: String?
     @Published private(set) var menuBarAppearance = MenuBarAppearanceSettings()
     @Published private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
+    @Published private(set) var trackingEnabled = true
+    @Published private(set) var showTrackingSessionInMenuBar = true
 
     private var settings: SettingsStore { .shared }
     private var updates: UpdateManager { .shared }
@@ -45,6 +47,8 @@ final class PreferencesViewModel: ObservableObject {
         pollMinutesText = formattedPollMinutes()
         menuBarAppearance = settings.menuBarAppearance
         forecastingMode = settings.forecastingMode
+        trackingEnabled = settings.trackingEnabled
+        showTrackingSessionInMenuBar = settings.showTrackingSessionInMenuBar
         refreshUpdateStatus()
     }
 
@@ -74,6 +78,8 @@ final class PreferencesViewModel: ObservableObject {
         sanitizeMenuBarSelections()
         menuBarAppearance = settings.menuBarAppearance
         forecastingMode = settings.forecastingMode
+        trackingEnabled = settings.trackingEnabled
+        showTrackingSessionInMenuBar = settings.showTrackingSessionInMenuBar
         refreshUpdateStatus()
     }
 
@@ -93,6 +99,9 @@ final class PreferencesViewModel: ObservableObject {
     func setMetricEnabled(sourceName: String, metricId: String, enabled: Bool) {
         settings.setMetricEnabled(enabled, sourceName: sourceName, metricId: metricId)
     }
+
+    func setTrackingEnabled(_ enabled: Bool) { settings.setTrackingEnabled(enabled); trackingEnabled = enabled }
+    func setShowTrackingSessionInMenuBar(_ show: Bool) { settings.setShowTrackingSessionInMenuBar(show); showTrackingSessionInMenuBar = show }
 
     func confirmEnableSource() {
         guard let source = pendingEnableSource else { return }

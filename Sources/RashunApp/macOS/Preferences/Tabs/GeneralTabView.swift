@@ -168,6 +168,17 @@ struct GeneralTabView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(BrandPalette.textPrimary)
 
+            Toggle(
+                "Show current tracking session",
+                isOn: Binding(
+                    get: { model.showTrackingSessionInMenuBar },
+                    set: { model.setShowTrackingSessionInMenuBar($0) }
+                )
+            )
+            .toggleStyle(.checkbox)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundColor(BrandPalette.textPrimary)
+
             Text("Select metrics to render as horizontal ring icons in the menu bar.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(BrandPalette.textSecondary.opacity(0.9))
