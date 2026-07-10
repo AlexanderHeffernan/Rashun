@@ -444,9 +444,6 @@ public enum UsageForecastEngine {
     }
 
     private static func recommendation(for score: Double, zeroDate: Date?, confidence: Double) -> UsagePacingRecommendation {
-        if confidence < 0.25, score < -30 {
-            return .onPace
-        }
         if zeroDate != nil, confidence >= 0.55 {
             return score < -30 ? .conserveHard : .conserve
         }

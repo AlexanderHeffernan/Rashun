@@ -118,6 +118,31 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertEqual(assessment?.recommendation, .conserveHard)
     }
 
+    func testSeverelyBehindCycleNeverLabelsNegativeScoreOnPaceWithSparseHistory() {
+        let now = fixedDate(hour: 4)
+        let reset = fixedDate(dayOffset: 2, hour: 0)
+        let cycleStart = fixedDate(hour: 0)
+        let current = UsageResult(
+            remaining: 5,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: cycleStart
+        )
+
+        let assessment = UsageForecastEngine.resetWindowPacingAssessment(
+            current: current,
+            history: [],
+            resetDate: reset,
+            now: now,
+            mode: .simple
+        )
+
+        XCTAssertNotNil(assessment)
+        XCTAssertLessThanOrEqual(assessment!.score, -30)
+        XCTAssertEqual(assessment?.recommendation, .conserveHard)
+        XCTAssertLessThan(assessment!.confidence, 0.25)
+    }
+
     func testSmartForecastLearnsDifferentHourlyBurnRates() {
         let now = fixedDate(dayOffset: 3, hour: 8)
         let reset = fixedDate(dayOffset: 3, hour: 14)

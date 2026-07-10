@@ -27,6 +27,30 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         XCTAssertEqual(gate.verifiedUsage(scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)?.usage.remaining, 28)
     }
 
+    func testSmallUpwardSpikeIsWithheldUntilARealLaterRefresh() {
+        var gate = UsageSampleStabilityGate()
+        let reset = Date(timeIntervalSince1970: 1_700_000_000)
+        let previous = UsageResult(remaining: 93, limit: 100, resetDate: reset)
+        let spike = UsageResult(remaining: 98, limit: 100, resetDate: reset.addingTimeInterval(12))
+        let corrected = UsageResult(remaining: 93, limit: 100, resetDate: reset)
+
+        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: spike, previousAccepted: previous))
+        let result = gate.verifiedUsage(scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)
+        XCTAssertEqual(result?.usage.remaining, 93)
+        XCTAssertFalse(result?.wasConfirmed == true)
+    }
+
+    func testSmallConfirmedIncreaseIsAcceptedAsReset() {
+        var gate = UsageSampleStabilityGate()
+        let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
+        let newReset = oldReset.addingTimeInterval(5 * 3600)
+        let previous = UsageResult(remaining: 91, limit: 100, resetDate: oldReset)
+        let reset = UsageResult(remaining: 98, limit: 100, resetDate: newReset)
+
+        XCTAssertNil(gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous))
+        XCTAssertTrue(gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous)?.wasConfirmed == true)
+    }
+
     func testConfirmedResetRetainsEvidenceWhenUsageDropsSlightlyBeforeSecondPoll() {
         var gate = UsageSampleStabilityGate()
         let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
@@ -83,16 +107,16 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let cycleStart = Date(timeIntervalSince1970: 1_700_000_000)
         let reset = cycleStart.addingTimeInterval(5 * 3600)
         let previous = UsageResult(remaining: 27, limit: 100, resetDate: reset, cycleStartDate: cycleStart)
-        let falseReset = UsageResult(
+        let earlyReset = UsageResult(
             remaining: 94,
             limit: 100,
             resetDate: reset.addingTimeInterval(178),
             cycleStartDate: cycleStart.addingTimeInterval(178)
         )
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::5h", incoming: falseReset, previousAccepted: previous))
+        XCTAssertNil(gate.verifiedUsage(scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous))
         XCTAssertTrue(
-            gate.verifiedUsage(scope: "Codex::5h", incoming: falseReset, previousAccepted: previous)?.wasConfirmed == true
+            gate.verifiedUsage(scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous)?.wasConfirmed == true
         )
     }
 }

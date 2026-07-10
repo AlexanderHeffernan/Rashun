@@ -37,7 +37,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var usageSampleStabilityGate = UsageSampleStabilityGate()
     private let statusRingSize: CGFloat = 20
     private let statusRingSpacing: CGFloat = 3
-    private let resetConfirmationDelayNanoseconds: UInt64 = 2_200_000_000
     #if DEBUG
     private var simulatedCodexWeeklyResetSample: UsageResult?
     private var simulatedCodexWeeklyResetBaseline: UsageResult?
@@ -607,7 +606,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 switch result {
                 case let .success(fetchResult):
                     var metricUsages: [String: UsageResult] = [:]
-                    var potentialResetMetrics: [(metricId: String, previousAccepted: UsageResult)] = []
                     let previousUsages = latestUsageResults[name] ?? [:]
 
                     func recordVerifiedUsage(_ verifiedUsage: UsageSampleStabilityGate.VerifiedUsage, metricId: String) {
@@ -630,32 +628,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             metricId: metricId,
                             displayedUsage: previousUsages[metricId]
                         )
+                        guard source.pacingBehavior == .resetWindow else {
+                            recordVerifiedUsage(
+                                UsageSampleStabilityGate.VerifiedUsage(
+                                    usage: incomingUsage,
+                                    previousAccepted: previousAccepted ?? incomingUsage,
+                                    wasConfirmed: false
+                                ),
+                                metricId: metricId
+                            )
+                            continue
+                        }
                         if let verifiedUsage = usageSampleStabilityGate.verifiedUsage(
                             scope: scope,
                             incoming: incomingUsage,
                             previousAccepted: previousAccepted
                         ) {
                             recordVerifiedUsage(verifiedUsage, metricId: metricId)
-                        } else if let previousAccepted {
-                            potentialResetMetrics.append((metricId, previousAccepted))
-                        }
-                    }
-
-                    // Codex intentionally shares a short source cache between
-                    // its metrics. Wait it out, then re-fetch only metrics that
-                    // claimed a reset so the confirmation is genuinely fresh.
-                    if !potentialResetMetrics.isEmpty {
-                        try? await Task.sleep(nanoseconds: resetConfirmationDelayNanoseconds)
-                        for potentialReset in potentialResetMetrics {
-                            guard let confirmationUsage = try? await source.fetchUsage(for: potentialReset.metricId),
-                                  let verifiedUsage = usageSampleStabilityGate.verifiedUsage(
-                                      scope: "\(name)::\(potentialReset.metricId)",
-                                      incoming: confirmationUsage,
-                                      previousAccepted: potentialReset.previousAccepted
-                                  ) else {
-                                continue
-                            }
-                            recordVerifiedUsage(verifiedUsage, metricId: potentialReset.metricId)
                         }
                     }
 

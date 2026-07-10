@@ -1,6 +1,6 @@
 import Foundation
 
-/// Holds suspicious near-full quota jumps until a consecutive refresh confirms them.
+/// Holds upward quota jumps until a later refresh confirms them.
 /// Keeping this at ingestion ensures every consumer sees the same stable usage data.
 public struct UsageSampleStabilityGate {
     public struct VerifiedUsage: Sendable {
@@ -58,7 +58,7 @@ public struct UsageSampleStabilityGate {
             candidates.removeValue(forKey: scope)
         }
 
-        guard isPotentialQuotaJump(from: previousAccepted, to: incoming) else {
+        guard isPotentialQuotaIncrease(from: previousAccepted, to: incoming) else {
             return VerifiedUsage(usage: incoming, previousAccepted: previousAccepted, wasConfirmed: false)
         }
 
@@ -66,32 +66,29 @@ public struct UsageSampleStabilityGate {
         return nil
     }
 
-    private func isPotentialQuotaJump(from previous: UsageResult, to current: UsageResult) -> Bool {
-        guard current.percentRemaining >= 85,
-              current.percentRemaining - previous.percentRemaining >= 20 else {
-            return false
-        }
-
-        if let previousReset = previous.resetDate, let currentReset = current.resetDate {
-            return currentReset > previousReset
-        }
-        return previous.percentRemaining < 95
+    private func isPotentialQuotaIncrease(from previous: UsageResult, to current: UsageResult) -> Bool {
+        // Remaining quota is monotonic within a usage cycle. Provider glitches
+        // are not always dramatic near-full jumps; small upward blips are just
+        // as visible in history and must also wait for independent confirmation.
+        current.percentRemaining > previous.percentRemaining
     }
 
     private func confirms(candidate: Candidate, with current: UsageResult) -> Bool {
         switch (candidate.usage.resetDate, current.resetDate) {
         case let (candidateReset?, currentReset?):
             // Providers occasionally round or slightly revise the reset time.
-            // Require the quota itself to remain near full too. A reset date
-            // alone has proven insufficient evidence when an API glitches.
-            return abs(currentReset.timeIntervalSince(candidateReset)) <= 60 &&
-                current.percentRemaining >= 90 &&
+            // Require the quota itself to remain close too. A reset date alone
+            // has proven insufficient evidence when an API glitches.
+            let distanceFromCandidate = abs(currentReset.timeIntervalSince(candidateReset))
+            if let previousReset = candidate.previousAccepted.resetDate,
+               abs(currentReset.timeIntervalSince(previousReset)) < distanceFromCandidate {
+                return false
+            }
+            return distanceFromCandidate <= 60 &&
                 abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10
         case (nil, nil):
-            // Without a reset date, require another clearly near-full sample
-            // while allowing a modest amount of real post-reset usage.
-            return current.percentRemaining >= 90 &&
-                abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10
+            // Allow a modest amount of real post-reset usage between polls.
+            return abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10
         default:
             return false
         }
