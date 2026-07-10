@@ -145,7 +145,24 @@ public final class TrackedUsageStore {
     @discardableResult public func createLabel(name: String, colorHex: String = "#7C5CFC") -> TrackingLabel {
         let label = TrackingLabel(name: name.trimmingCharacters(in: .whitespacesAndNewlines), colorHex: colorHex); payload.labels.append(label); save(); return label
     }
-    public func updateLabel(_ label: TrackingLabel) { guard let index = payload.labels.firstIndex(where: { $0.id == label.id }) else { return }; var updated = label; updated.updatedAt = Date(); payload.labels[index] = updated; save() }
+    public func updateLabel(_ label: TrackingLabel) {
+        guard let index = payload.labels.firstIndex(where: { $0.id == label.id }) else { return }
+        var updated = label
+        updated.name = updated.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !updated.name.isEmpty else { return }
+        updated.updatedAt = Date()
+        payload.labels[index] = updated
+
+        for sessionIndex in payload.sessions.indices where payload.sessions[sessionIndex].labelID == updated.id {
+            payload.sessions[sessionIndex].labelNameSnapshot = updated.name
+        }
+        if payload.activeSession?.labelID == updated.id {
+            payload.activeSession?.labelNameSnapshot = updated.name
+        }
+
+        save()
+        NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+    }
     public func archiveLabel(id: UUID, archived: Bool = true) { guard let i = payload.labels.firstIndex(where: { $0.id == id }) else { return }; payload.labels[i].archivedAt = archived ? Date() : nil; payload.labels[i].updatedAt = Date(); save() }
     public func deleteLabelPermanently(id: UUID) { guard !payload.sessions.contains(where: { $0.labelID == id }) && payload.activeSession?.labelID != id else { return }; payload.labels.removeAll { $0.id == id }; save() }
     public func start(label: TrackingLabel, at date: Date = Date()) -> TrackedSession {

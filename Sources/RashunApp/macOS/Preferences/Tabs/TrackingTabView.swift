@@ -62,16 +62,25 @@ private struct LabelRow: View {
     let label: TrackingLabel
     @ObservedObject var model: TrackingPreferencesModel
     init(label: TrackingLabel, model: TrackingPreferencesModel) { self.label = label; self.model = model; _name = State(initialValue: label.name); _color = State(initialValue: label.colorHex) }
+    private var normalizedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var hasChanges: Bool {
+        normalizedName != label.name || color.uppercased() != label.colorHex.uppercased()
+    }
+    private var canSave: Bool { !normalizedName.isEmpty && hasChanges }
     var body: some View {
         let isActive = TrackedUsageStore.shared.activeSession?.labelID == label.id
         HStack {
-            ColorPicker("", selection: Binding(get: { Color(hex: color) ?? .purple }, set: { color = $0.hexString ?? color; save() }), supportsOpacity: false)
+            ColorPicker("", selection: Binding(get: { Color(hex: color) ?? .purple }, set: { color = $0.hexString ?? color }), supportsOpacity: false)
                 .labelsHidden()
                 .frame(width: 32, height: 32)
                 .fixedSize()
                 .clipShape(Circle())
                 .overlay(Circle().stroke(BrandPalette.primary.opacity(0.55), lineWidth: 1))
-            TrackingTextField(placeholder: "Label", text: $name, width: 190).onSubmit { save() }
+            TrackingTextField(placeholder: "Label", text: $name, width: 190)
+            Button("Save") { save() }
+                .buttonStyle(PrimaryActionButtonStyle())
+                .disabled(!canSave)
+                .opacity(canSave ? 1 : 0.42)
             Button(label.archivedAt == nil ? "Archive" : "Unarchive") { model.archive(label) }
                 .buttonStyle(SecondaryActionButtonStyle())
                 .disabled(isActive)
@@ -79,7 +88,14 @@ private struct LabelRow: View {
             if isActive { Text("Stop session before archiving").font(.system(size: 12, weight: .medium)).foregroundColor(BrandPalette.textSecondary) }
         }.padding(.vertical, 5)
     }
-    private func save() { var updated = label; updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines); updated.colorHex = color; model.save(updated) }
+    private func save() {
+        guard canSave else { return }
+        var updated = label
+        updated.name = normalizedName
+        updated.colorHex = color
+        name = normalizedName
+        model.save(updated)
+    }
 }
 
 private struct TrackingTextField: View {

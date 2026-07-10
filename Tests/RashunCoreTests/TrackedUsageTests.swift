@@ -38,4 +38,27 @@ final class TrackedUsageTests: XCTestCase {
         store.append(observation(1, 80, origin: .stop))
         XCTAssertEqual(store.activeSession?.observations.count, 2)
     }
+    @MainActor func testRenamingLabelUpdatesCompletedAndActiveSessions() {
+        let store = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        var label = store.createLabel(name: "Old Name")
+        _ = store.start(label: label, at: base)
+        store.append(observation(0, 80, origin: .start))
+        store.append(observation(1, 70, origin: .stop))
+        _ = store.stop(at: base.addingTimeInterval(60))
+        _ = store.start(label: label, at: base.addingTimeInterval(120))
+
+        label.name = "New Name"
+        store.updateLabel(label)
+
+        XCTAssertEqual(store.labels.first?.name, "New Name")
+        XCTAssertEqual(store.sessions.first?.labelNameSnapshot, "New Name")
+        XCTAssertEqual(store.activeSession?.labelNameSnapshot, "New Name")
+    }
+    @MainActor func testEmptyLabelRenameIsRejected() {
+        let store = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        var label = store.createLabel(name: "Original")
+        label.name = "   "
+        store.updateLabel(label)
+        XCTAssertEqual(store.labels.first?.name, "Original")
+    }
 }
