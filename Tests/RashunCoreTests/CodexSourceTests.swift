@@ -61,8 +61,8 @@ final class CodexSourceTests: XCTestCase {
     func testParseProUsageByMetricClampsUsedPercent() {
         let overused = CodexUsageResponse(
             rateLimit: CodexRateLimit(
-                primaryWindow: CodexRateLimitWindow(usedPercent: 125),
-                secondaryWindow: CodexRateLimitWindow(usedPercent: -5)
+                primaryWindow: CodexRateLimitWindow(usedPercent: 125, limitWindowSeconds: 18_000),
+                secondaryWindow: CodexRateLimitWindow(usedPercent: -5, limitWindowSeconds: 604_800)
             )
         )
 
@@ -70,6 +70,24 @@ final class CodexSourceTests: XCTestCase {
 
         XCTAssertEqual(usages["codex-pro-5h"]?.remaining, 0)
         XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 100)
+    }
+
+    func testParseProUsageByMetricClassifiesWeeklyPrimaryWhenFiveHourWindowIsAbsent() {
+        let response = CodexUsageResponse(
+            rateLimit: CodexRateLimit(
+                primaryWindow: CodexRateLimitWindow(
+                    usedPercent: 23,
+                    resetAt: 1_779_126_400,
+                    limitWindowSeconds: 604_800
+                )
+            )
+        )
+
+        let usages = source.parseProUsageByMetric(from: response)
+
+        XCTAssertNil(usages["codex-pro-5h"])
+        XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 77)
+        XCTAssertEqual(usages["codex-pro-weekly"]?.cycleStartDate?.timeIntervalSince1970, 1_778_521_600)
     }
 
     func testParseResetBalanceParsesCreditsObject() throws {

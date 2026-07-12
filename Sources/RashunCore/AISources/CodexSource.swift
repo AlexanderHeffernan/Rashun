@@ -160,31 +160,40 @@ public struct CodexSource: AISource {
 
     private func fetchProUsageFromLogs() throws -> [String: UsageResult] {
         let sample = try latestRateLimitSample { sample in
-            sample.primary?.windowMinutes == 300 || sample.secondary?.windowMinutes == 10_080
+            [sample.primary, sample.secondary]
+                .compactMap { $0?.windowMinutes }
+                .contains { $0 == 300 || $0 == 10_080 }
         }
         var usages: [String: UsageResult] = [:]
-        if let primary = sample.primary,
-           primary.windowMinutes == 300,
-           let usage = parseUsageWindow(primary) {
-            usages["codex-pro-5h"] = usage
-        }
-        if let secondary = sample.secondary,
-           secondary.windowMinutes == 10_080,
-           let usage = parseUsageWindow(secondary) {
-            usages["codex-pro-weekly"] = usage
+        for window in [sample.primary, sample.secondary].compactMap({ $0 }) {
+            guard let metricId = proMetricId(windowMinutes: window.windowMinutes),
+                  let usage = parseUsageWindow(window) else { continue }
+            usages[metricId] = usage
         }
         return usages
     }
 
     public func parseProUsageByMetric(from response: CodexUsageResponse) -> [String: UsageResult] {
         var parsed: [String: UsageResult] = [:]
-        if let usage = parseUsageWindow(response.rateLimit?.primaryWindow) {
-            parsed["codex-pro-5h"] = usage
-        }
-        if let usage = parseUsageWindow(response.rateLimit?.secondaryWindow) {
-            parsed["codex-pro-weekly"] = usage
+        let windows = [response.rateLimit?.primaryWindow, response.rateLimit?.secondaryWindow]
+            .compactMap { $0 }
+        for window in windows {
+            guard let metricId = proMetricId(windowSeconds: window.limitWindowSeconds),
+                  let usage = parseUsageWindow(window) else { continue }
+            parsed[metricId] = usage
         }
         return parsed
+    }
+
+    private func proMetricId(windowSeconds: Double?) -> String? {
+        guard let windowSeconds else { return nil }
+        if windowSeconds == 5 * 60 * 60 { return "codex-pro-5h" }
+        if windowSeconds == 7 * 24 * 60 * 60 { return "codex-pro-weekly" }
+        return nil
+    }
+
+    private func proMetricId(windowMinutes: Double?) -> String? {
+        windowMinutes.flatMap { proMetricId(windowSeconds: $0 * 60) }
     }
 
     public func parseResetBalance(from data: Data, now: Date = Date()) -> CodexResetBalance? {
