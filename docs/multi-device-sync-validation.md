@@ -12,11 +12,11 @@ This file distinguishes implementation evidence from physical-platform release g
 | Deterministic projection | Total ordering and first/last plateau projection; order-independence test; display cap does not delete canonical observations |
 | Canonical import/export | Schema 2 round trip, duplicate-safe reimport, schema 1 compatibility test |
 | Authenticated sync | HMAC-SHA-256 method/path/body/ID/time/nonce signing; durable replay cache; scope, skew, replay, malformed and size tests |
-| Pairing | 256-bit secret, two-minute expiry, five attempts, requester identity display, explicit approval, one-use completion and tests |
+| Pairing | One-use eight-character desktop code, 15-minute expiry, requester identity capture, and independent 256-bit credential issuance |
 | Credential storage/lifecycle | AES-GCM at rest, Keychain or mode-0600 master key, plaintext migration, rotation and revocation tests |
 | Complete/incremental backfill | Origin summaries/gaps, range planner, 500-record pages, durable per-page inserts, 1,201-record three-page convergence and address fallback tests |
 | Current mobile API | Authenticated deterministic current projection; wrong-scope and replay rejection tests |
-| Embedded service | Hummingbird bounded routes, exact CORS, optional trusted TLS, fail-closed non-loopback CLI configuration, static PWA route tests |
+| Embedded service | Hummingbird bounded routes, exact CORS, optional trusted TLS, explicit private-network warning, static PWA route tests, and cross-platform CLI builds |
 | Connectivity/fallback | Bonjour advertisement, manual/Tailscale HTTPS validation, persistent peer addresses, and address health tracking |
 | Mobile PWA | Packaged offline shell; three screens; IndexedDB; non-extractable AES-GCM key; HMAC requests; deterministic multi-peer merge; stale cache; visible-only polling/backoff; Node vectors |
 | Notification extraction | Injected clock, deterministic crossing event ID and state transition tests; existing macOS delivery retained |
@@ -28,7 +28,7 @@ Web Push is disabled. It is not production-ready because this environment cannot
 
 ## Physical/external release gates still required
 
-- macOS, Linux/Avahi and Windows physical desktop pair/restart/concurrent-writer/firewall validation.
+- macOS, Linux, and Windows physical CLI pair/restart/concurrent-writer/firewall validation.
 - Trusted LAN certificate deployment and hostname-change/DHCP/mDNS-disabled tests.
 - Tailscale Serve connection, disconnect and reconnect on a real tailnet.
 - Installed iOS and Android PWA camera/install/storage/visibility/network behavior.

@@ -63,6 +63,9 @@ jobs:
         run: |
           set -euo pipefail
           swift run RashunCLI --help
+          swift run RashunCLI sync --help
+          swift run RashunCLI sync connect --help
+          swift run RashunCLI sync serve --help
           swift run RashunCLI
 
       - name: CLI smoke test (Windows)
@@ -70,6 +73,9 @@ jobs:
         shell: pwsh
         run: |
           swift run RashunCLI --help
+          swift run RashunCLI sync --help
+          swift run RashunCLI sync connect --help
+          swift run RashunCLI sync serve --help
           swift run RashunCLI
 
   macos-app:

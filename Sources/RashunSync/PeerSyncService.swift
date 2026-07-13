@@ -65,7 +65,8 @@ public actor PeerSyncService {
                     let message =
                         addresses.isEmpty
                         ? "No return address is available."
-                        : (attempts.last?.errorDescription ?? "The other Mac could not be reached.")
+                        : (attempts.last?.errorDescription
+                            ?? "The other device could not be reached.")
                     try? repository.finishPeerSync(
                         credentialID: peer.credentialID, imported: 0, error: message)
                     if addresses.isEmpty {
@@ -96,12 +97,12 @@ public actor PeerSyncService {
     }
     private static func message(for error: Error, appVersion: String?) -> String {
         if case DesktopSyncCompatibilityError.versionMismatch = error {
-            return "Update both Macs to Rashun \(appVersion ?? "the same version")."
+            return "Update both devices to Rashun \(appVersion ?? "the same version")."
         }
         if case HTTPPeerTransportError.httpStatus(401) = error {
             return "Connection authorization expired. Remove this device and connect it again."
         }
         return
-            "Could not reach the other Mac. Check that Rashun is open and the address is reachable."
+            "Could not reach the other device. Check that Rashun is running and the address is reachable."
     }
 }

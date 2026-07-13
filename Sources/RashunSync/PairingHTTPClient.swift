@@ -5,6 +5,12 @@ import Foundation
 #endif
 
 public enum PairingHTTPClient {
+    public static func connect(_ request: SimplePairingRequest, with endpoint: URL) async throws
+        -> SimplePairingResponse
+    {
+        try await post(request, path: "/v1/pairing/connect", endpoint: endpoint)
+    }
+
     public static func exchange(
         invitation: PairingInvitation, with endpoint: URL, requester: DeviceIdentity
     ) async throws -> PairingStatusDTO {
@@ -33,11 +39,18 @@ public enum PairingHTTPClient {
         request.httpBody = try encoder.encode(value)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw PairingHTTPClientError.httpStatus(http.statusCode)
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(O.self, from: data)
     }
+}
+
+public enum PairingHTTPClientError: Error, Equatable, Sendable {
+    case httpStatus(Int)
 }

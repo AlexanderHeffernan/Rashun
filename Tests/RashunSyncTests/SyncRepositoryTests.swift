@@ -36,6 +36,15 @@ final class SyncRepositoryTests: XCTestCase {
         XCTAssertNoThrow(
             try ManualPeerAddress.validate("http://127.0.0.1:8787", allowLoopbackHTTP: true))
     }
+    func testPeerConnectionNormalizesUserFriendlyAddresses() throws {
+        XCTAssertEqual(
+            try PeerConnectionService.normalizedURL("192.168.1.20:8787").absoluteString,
+            "http://192.168.1.20:8787")
+        XCTAssertEqual(
+            try PeerConnectionService.normalizedURL("https://desktop.example.test").absoluteString,
+            "https://desktop.example.test")
+        XCTAssertThrowsError(try PeerConnectionService.normalizedURL("not an address"))
+    }
     func testLegacyMigrationBacksUpAndIsRetrySafe() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

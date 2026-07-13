@@ -40,7 +40,7 @@ final class SyncPreferencesViewModel: ObservableObject {
             }
             if let error = peer.lastSyncError {
                 if error.contains("authorization") { return "Reconnect required" }
-                if error.contains("Update both Macs") { return "Version mismatch" }
+                if error.contains("Update both devices") { return "Version mismatch" }
                 return "History sync failed"
             }
             if let imported = peer.lastSyncImported, imported > 0 {
@@ -235,57 +235,26 @@ final class SyncPreferencesViewModel: ObservableObject {
         Task {
             defer { isJoining = false }
             do {
-                guard let repository, let endpoint = normalizedURL(joinAddress) else {
-                    throw URLError(.badURL)
-                }
+                guard let repository else { throw URLError(.badURL) }
+                let endpoint = try PeerConnectionService.normalizedURL(joinAddress)
                 guard let ownAddress = baseURL else { throw URLError(.cannotFindHost) }
                 let version = Versioning.versionString(bundle: .main)
-                let value = SimplePairingRequest(
-                    password: joinPassword.uppercased(),
-                    requesterName: repository.identity.displayName,
-                    requesterDeviceID: repository.identity.deviceID,
-                    requesterEpoch: repository.identity.epoch, scope: .desktopSync,
-                    requesterAddress: ownAddress, requesterVersion: version)
-                var request = URLRequest(url: endpoint.appendingPathComponent("v1/pairing/connect"))
-                request.httpMethod = "POST"
-                request.httpBody = try JSONEncoder().encode(value)
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse else {
-                    throw URLError(.badServerResponse)
+                let result = try await PeerConnectionService.connect(
+                    repository: repository, endpoint: endpoint, password: joinPassword,
+                    requesterAddress: ownAddress, appVersion: version)
+                if result.sync.accepted > 0 {
+                    try SyncEnvironment.shared.refreshCompatibilityView()
                 }
-                if http.statusCode == 409 { throw DesktopConnectionError.versionMismatch }
-                guard http.statusCode == 200 else { throw URLError(.userAuthenticationRequired) }
-                let result = try JSONDecoder().decode(SimplePairingResponse.self, from: data)
-                guard result.hostVersion == version else {
-                    throw DesktopConnectionError.versionMismatch
-                }
-                try repository.savePeer(
-                    result.credential, deviceID: result.host.deviceID, epoch: result.host.epoch,
-                    displayName: result.host.displayName)
-                try repository.saveAddress(
-                    credentialID: result.credential.id, url: endpoint, kind: .manual)
-                try repository.beginPeerSync(credentialID: result.credential.id)
-                let sync = try await SyncCoordinator(
-                    repository: repository, requiredAppVersion: version
-                )
-                .reconcile(
-                    with: HTTPPeerTransport(baseURL: endpoint, credential: result.credential))
-                try repository.recordAddressResult(
-                    credentialID: result.credential.id, url: endpoint, succeeded: true)
-                try repository.finishPeerSync(
-                    credentialID: result.credential.id, imported: sync.accepted)
-                if sync.accepted > 0 { try SyncEnvironment.shared.refreshCompatibilityView() }
                 joinAddress = ""
                 joinPassword = ""
                 refresh()
-                status = "Connected to \(result.host.displayName). Histories are up to date."
-            } catch DesktopConnectionError.versionMismatch {
+                status = "Connected to \(result.peer.displayName). Histories are up to date."
+            } catch PeerConnectionError.versionMismatch {
                 status =
-                    "Both Macs must be running the same Rashun version. Update Rashun on both devices, then try again."
+                    "Both devices must be running the same Rashun version. Update Rashun on both devices, then try again."
             } catch {
                 status =
-                    "Could not connect. Check the address, pairing code, and that Rashun is open on the other Mac."
+                    "Could not connect. Check the address, pairing code, and that Rashun is running on the other device."
             }
         }
     }
@@ -307,7 +276,7 @@ final class SyncPreferencesViewModel: ObservableObject {
             status =
                 attempts.first(where: { $0.credentialID == id })?.result != nil
                 ? "History is up to date."
-                : "Sync failed. Check that Rashun is open and both Macs are on the same version."
+                : "Sync failed. Check that Rashun is running and both devices are on the same version."
         }
     }
 
@@ -328,12 +297,6 @@ final class SyncPreferencesViewModel: ObservableObject {
             try repository?.revokePeer(credentialID: id)
             refresh()
         } catch { status = error.localizedDescription }
-    }
-
-    private func normalizedURL(_ input: String) -> URL? {
-        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let url = URL(string: value), url.scheme != nil { return url }
-        return URL(string: "http://\(value)")
     }
 
     nonisolated private static func isTailscaleIPv4(_ address: String) -> Bool {
@@ -620,8 +583,8 @@ struct SyncTabView: View {
 
             HStack(alignment: .top, spacing: 14) {
                 connectionOption(
-                    number: "1", title: "Share this Mac’s details",
-                    subtitle: "On your other Mac, enter this address and code."
+                    number: "1", title: "Share this device’s details",
+                    subtitle: "On your other device, enter this address and code."
                 ) {
                     VStack(alignment: .leading, spacing: 10) {
                         connectionValue(
@@ -640,8 +603,8 @@ struct SyncTabView: View {
                 }
 
                 connectionOption(
-                    number: "2", title: "Enter another Mac’s details",
-                    subtitle: "Use the address and code displayed on your other Mac."
+                    number: "2", title: "Enter another device’s details",
+                    subtitle: "Use the address and code displayed on your other device."
                 ) {
                     VStack(spacing: 10) {
                         styledField(
@@ -731,8 +694,6 @@ struct SyncTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
     }
 }
-
-private enum DesktopConnectionError: Error { case versionMismatch }
 
 private struct BrandIconTile: View {
     let systemName: String

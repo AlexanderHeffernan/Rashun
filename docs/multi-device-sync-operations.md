@@ -14,7 +14,7 @@ Keep the backup through at least the next compatibility release. If SQLite repor
 
 ## Authentication and threat model
 
-Desktop sync credentials are independent high-entropy secrets with explicit `desktopSync` or `mobileRead` scope. Requests are authenticated with HMAC-SHA-256 over method, path, body hash, credential ID, timestamp, and nonce. Verifiers enforce clock skew and one-use nonces. Pairing challenges use 256 random bits, expire after two minutes, allow five attempts, and are consumed once. Revocation must be checked before processing request bodies.
+Desktop sync credentials are independent high-entropy secrets with explicit `desktopSync` or `mobileRead` scope. Requests are authenticated with HMAC-SHA-256 over method, path, body hash, credential ID, timestamp, and nonce. Verifiers enforce clock skew and one-use nonces. Desktop setup codes use an unambiguous eight-character alphabet, expire after 15 minutes, and are consumed once. Successful exchange issues an independent 256-bit credential. Revocation must be checked before processing authenticated request bodies.
 
 Authenticated desktop credentials can be rotated atomically through `POST /v1/peers/rotate`. Rotation revokes the old credential immediately, creates a new 256-bit scoped secret, and transfers saved candidate addresses. The returned secret must be protected immediately and is not recoverable from diagnostics.
 
@@ -24,7 +24,7 @@ Discovery grants no authority. Bind only to selected private interfaces, cap bat
 
 The Preferences **Sync** tab is the normal control surface. Enable **Mobile app** to start Rashun on the local network. Rashun displays its IP address, current availability, a 15-minute setup password, a directly openable link, and a QR code. Opening the link exchanges the temporary password for a random read-only credential and removes the password from the browser address. Long-term credentials remain hidden from the user.
 
-To pair another desktop, choose **Add connection** and enter the IP address and temporary password displayed by the host. Connected devices are listed only by name and online/offline state. Removing a device revokes its credential.
+To pair another device, use **Add connection** in Preferences or run `rashun sync serve` on the accepting device and execute the printed `rashun sync connect …` command on the joining device. The same flow works between macOS, Linux, and Windows CLI installations. Removing a device revokes its credential.
 
 The app listener binds port 8787 on local interfaces when enabled. Any private-network overlay may carry the same IP traffic; Rashun contains no overlay-specific setup or address type. Platform firewall requirements:
 
@@ -45,17 +45,16 @@ iOS does not provide reliable service-worker background timers. Rashun makes no 
 ## Diagnostics and validation
 
 ```sh
+# Device A prints a one-use code and the exact command for Device B.
 swift run RashunCLI sync serve
-swift run RashunCLI sync invite --scope desktopSync
-# On the joining desktop:
-swift run RashunCLI sync join https://peer.example.ts.net '<base64-invitation>'
-# On the inviting desktop, approve the displayed session UUID:
-swift run RashunCLI sync approve '<session-uuid>'
-# Then complete on the joining desktop:
-swift run RashunCLI sync join --complete https://peer.example.ts.net '<base64-invitation>'
-RASHUN_SYNC_SECRET='<base64-secret>' swift run RashunCLI sync pull https://peer.example.ts.net --credential-id '<uuid>'
-swift run RashunCLI sync diagnostics
-swift run RashunCLI sync diagnostics --json
+
+# Device B connects, performs the initial merge, then stays reachable in another terminal.
+swift run RashunCLI sync connect http://device-a:8787 ABCD-2345
+swift run RashunCLI sync serve
+
+swift run RashunCLI sync devices
+swift run RashunCLI sync sync-now
+swift run RashunCLI sync remove '<device name or credential UUID>'
 swift test
 ```
 
@@ -63,7 +62,7 @@ Manual release matrix:
 
 1. Pair two physical desktops, stop either side during a multi-page backfill, restart it, and confirm origin ranges converge without duplicates.
 2. Repeat with mDNS disabled using hostname/IP, then after DHCP address change.
-3. Test macOS, Linux/Avahi, and Windows private firewall profiles and confirm public interfaces are closed.
+3. Test macOS, Linux, and Windows CLI hosts with private firewall profiles and confirm public interfaces are closed.
 4. Open the generated mobile link on current iOS and Android; test visible, hidden, resumed, offline, storage-cleared, and expired-link states.
 5. Validate service-worker/PWA installation separately on a browser-trusted HTTPS presentation of the same host.
 6. Inspect a database, export, discovery packet, API packet capture, and logs for credential/raw-response fields.

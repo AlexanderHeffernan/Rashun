@@ -181,6 +181,25 @@ rashun --json
 rashun gemini --json
 ```
 
+### Connect devices from the CLI
+
+The same sync flow is available on macOS, Linux, and Windows. On the device that will accept the connection:
+
+```bash
+rashun sync serve
+```
+
+Rashun prints its address, a one-use pairing code, and the exact `rashun sync connect …` command to run on the other device. Keep `serve` running on CLI-only devices so they remain reachable and synchronize automatically.
+
+```bash
+rashun sync devices       # List connected devices
+rashun sync sync-now      # Synchronize immediately
+rashun sync pair          # Generate another pairing code
+rashun sync remove NAME   # Disconnect a device
+```
+
+By default the server listens on port 8787. Use it only on a trusted private network, configure the platform firewall for private networks, and use `--address` when automatic LAN address detection chooses the wrong interface.
+
 ### Build from Source
 
 ```bash
