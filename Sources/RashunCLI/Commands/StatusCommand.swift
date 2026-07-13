@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import RashunCore
+import RashunSync
 
 struct StatusCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -172,8 +173,7 @@ struct StatusCommand: AsyncParsableCommand {
         for metric in source.metrics {
             do {
                 let usage = try await source.fetchUsage(for: metric.id)
-                let scopedName = source.metrics.count > 1 ? "\(source.name)::\(metric.id)" : source.name
-                UsageHistoryStore.shared.append(sourceName: scopedName, usage: usage)
+                try SyncEnvironment.shared.record(providerID: source.name, metricID: metric.id, usage: usage)
                 if source.metrics.count > 1 {
                     SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
                 } else {

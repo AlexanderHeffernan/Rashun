@@ -17,6 +17,7 @@ struct RashunCLI: AsyncParsableCommand {
             HistoryCommand.self,
             SetupCommand.self,
             StatusCommand.self,
+            SyncCommand.self,
             SourcesCommand.self,
             UpdateCommand.self,
             VersionCommand.self

@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import RashunCore
+import RashunSync
 
 @MainActor
 final class NotificationManager {
@@ -38,6 +39,12 @@ final class NotificationManager {
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("Failed to schedule notification: \(error)")
+            }
+        }
+
+        if SettingsStore.shared.syncServerEnabled, let repository = SyncEnvironment.shared.repository {
+            Task.detached {
+                await WebPushSender.send(.init(title: title, body: body, url: "./"), repository: repository)
             }
         }
     }

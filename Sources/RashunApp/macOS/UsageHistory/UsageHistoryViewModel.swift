@@ -78,7 +78,9 @@ final class UsageHistoryViewModel: ObservableObject {
             if source.metrics.count <= 1 {
                 let color = Self.palette[seriesIndex % Self.palette.count]
                 seriesIndex += 1
-                let history = UsageHistoryStore.shared.history(for: source.name)
+                let canonicalName = "\(source.name)::\(source.metrics.first?.id ?? "default")"
+                let canonicalHistory = UsageHistoryStore.shared.history(for: canonicalName)
+                let history = canonicalHistory.isEmpty ? UsageHistoryStore.shared.history(for: source.name) : canonicalHistory
                 let points = allPoints(history)
                 let metricId = source.metrics.first?.id ?? "default"
                 let forecastPoints = forecastPoints(source: source, metricId: metricId, history: history, points: points, showForecast: showForecastLines)

@@ -61,6 +61,7 @@ public struct UsageSnapshot: Codable {
 }
 
 public struct NotificationContext {
+    public let now:Date
     public let sourceName: String
     public let metricId: String?
     public let metricTitle: String?
@@ -69,7 +70,8 @@ public struct NotificationContext {
     public let history: [UsageSnapshot]
     public let inputValue: (String, Double) -> Double
 
-    public init(sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult, previous: UsageSnapshot?, history: [UsageSnapshot], inputValue: @escaping (String, Double) -> Double) {
+    public init(sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult, previous: UsageSnapshot?, history: [UsageSnapshot], now:Date=Date(), inputValue: @escaping (String, Double) -> Double) {
+        self.now=now
         self.sourceName = sourceName
         self.metricId = metricId
         self.metricTitle = metricTitle
@@ -85,7 +87,7 @@ public struct NotificationContext {
 
     public func snapshot(minutesAgo: Double) -> UsageSnapshot? {
         guard minutesAgo > 0 else { return nil }
-        let target = Date().addingTimeInterval(-minutesAgo * 60)
+        let target = now.addingTimeInterval(-minutesAgo * 60)
         return history.last(where: { $0.timestamp <= target })
     }
 }

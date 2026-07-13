@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import RashunCore
+import RashunSync
 
 struct ForecastCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -48,7 +49,7 @@ struct ForecastCommand: AsyncParsableCommand {
             do {
                 let usage = try await source.fetchUsage(for: selectedMetric.id)
                 let scoped = scopedSourceName(source: source, metric: selectedMetric)
-                UsageHistoryStore.shared.append(sourceName: scoped, usage: usage)
+                try SyncEnvironment.shared.record(providerID: source.name, metricID: selectedMetric.id, usage: usage)
 
                 if source.metrics.count > 1 {
                     SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: selectedMetric.id, usage: usage)

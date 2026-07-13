@@ -2,6 +2,8 @@ import Cocoa
 import SwiftUI
 import UserNotifications
 import RashunCore
+import RashunSync
+import RashunSyncServer
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -50,6 +52,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var trackingCompletionSummary: String?
     private var trackingIndicatorPulseTimer: Timer?
     private var trackingIndicatorPulsePhase = 0.0
+    private var syncServerTask:Task<Void,Never>?
+    private var peerSyncTask:Task<Void,Never>?
 
     private var isPollingSuspended: Bool {
         isSleepSuspended || isLockSuspended
@@ -57,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        updateSyncServerLifecycle()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -179,6 +184,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu?.addItem(withTitle: "Preferences...", action: #selector(AppDelegate.showPreferences), keyEquivalent: ",")
         menu?.addItem(NSMenuItem.separator())
         menu?.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
+        publishMobileUsagePresentation(enabledSources: enabled)
+    }
+
+    private func publishMobileUsagePresentation(enabledSources: [AISource]) {
+        let logoNames = Set(["amp", "codex", "copilot", "cursor", "gemini"])
+        let presentations = enabledSources.flatMap { source -> [MobileMetricPresentation] in
+            let metrics = enabledMetrics(for: source)
+            let sourceHasSingleMetric = source.metrics.count <= 1 && metrics.count <= 1
+            return metrics.map { metric in
+                let usage = usageResultForIcon(sourceName: source.name, metricId: metric.id)
+                let slug = source.name.lowercased()
+                return MobileMetricPresentation(
+                    providerID: source.name,
+                    metricID: metric.id,
+                    sourceName: source.displayName,
+                    metricTitle: sourceHasSingleMetric ? "Remaining" : metric.title,
+                    headerDetail: sourceHeaderDetails[source.name],
+                    detailText: usage.flatMap { metricTimingText(source: source, metric: metric, usage: $0) },
+                    iconName: logoNames.contains(slug) ? slug : nil,
+                    colorHex: String(format: "#%06X", source.menuBarBrandColorHex)
+                )
+            }
+        }
+        Task { await MobileUsagePresentationStore.shared.replace(presentations) }
     }
 
     private func addTrackingMenuSection() {
@@ -674,16 +703,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         trackedObservations.append(contentsOf: observations)
                     }
 
-                    if source.metrics.count > 1 {
-                        for metric in source.metrics {
-                            guard let metricUsage = metricUsages[metric.id] else { continue }
-                            UsageHistoryStore.shared.append(
-                                sourceName: metricHistorySeriesName(source: source, metric: metric),
-                                usage: metricUsage
-                            )
-                        }
-                    }
-
                     recordMetricHealth(source: source, metricUsages: metricUsages, errorsByMetric: fetchResult.errorsByMetric)
 
                     let enabledMetricSet = Set(enabledMetrics(for: source).map(\.id))
@@ -823,6 +842,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func settingsChanged(_ note: Notification) {
+        updateSyncServerLifecycle()
         let enabled = Set(sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
         // prune results for disabled sources
         results = results.filter { enabled.contains($0.key) }
@@ -831,6 +851,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusIcon()
 
         schedulePollTimer()
+    }
+
+    private func updateSyncServerLifecycle(){syncServerTask?.cancel();peerSyncTask?.cancel();syncServerTask=nil;peerSyncTask=nil;guard SettingsStore.shared.syncServerEnabled,let repository=SyncEnvironment.shared.repository else{return};let changed:@Sendable () async -> Void = { @MainActor in try? SyncEnvironment.shared.refreshCompatibilityView();NotificationCenter.default.post(name:.aiDataRefreshed,object:nil) };let root=mobileWebRoot(),version=Versioning.versionString(bundle:.main);syncServerTask=Task{do{try await RashunSyncServer(repository:repository,host:"0.0.0.0",port:8787,webRoot:root,historyChanged:changed,appVersion:version).run()}catch{if !Task.isCancelled{NSLog("Rashun sync server stopped: %@",String(describing:error))}}};peerSyncTask=Task{await PeerSyncService(repository:repository,historyChanged:changed,appVersion:version).runForeground()}}
+
+    /// Never use `Bundle.module` during app startup. Its generated accessor calls fatalError when
+    /// SwiftPM resources are laid out differently by a packaged/re-signed app.
+    private func mobileWebRoot() -> String? {
+        let bundleCandidates = [
+            Bundle.main.resourceURL,
+            Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"),
+            Bundle.main.bundleURL.appendingPathComponent("Rashun_Rashun.bundle"),
+            Bundle.main.resourceURL?.appendingPathComponent("Rashun_Rashun.bundle"),
+            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("Rashun_Rashun.bundle"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Web")
+        ].compactMap { $0 }
+        let candidates = bundleCandidates.flatMap { base in
+            [
+                base.appendingPathComponent("RashunMobile"),
+                base.appendingPathComponent("Resources/RashunMobile")
+            ]
+        }
+        return candidates.first {
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("index.html").path)
+        }?.path
     }
 
     private struct IconRingMetric {
@@ -1484,17 +1528,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         inputValue: valueProvider
                     )
 
-                    guard let event = definition.evaluate(ctx) else { continue }
-
                     let state = SettingsStore.shared.ruleState(sourceName: scopedName, ruleId: ruleId)
-                    guard shouldSend(event: event, state: state) else { continue }
+                    let now=Date()
+                    guard let evaluated=NotificationEvaluator.evaluate(definition:definition,context:ctx,state:state,now:now) else { continue }
                     NotificationManager.shared.sendNotification(
-                        title: event.title,
-                        body: event.body,
+                        title: evaluated.title,
+                        body: evaluated.body,
                         route: .usageHistory
                     )
-                    let newState = NotificationRuleState(lastFiredAt: Date(), lastFiredCycleKey: event.cycleKey)
-                    SettingsStore.shared.setRuleState(newState, sourceName: scopedName, ruleId: ruleId)
+                    SettingsStore.shared.setRuleState(evaluated.state, sourceName: scopedName, ruleId: ruleId)
                     if ruleId == "metricReset" {
                         celebrations.append(
                             ResetCelebration(
@@ -1506,7 +1548,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                 }
 
-                UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
+                if SettingsStore.shared.syncServerEnabled {
+                    do {
+                        try SyncEnvironment.shared.record(providerID: source.name, metricID: metric.id, usage: current)
+                    } catch {
+                        NSLog("Rashun canonical observation write failed: %@", String(describing: error))
+                    }
+                } else {
+                    UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
+                }
             }
         }
         return celebrations

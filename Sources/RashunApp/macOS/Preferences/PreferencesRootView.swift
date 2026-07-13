@@ -6,6 +6,7 @@ enum PreferencesTab: String, CaseIterable, Hashable {
     case sources = "Sources"
     case tracking = "Tracking"
     case data = "Data"
+    case sync = "Sync"
     case updates = "Updates"
 }
 
@@ -126,6 +127,8 @@ struct PreferencesRootView: View {
             TrackingTabView()
         case .data:
             DataTabView(model: model)
+        case .sync:
+            SyncTabView()
         case .updates:
             UpdatesTabView(model: model)
         }

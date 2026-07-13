@@ -127,7 +127,7 @@ public enum NotificationDefinitions {
             detail: "Notifies when your current usage pace needs attention before reset.",
             inputs: [],
             evaluate: { context in
-                let now = Date()
+                let now = context.now
                 guard let resetDate = context.current.resetDate, resetDate > now else {
                     return nil
                 }

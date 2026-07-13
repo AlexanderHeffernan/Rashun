@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 import RashunCore
+import RashunSync
 
 @MainActor
 final class DataTabViewModel: ObservableObject {
@@ -39,6 +40,7 @@ final class DataTabViewModel: ObservableObject {
     private var targetKeysByDisplayName: [String: Set<String>] = [:]
     private var pendingImportURL: URL?
     private var pendingImportHistory: [String: [UsageSnapshot]]?
+    private var pendingImportData:Data?
 
     func configure(sources: [AISource]) {
         configuredSourceNames = Set(sources.map(\.name))
@@ -93,10 +95,12 @@ final class DataTabViewModel: ObservableObject {
 
         do {
             let appVersion = Versioning.versionString(bundle: .main)
-            let data = try UsageHistoryTransferService.makeExportData(
-                historyBySource: UsageHistoryStore.shared.allHistory(),
-                appVersion: appVersion
-            )
+            let data: Data
+            if SettingsStore.shared.syncServerEnabled, let repository = SyncEnvironment.shared.repository {
+                data = try CanonicalHistoryTransfer.export(repository: repository, appVersion: appVersion)
+            } else {
+                data = try UsageHistoryTransferService.makeExportData(historyBySource: UsageHistoryStore.shared.allHistory(), appVersion: appVersion)
+            }
             try data.write(to: url, options: .atomic)
             setTransferStatus("Exported usage history to \(url.lastPathComponent).")
             refreshStats()
@@ -120,14 +124,16 @@ final class DataTabViewModel: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
-            let imported = try UsageHistoryTransferService.readImportData(from: data)
+            let decoder=JSONDecoder();decoder.dateDecodingStrategy = .iso8601;let canonical=try? decoder.decode(CanonicalHistoryExport.self,from:data);let imported:[String:[UsageSnapshot]]
+            if let canonical {imported=HistoryProjector.project(canonical.observations)}else{imported=try UsageHistoryTransferService.readImportData(from:data)}
             pendingImportURL = url
             pendingImportHistory = imported
+            pendingImportData = data
 
             let currentStats = UsageHistoryStore.shared.stats()
             let incomingStats = stats(for: imported)
             pendingImportMessage = """
-            This will replace your current usage history with data from \(url.lastPathComponent). This cannot be undone.
+            This will merge immutable observations from \(url.lastPathComponent) into your canonical history.
 
             Current:
             \(summaryText(for: currentStats))
@@ -143,11 +149,14 @@ final class DataTabViewModel: ObservableObject {
 
     func confirmImport() {
         guard let url = pendingImportURL, let imported = pendingImportHistory else { return }
+        let importData=pendingImportData
         pendingImportURL = nil
         pendingImportHistory = nil
+        pendingImportData = nil
         pendingImportMessage = ""
 
-        let didReplace = UsageHistoryStore.shared.replaceAllHistory(imported, force: true)
+        let didReplace:Bool
+        do {if SettingsStore.shared.syncServerEnabled,let repository=SyncEnvironment.shared.repository,let importData {_=try CanonicalHistoryTransfer.importData(importData,repository:repository,backupRoot:SyncEnvironment.dataDirectory().appendingPathComponent("Backups/imports",isDirectory:true));try SyncEnvironment.shared.refreshCompatibilityView();didReplace=true}else{didReplace=UsageHistoryStore.shared.replaceAllHistory(imported,force:true)}}catch{setTransferStatus("Import failed: \(error.localizedDescription)",isError:true);return}
         guard didReplace else {
             setTransferStatus("Import was blocked to protect existing history. Please try again.", isError: true)
             return
@@ -160,6 +169,7 @@ final class DataTabViewModel: ObservableObject {
     func cancelImport() {
         pendingImportURL = nil
         pendingImportHistory = nil
+        pendingImportData = nil
         pendingImportMessage = ""
     }
 

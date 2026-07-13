@@ -14,6 +14,7 @@ final class SettingsStore {
     private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
     private let menuBarAppearanceKey = "ai.menuBarAppearance.v1"
     private let trackingEnabledKey = "ai.trackingEnabled.v1"
+    private let syncServerEnabledKey = "ai.syncServerEnabled.v1"
     private let showTrackingSessionInMenuBarKey = "ai.showTrackingSessionInMenuBar.v1"
     private var enabledMap: [String: Bool] = [:]
     private var sourceMetricEnabledMap: [String: [String: Bool]] = [:]
@@ -25,6 +26,7 @@ final class SettingsStore {
     private(set) var menuBarAppearance = MenuBarAppearanceSettings()
     private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
     private(set) var trackingEnabled = true
+    private(set) var syncServerEnabled = false
     private(set) var showTrackingSessionInMenuBar = true
 
     private func load() {
@@ -58,6 +60,7 @@ final class SettingsStore {
             autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
         }
         if UserDefaults.standard.object(forKey: trackingEnabledKey) != nil { trackingEnabled = UserDefaults.standard.bool(forKey: trackingEnabledKey) }
+        if UserDefaults.standard.object(forKey: syncServerEnabledKey) != nil { syncServerEnabled = UserDefaults.standard.bool(forKey: syncServerEnabledKey) }
         if UserDefaults.standard.object(forKey: showTrackingSessionInMenuBarKey) != nil { showTrackingSessionInMenuBar = UserDefaults.standard.bool(forKey: showTrackingSessionInMenuBarKey) }
 
         forecastingMode = UsageForecastModePreference.current
@@ -157,6 +160,7 @@ final class SettingsStore {
         UserDefaults.standard.set(enabled, forKey: trackingEnabledKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
+    func setSyncServerEnabled(_ enabled:Bool){syncServerEnabled=enabled;UserDefaults.standard.set(enabled,forKey:syncServerEnabledKey);NotificationCenter.default.post(name:.aiSettingsChanged,object:nil)}
 
     func setShowTrackingSessionInMenuBar(_ show: Bool) {
         showTrackingSessionInMenuBar = show
