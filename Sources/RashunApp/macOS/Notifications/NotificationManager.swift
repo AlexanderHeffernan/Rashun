@@ -1,7 +1,7 @@
 import Foundation
-import UserNotifications
 import RashunCore
 import RashunSync
+import UserNotifications
 
 @MainActor
 final class NotificationManager {
@@ -18,7 +18,10 @@ final class NotificationManager {
     /// Request user authorization for notifications. Returns true if granted.
     func requestAuthorization() async -> Bool {
         await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            UNUserNotificationCenter.current().requestAuthorization(options: [
+                .alert, .sound, .badge,
+            ]) {
+                granted, error in
                 if let error = error {
                     print("Notification auth error: \(error)")
                 }
@@ -35,16 +38,20 @@ final class NotificationManager {
         content.sound = .default
         content.userInfo = [Self.routeUserInfoKey: route.rawValue]
 
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("Failed to schedule notification: \(error)")
             }
         }
 
-        if SettingsStore.shared.syncServerEnabled, let repository = SyncEnvironment.shared.repository {
+        if SettingsStore.shared.syncServerEnabled,
+            let repository = SyncEnvironment.shared.repository
+        {
             Task.detached {
-                await WebPushSender.send(.init(title: title, body: body, url: "./"), repository: repository)
+                await WebPushSender.send(
+                    .init(title: title, body: body, url: "./"), repository: repository)
             }
         }
     }

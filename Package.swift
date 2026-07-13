@@ -11,20 +11,24 @@ var targets: [Target] = [
         dependencies: [
             "RashunCore",
             .product(name: "GRDB", package: "GRDB.swift"),
-            .product(name: "Crypto", package: "swift-crypto")
+            .product(name: "Crypto", package: "swift-crypto"),
         ],
         path: "Sources/RashunSync"
     ),
     .target(
         name: "RashunSyncServer",
-        dependencies: ["RashunSync", .product(name: "Crypto", package: "swift-crypto"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdTLS", package: "hummingbird")],
+        dependencies: [
+            "RashunSync", .product(name: "Crypto", package: "swift-crypto"),
+            .product(name: "Hummingbird", package: "hummingbird"),
+            .product(name: "HummingbirdTLS", package: "hummingbird"),
+        ],
         path: "Sources/RashunSyncServer"
     ),
     .executableTarget(
         name: "RashunCLI",
         dependencies: [
             "RashunCore", "RashunSync", "RashunSyncServer",
-            .product(name: "ArgumentParser", package: "swift-argument-parser")
+            .product(name: "ArgumentParser", package: "swift-argument-parser"),
         ],
         path: "Sources/RashunCLI"
     ),
@@ -40,56 +44,59 @@ var targets: [Target] = [
     ),
     .testTarget(
         name: "RashunSyncTests",
-        dependencies: ["RashunSync", "RashunSyncServer", .product(name: "HummingbirdTesting", package: "hummingbird")],
+        dependencies: [
+            "RashunSync", "RashunSyncServer",
+            .product(name: "HummingbirdTesting", package: "hummingbird"),
+        ],
         path: "Tests/RashunSyncTests"
     ),
 ]
 
 #if os(macOS)
-targets.append(
-    .executableTarget(
-        name: "Rashun",
-        dependencies: ["RashunCore", "RashunSync", "RashunSyncServer"],
-        path: "Sources/RashunApp",
-        exclude: [
-            "README.md"
-        ],
-        resources: [
-            .process("Resources"),
-            .copy("../../Web/RashunMobile")
-        ]
+    targets.append(
+        .executableTarget(
+            name: "Rashun",
+            dependencies: ["RashunCore", "RashunSync", "RashunSyncServer"],
+            path: "Sources/RashunApp",
+            exclude: [
+                "README.md"
+            ],
+            resources: [
+                .process("Resources"),
+                .copy("../../Web/RashunMobile"),
+            ]
+        )
     )
-)
-targets.append(
-    .testTarget(
-        name: "RashunAppTests",
-        dependencies: ["Rashun"],
-        path: "Tests/RashunAppTests"
+    targets.append(
+        .testTarget(
+            name: "RashunAppTests",
+            dependencies: ["Rashun"],
+            path: "Tests/RashunAppTests"
+        )
     )
-)
 #endif
 
 #if os(macOS)
-let package = Package(
-    name: "Rashun",
-    platforms: [.macOS(.v14)],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0")
-        ,.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0")
-    ],
-    targets: targets
-)
+    let package = Package(
+        name: "Rashun",
+        platforms: [.macOS(.v14)],
+        dependencies: [
+            .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+            .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+            .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+            .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+        ],
+        targets: targets
+    )
 #else
-let package = Package(
-    name: "Rashun",
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
-        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0")
-        ,.package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0")
-    ],
-    targets: targets
-)
+    let package = Package(
+        name: "Rashun",
+        dependencies: [
+            .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
+            .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0"),
+            .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+            .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+        ],
+        targets: targets
+    )
 #endif

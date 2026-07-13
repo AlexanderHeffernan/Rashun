@@ -32,8 +32,10 @@ public enum NotificationDefinitions {
                 }
 
                 let title = "\(sourceName) usage alert"
-                let body = "Remaining is now \(String(format: "%.0f", current))%, below \(String(format: "%.0f", threshold))%."
-                return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: nil)
+                let body =
+                    "Remaining is now \(String(format: "%.0f", current))%, below \(String(format: "%.0f", threshold))%."
+                return NotificationEvent(
+                    title: title, body: body, cooldownSeconds: 3600, cycleKey: nil)
             }
         )
 
@@ -59,7 +61,7 @@ public enum NotificationDefinitions {
                     min: 2,
                     max: 240,
                     step: 1
-                )
+                ),
             ],
             evaluate: { context in
                 let drop = context.value(for: "dropPercent", defaultValue: 10)
@@ -72,8 +74,10 @@ public enum NotificationDefinitions {
                 guard used >= drop else { return nil }
 
                 let title = "\(sourceName) usage spike"
-                let body = "You used about \(String(format: "%.0f", used))% in the last \(Int(minutes)) minutes."
-                return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: nil)
+                let body =
+                    "You used about \(String(format: "%.0f", used))% in the last \(Int(minutes)) minutes."
+                return NotificationEvent(
+                    title: title, body: body, cooldownSeconds: 3600, cycleKey: nil)
             }
         )
 
@@ -101,17 +105,19 @@ public enum NotificationDefinitions {
                 let title = "\(sourceName) reset"
                 let body = "Remaining reset to \(String(format: "%.0f", current))%."
                 let cycleKey = currentReset.map { ISO8601DateFormatter().string(from: $0) }
-                return NotificationEvent(title: title, body: body, cooldownSeconds: nil, cycleKey: cycleKey)
+                return NotificationEvent(
+                    title: title, body: body, cooldownSeconds: nil, cycleKey: cycleKey)
             }
         )
 
         var definitions = [percentRemainingBelow, recentSpike, metricReset]
         if pacingLookbackStart != nil || pacingAssessment != nil {
-            definitions.append(pacingAlert(
-                sourceName: sourceName,
-                pacingLookbackStart: pacingLookbackStart,
-                pacingAssessment: pacingAssessment
-            ))
+            definitions.append(
+                pacingAlert(
+                    sourceName: sourceName,
+                    pacingLookbackStart: pacingLookbackStart,
+                    pacingAssessment: pacingAssessment
+                ))
         }
         return definitions
     }
@@ -134,7 +140,10 @@ public enum NotificationDefinitions {
 
                 if let assessment = pacingAssessment?(context, now) {
                     guard assessment.confidence >= 0.35 else { return nil }
-                    guard [.conserveLightly, .conserve, .conserveHard].contains(assessment.recommendation) else { return nil }
+                    guard
+                        [.conserveLightly, .conserve, .conserveHard].contains(
+                            assessment.recommendation)
+                    else { return nil }
 
                     let formatter = DateFormatter()
                     formatter.dateFormat = "MMM d, h:mm a"
@@ -142,19 +151,25 @@ public enum NotificationDefinitions {
                     let title = "\(sourceName) \(assessment.recommendation.label.lowercased())"
                     let body: String
                     if let projectedZeroDate = assessment.projectedZeroDate {
-                        body = "\(assessment.recommendation.label): projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
+                        body =
+                            "\(assessment.recommendation.label): projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
                     } else {
-                        body = "\(assessment.recommendation.label). Reset is \(formatter.string(from: resetDate))."
+                        body =
+                            "\(assessment.recommendation.label). Reset is \(formatter.string(from: resetDate))."
                     }
 
                     let cycleFormatter = ISO8601DateFormatter()
                     let cycleKey = cycleFormatter.string(from: resetDate)
-                    return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
+                    return NotificationEvent(
+                        title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
                 }
 
-                let defaultStart = context.current.cycleStartDate ?? now.addingTimeInterval(-24 * 3600)
+                let defaultStart =
+                    context.current.cycleStartDate ?? now.addingTimeInterval(-24 * 3600)
                 let lookbackStart = pacingLookbackStart?(context, now) ?? defaultStart
-                let recent = context.history.filter { $0.timestamp >= lookbackStart && $0.timestamp <= now }
+                let recent = context.history.filter {
+                    $0.timestamp >= lookbackStart && $0.timestamp <= now
+                }
 
                 var xs = recent.map(\.timestamp).map(\.timeIntervalSinceReferenceDate)
                 var ys = recent.map { min(max($0.usage.percentRemaining, 0), 100) }
@@ -165,9 +180,10 @@ public enum NotificationDefinitions {
                     ys.append(currentPercent)
                 }
                 guard xs.count >= 3,
-                      let minX = xs.min(),
-                      let maxX = xs.max(),
-                      (maxX - minX) >= (15 * 60) else {
+                    let minX = xs.min(),
+                    let maxX = xs.max(),
+                    (maxX - minX) >= (15 * 60)
+                else {
                     return nil
                 }
 
@@ -186,11 +202,13 @@ public enum NotificationDefinitions {
                 formatter.dateFormat = "MMM d, h:mm a"
 
                 let title = "\(sourceName) conserve"
-                let body = "Conserve: projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
+                let body =
+                    "Conserve: projected empty around \(formatter.string(from: projectedZeroDate)). Reset is \(formatter.string(from: resetDate))."
 
                 let cycleFormatter = ISO8601DateFormatter()
                 let cycleKey = cycleFormatter.string(from: resetDate)
-                return NotificationEvent(title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
+                return NotificationEvent(
+                    title: title, body: body, cooldownSeconds: 3600, cycleKey: cycleKey)
             }
         )
     }

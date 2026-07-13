@@ -10,7 +10,10 @@ public struct MobileMetricPresentation: Sendable, Equatable {
     public let iconName: String?
     public let colorHex: String
 
-    public init(providerID: String, metricID: String, sourceName: String, metricTitle: String, headerDetail: String?, detailText: String?, iconName: String?, colorHex: String) {
+    public init(
+        providerID: String, metricID: String, sourceName: String, metricTitle: String,
+        headerDetail: String?, detailText: String?, iconName: String?, colorHex: String
+    ) {
         self.providerID = providerID
         self.metricID = metricID
         self.sourceName = sourceName

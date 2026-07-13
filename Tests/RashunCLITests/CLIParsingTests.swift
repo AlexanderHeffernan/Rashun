@@ -1,11 +1,17 @@
 import ArgumentParser
 import XCTest
+
 @testable import RashunCLI
 
 final class CLIParsingTests: XCTestCase {
     func testRootConfigurationIncludesExpectedSubcommands() {
         let names = Set(RashunCLI.configuration.subcommands.map { $0.configuration.commandName })
-        XCTAssertEqual(names, ["check", "forecast", "history", "setup", "status", "sources", "sync", "update", "version"])
+        XCTAssertEqual(
+            names,
+            [
+                "check", "forecast", "history", "setup", "status", "sources", "sync", "update",
+                "version",
+            ])
     }
 
     func testRootParseAcceptsGlobalFlags() throws {
@@ -25,7 +31,8 @@ final class CLIParsingTests: XCTestCase {
     }
 
     func testHistoryCommandDefaultsToShowSubcommand() {
-        XCTAssertEqual(HistoryCommand.configuration.defaultSubcommand?.configuration.commandName, "show")
+        XCTAssertEqual(
+            HistoryCommand.configuration.defaultSubcommand?.configuration.commandName, "show")
     }
 
     func testSourceResolverIsCaseInsensitiveForKnownSource() {

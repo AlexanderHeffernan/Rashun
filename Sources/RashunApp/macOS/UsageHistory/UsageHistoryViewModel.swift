@@ -22,7 +22,7 @@ final class UsageHistoryViewModel: ObservableObject {
     private var cachedDataRange: (earliest: Date, latest: Date)?
 
     private static let palette: [NSColor] = [
-        .systemBlue, .systemGreen, .systemOrange, .systemPurple, .systemRed
+        .systemBlue, .systemGreen, .systemOrange, .systemPurple, .systemRed,
     ]
 
     var visibleSeries: [ChartSeries] {
@@ -61,7 +61,9 @@ final class UsageHistoryViewModel: ObservableObject {
     }
 
     func reloadChart() {
-        let enabledSources = currentSources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
+        let enabledSources = currentSources.filter {
+            SettingsStore.shared.isEnabled(sourceName: $0.name)
+        }
         hasEnabledSources = !enabledSources.isEmpty
 
         var chartSeries: [ChartSeries] = []
@@ -73,22 +75,33 @@ final class UsageHistoryViewModel: ObservableObject {
 
         for source in enabledSources {
             let enabledMetrics = source.metrics
-                .filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+                .filter {
+                    SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id)
+                }
 
             if source.metrics.count <= 1 {
                 let color = Self.palette[seriesIndex % Self.palette.count]
                 seriesIndex += 1
                 let canonicalName = "\(source.name)::\(source.metrics.first?.id ?? "default")"
                 let canonicalHistory = UsageHistoryStore.shared.history(for: canonicalName)
-                let history = canonicalHistory.isEmpty ? UsageHistoryStore.shared.history(for: source.name) : canonicalHistory
+                let history =
+                    canonicalHistory.isEmpty
+                    ? UsageHistoryStore.shared.history(for: source.name) : canonicalHistory
                 let points = allPoints(history)
                 let metricId = source.metrics.first?.id ?? "default"
-                let forecastPoints = forecastPoints(source: source, metricId: metricId, history: history, points: points, showForecast: showForecastLines)
-                let paceGuidePoints = paceGuidePoints(history: history, showGuide: showForecastLines)
+                let forecastPoints = forecastPoints(
+                    source: source, metricId: metricId, history: history, points: points,
+                    showForecast: showForecastLines)
+                let paceGuidePoints = paceGuidePoints(
+                    history: history, showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
                 dates.append(contentsOf: paceGuidePoints.map(\.date))
-                chartSeries.append(ChartSeries(label: source.displayName, color: color, points: points, forecast: forecastPoints, paceGuide: paceGuidePoints))
+                chartSeries.append(
+                    ChartSeries(
+                        label: source.displayName, color: color, points: points,
+                        forecast: forecastPoints,
+                        paceGuide: paceGuidePoints))
                 continue
             }
 
@@ -98,8 +111,11 @@ final class UsageHistoryViewModel: ObservableObject {
                 let history = loadMetricHistory(source: source, metric: metric)
 
                 let points = allPoints(history)
-                let forecastPoints = forecastPoints(source: source, metricId: metric.id, history: history, points: points, showForecast: showForecastLines)
-                let paceGuidePoints = paceGuidePoints(history: history, showGuide: showForecastLines)
+                let forecastPoints = forecastPoints(
+                    source: source, metricId: metric.id, history: history, points: points,
+                    showForecast: showForecastLines)
+                let paceGuidePoints = paceGuidePoints(
+                    history: history, showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
                 dates.append(contentsOf: paceGuidePoints.map(\.date))
@@ -130,9 +146,10 @@ final class UsageHistoryViewModel: ObservableObject {
 
     func scrollViewport(byHorizontalPixels pixels: CGFloat, visibleWidth: CGFloat) {
         guard timeRange != .all,
-              visibleWidth > 0,
-              let visibleStartDate,
-              let visibleEndDate else {
+            visibleWidth > 0,
+            let visibleStartDate,
+            let visibleEndDate
+        else {
             return
         }
 
@@ -145,8 +162,9 @@ final class UsageHistoryViewModel: ObservableObject {
 
     func moveViewport(_ direction: ViewportDirection) {
         guard timeRange != .all,
-              let visibleStartDate,
-              let visibleEndDate else {
+            let visibleStartDate,
+            let visibleEndDate
+        else {
             return
         }
 
@@ -170,14 +188,17 @@ final class UsageHistoryViewModel: ObservableObject {
         viewportOffset = min(max(viewportOffset, limits.min), limits.max)
     }
 
-    private func viewportOffsetLimits(baseBounds: (start: Date?, end: Date?)? = nil) -> (min: TimeInterval, max: TimeInterval)? {
+    private func viewportOffsetLimits(baseBounds: (start: Date?, end: Date?)? = nil) -> (
+        min: TimeInterval, max: TimeInterval
+    )? {
         guard timeRange != .all else { return nil }
 
         let bounds = baseBounds ?? timeRange.rangeBounds(now: Date())
         guard let baseStart = bounds.start,
-              let baseEnd = bounds.end,
-              baseEnd > baseStart,
-              let dataRange = cachedDataRange else {
+            let baseEnd = bounds.end,
+            baseEnd > baseStart,
+            let dataRange = cachedDataRange
+        else {
             return nil
         }
 
@@ -190,7 +211,8 @@ final class UsageHistoryViewModel: ObservableObject {
         )
     }
 
-    private func shiftedBounds(for bounds: (start: Date?, end: Date?)) -> (start: Date?, end: Date?) {
+    private func shiftedBounds(for bounds: (start: Date?, end: Date?)) -> (start: Date?, end: Date?)
+    {
         guard viewportOffset != 0 else { return bounds }
         return (
             bounds.start?.addingTimeInterval(viewportOffset),
@@ -207,12 +229,14 @@ final class UsageHistoryViewModel: ObservableObject {
     }
 
     private func loadMetricHistory(source: AISource, metric: AISourceMetric) -> [UsageSnapshot] {
-        let preferred = UsageHistoryStore.shared.history(for: metricHistorySeriesName(source: source, metric: metric))
+        let preferred = UsageHistoryStore.shared.history(
+            for: metricHistorySeriesName(source: source, metric: metric))
         if !preferred.isEmpty {
             return preferred
         }
 
-        let legacy = UsageHistoryStore.shared.history(for: legacyMetricHistorySeriesName(source: source, metric: metric))
+        let legacy = UsageHistoryStore.shared.history(
+            for: legacyMetricHistorySeriesName(source: source, metric: metric))
         if !legacy.isEmpty {
             return legacy
         }
@@ -278,8 +302,9 @@ final class UsageHistoryViewModel: ObservableObject {
         showForecast: Bool
     ) -> [ChartPoint] {
         guard showForecast,
-              let current = history.last?.usage,
-              let forecast = source.forecast(for: metricId, current: current, history: history) else {
+            let current = history.last?.usage,
+            let forecast = source.forecast(for: metricId, current: current, history: history)
+        else {
             return []
         }
 
@@ -288,8 +313,9 @@ final class UsageHistoryViewModel: ObservableObject {
             .sorted(by: { $0.date < $1.date })
 
         if let lastActual = points.last,
-           let firstForecast = sourceForecastPoints.first,
-           firstForecast.date > lastActual.date {
+            let firstForecast = sourceForecastPoints.first,
+            firstForecast.date > lastActual.date
+        {
             sourceForecastPoints.insert(lastActual, at: 0)
         }
 
@@ -298,13 +324,14 @@ final class UsageHistoryViewModel: ObservableObject {
 
     private func paceGuidePoints(history: [UsageSnapshot], showGuide: Bool) -> [ChartPoint] {
         guard showGuide,
-              let current = history.last?.usage,
-              let resetDate = current.resetDate,
-              let guide = UsageForecastEngine.resetWindowPaceGuide(
+            let current = history.last?.usage,
+            let resetDate = current.resetDate,
+            let guide = UsageForecastEngine.resetWindowPaceGuide(
                 current: current,
                 history: history,
                 resetDate: resetDate
-              ) else {
+            )
+        else {
             return []
         }
 
@@ -313,7 +340,9 @@ final class UsageHistoryViewModel: ObservableObject {
             .sorted(by: { $0.date < $1.date })
     }
 
-    private func clippedPoints(_ sortedPoints: [ChartPoint], bounds: (start: Date?, end: Date?)) -> [ChartPoint] {
+    private func clippedPoints(_ sortedPoints: [ChartPoint], bounds: (start: Date?, end: Date?))
+        -> [ChartPoint]
+    {
         guard !sortedPoints.isEmpty else { return [] }
 
         var points = sortedPoints
@@ -321,7 +350,8 @@ final class UsageHistoryViewModel: ObservableObject {
         if let start = bounds.start {
             points = points.filter { $0.date >= start }
             if let startValue = interpolatedValue(at: start, in: sortedPoints),
-               points.first?.date != start {
+                points.first?.date != start
+            {
                 points.insert(ChartPoint(date: start, value: startValue), at: 0)
             }
         }
@@ -329,7 +359,8 @@ final class UsageHistoryViewModel: ObservableObject {
         if let end = bounds.end {
             points = points.filter { $0.date <= end }
             if let endValue = interpolatedValue(at: end, in: sortedPoints),
-               points.last?.date != end {
+                points.last?.date != end
+            {
                 points.append(ChartPoint(date: end, value: endValue))
             }
         }

@@ -1,5 +1,5 @@
-import SwiftUI
 import RashunCore
+import SwiftUI
 
 enum PreferencesTab: String, CaseIterable, Hashable {
     case general = "General"
@@ -43,7 +43,9 @@ struct PreferencesRootView: View {
             Button("Install & Restart") { model.installUpdate() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Rashun will download version \(model.availableVersionText), install it, and restart.")
+            Text(
+                "Rashun will download version \(model.availableVersionText), install it, and restart."
+            )
         }
         .alert(
             "Launch at Login Unavailable",
@@ -102,7 +104,7 @@ struct PreferencesRootView: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .stroke(BrandPalette.primary.opacity(0.38), lineWidth: 1)
             )
-        .shadow(color: BrandPalette.primary.opacity(0.24), radius: 10, x: 0, y: 5)
+            .shadow(color: BrandPalette.primary.opacity(0.24), radius: 10, x: 0, y: 5)
     }
 
     private var tabBar: some View {

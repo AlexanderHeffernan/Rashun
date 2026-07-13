@@ -1,6 +1,6 @@
 import Cocoa
-import SwiftUI
 import RashunCore
+import SwiftUI
 
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {

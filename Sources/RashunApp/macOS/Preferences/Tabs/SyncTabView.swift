@@ -1,8 +1,8 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
-import SwiftUI
 import RashunCore
 import RashunSync
+import SwiftUI
 
 @MainActor
 final class SyncPreferencesViewModel: ObservableObject {
@@ -29,17 +29,23 @@ final class SyncPreferencesViewModel: ObservableObject {
             return "Last online \(lastActivityAt.formatted(date: .abbreviated, time: .shortened))"
         }
         var secondaryStatus: String {
-            if isMobile { return peer.hasPushSubscription ? "Notifications enabled" : "Notifications off" }
+            if isMobile {
+                return peer.hasPushSubscription ? "Notifications enabled" : "Notifications off"
+            }
             return syncStatus
         }
         var syncStatus: String {
-            if let started = peer.syncStartedAt, Date().timeIntervalSince(started) < 90 { return "Syncing history…" }
-            if let error=peer.lastSyncError {
+            if let started = peer.syncStartedAt, Date().timeIntervalSince(started) < 90 {
+                return "Syncing history…"
+            }
+            if let error = peer.lastSyncError {
                 if error.contains("authorization") { return "Reconnect required" }
                 if error.contains("Update both Macs") { return "Version mismatch" }
                 return "History sync failed"
             }
-            if let imported = peer.lastSyncImported, imported > 0 { return "Merged \(imported) records" }
+            if let imported = peer.lastSyncImported, imported > 0 {
+                return "Merged \(imported) records"
+            }
             if peer.lastSyncAt != nil { return "History up to date" }
             return "Waiting to sync"
         }
@@ -78,15 +84,28 @@ final class SyncPreferencesViewModel: ObservableObject {
         Task {
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    let addresses = Host.current().addresses.filter { $0.contains(".") && $0 != "127.0.0.1" && !$0.hasPrefix("169.254.") }
-                    let tailscaleInstalled = FileManager.default.fileExists(atPath: "/Applications/Tailscale.app") ||
-                        FileManager.default.fileExists(atPath: "/Applications/Tailscale (App Store).app") ||
-                        ["/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale", "/usr/bin/tailscale"].contains { FileManager.default.fileExists(atPath: $0) }
-                    let tailscale = tailscaleInstalled ? addresses.first(where: Self.isTailscaleIPv4) : nil
+                    let addresses = Host.current().addresses.filter {
+                        $0.contains(".") && $0 != "127.0.0.1" && !$0.hasPrefix("169.254.")
+                    }
+                    let tailscaleInstalled =
+                        FileManager.default.fileExists(atPath: "/Applications/Tailscale.app")
+                        || FileManager.default.fileExists(
+                            atPath: "/Applications/Tailscale (App Store).app")
+                        || [
+                            "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale",
+                            "/usr/bin/tailscale",
+                        ]
+                        .contains { FileManager.default.fileExists(atPath: $0) }
+                    let tailscale =
+                        tailscaleInstalled ? addresses.first(where: Self.isTailscaleIPv4) : nil
                     let lan = addresses.first { !Self.isTailscaleIPv4($0) }
                     let rows: [PeerRow]
                     if let repository = syncRepository {
-                        rows = try repository.peers().map { PeerRow(peer: $0, addresses: try repository.addresses(credentialID: $0.credentialID)) }
+                        rows = try repository.peers().map {
+                            PeerRow(
+                                peer: $0,
+                                addresses: try repository.addresses(credentialID: $0.credentialID))
+                        }
                     } else {
                         rows = []
                     }
@@ -111,7 +130,8 @@ final class SyncPreferencesViewModel: ObservableObject {
         Task {
             defer { isConfiguringTailscale = false }
             do {
-                tailscaleServeState = try await TailscaleServeController.setEnabled(enabled, state: current)
+                tailscaleServeState = try await TailscaleServeController.setEnabled(
+                    enabled, state: current)
                 status = enabled ? "Secure mobile access is ready." : "Secure mobile access is off."
                 createMobileLink()
             } catch let error as TailscaleServeCommandError {
@@ -135,7 +155,8 @@ final class SyncPreferencesViewModel: ObservableObject {
             guard let latest = await TailscaleServeController.probe() else { continue }
             tailscaleServeState = latest
             if latest.isEnabled == expected {
-                status = expected ? "Secure mobile access is ready." : "Secure mobile access is off."
+                status =
+                    expected ? "Secure mobile access is ready." : "Secure mobile access is off."
                 createMobileLink()
                 return
             }
@@ -147,7 +168,11 @@ final class SyncPreferencesViewModel: ObservableObject {
         guard let repository else { return }
         do {
             peers = try await Task.detached(priority: .utility) {
-                try repository.peers().map { PeerRow(peer: $0, addresses: try repository.addresses(credentialID: $0.credentialID)) }
+                try repository.peers().map {
+                    PeerRow(
+                        peer: $0, addresses: try repository.addresses(credentialID: $0.credentialID)
+                    )
+                }
             }.value
         } catch { status = error.localizedDescription }
     }
@@ -166,7 +191,10 @@ final class SyncPreferencesViewModel: ObservableObject {
     }
 
     func createDesktopPassword() {
-        guard let repository else { status = "Sync storage is unavailable on this Mac."; return }
+        guard let repository else {
+            status = "Sync storage is unavailable on this Mac."
+            return
+        }
         desktopAccess = nil
         Task {
             do {
@@ -178,7 +206,10 @@ final class SyncPreferencesViewModel: ObservableObject {
     }
 
     func checkServer() {
-        guard let baseURL else { serverOnline = false; return }
+        guard let baseURL else {
+            serverOnline = false
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -204,53 +235,99 @@ final class SyncPreferencesViewModel: ObservableObject {
         Task {
             defer { isJoining = false }
             do {
-                guard let repository, let endpoint = normalizedURL(joinAddress) else { throw URLError(.badURL) }
+                guard let repository, let endpoint = normalizedURL(joinAddress) else {
+                    throw URLError(.badURL)
+                }
                 guard let ownAddress = baseURL else { throw URLError(.cannotFindHost) }
                 let version = Versioning.versionString(bundle: .main)
-                let value = SimplePairingRequest(password: joinPassword.uppercased(), requesterName: repository.identity.displayName, requesterDeviceID: repository.identity.deviceID, requesterEpoch: repository.identity.epoch, scope: .desktopSync, requesterAddress: ownAddress,requesterVersion:version)
+                let value = SimplePairingRequest(
+                    password: joinPassword.uppercased(),
+                    requesterName: repository.identity.displayName,
+                    requesterDeviceID: repository.identity.deviceID,
+                    requesterEpoch: repository.identity.epoch, scope: .desktopSync,
+                    requesterAddress: ownAddress, requesterVersion: version)
                 var request = URLRequest(url: endpoint.appendingPathComponent("v1/pairing/connect"))
                 request.httpMethod = "POST"
                 request.httpBody = try JSONEncoder().encode(value)
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+                guard let http = response as? HTTPURLResponse else {
+                    throw URLError(.badServerResponse)
+                }
                 if http.statusCode == 409 { throw DesktopConnectionError.versionMismatch }
                 guard http.statusCode == 200 else { throw URLError(.userAuthenticationRequired) }
                 let result = try JSONDecoder().decode(SimplePairingResponse.self, from: data)
-                guard result.hostVersion == version else { throw DesktopConnectionError.versionMismatch }
-                try repository.savePeer(result.credential, deviceID: result.host.deviceID, epoch: result.host.epoch, displayName: result.host.displayName)
-                try repository.saveAddress(credentialID: result.credential.id, url: endpoint, kind: .manual)
+                guard result.hostVersion == version else {
+                    throw DesktopConnectionError.versionMismatch
+                }
+                try repository.savePeer(
+                    result.credential, deviceID: result.host.deviceID, epoch: result.host.epoch,
+                    displayName: result.host.displayName)
+                try repository.saveAddress(
+                    credentialID: result.credential.id, url: endpoint, kind: .manual)
                 try repository.beginPeerSync(credentialID: result.credential.id)
-                let sync = try await SyncCoordinator(repository: repository,requiredAppVersion:version).reconcile(with: HTTPPeerTransport(baseURL: endpoint, credential: result.credential))
-                try repository.recordAddressResult(credentialID: result.credential.id, url: endpoint, succeeded: true)
-                try repository.finishPeerSync(credentialID: result.credential.id, imported: sync.accepted)
+                let sync = try await SyncCoordinator(
+                    repository: repository, requiredAppVersion: version
+                )
+                .reconcile(
+                    with: HTTPPeerTransport(baseURL: endpoint, credential: result.credential))
+                try repository.recordAddressResult(
+                    credentialID: result.credential.id, url: endpoint, succeeded: true)
+                try repository.finishPeerSync(
+                    credentialID: result.credential.id, imported: sync.accepted)
                 if sync.accepted > 0 { try SyncEnvironment.shared.refreshCompatibilityView() }
-                joinAddress = ""; joinPassword = ""; refresh()
+                joinAddress = ""
+                joinPassword = ""
+                refresh()
                 status = "Connected to \(result.host.displayName). Histories are up to date."
-            } catch DesktopConnectionError.versionMismatch { status = "Both Macs must be running the same Rashun version. Update Rashun on both devices, then try again." }
-            catch { status = "Could not connect. Check the address, pairing code, and that Rashun is open on the other Mac." }
+            } catch DesktopConnectionError.versionMismatch {
+                status =
+                    "Both Macs must be running the same Rashun version. Update Rashun on both devices, then try again."
+            } catch {
+                status =
+                    "Could not connect. Check the address, pairing code, and that Rashun is open on the other Mac."
+            }
         }
     }
 
     func retry(_ id: UUID) {
         guard let repository, retryingPeerID == nil else { return }
-        retryingPeerID = id; status = "Retrying history sync…"
+        retryingPeerID = id
+        status = "Retrying history sync…"
         Task {
-            let attempts = await PeerSyncService(repository: repository, historyChanged: { @MainActor in try? SyncEnvironment.shared.refreshCompatibilityView();NotificationCenter.default.post(name:.aiDataRefreshed,object:nil) }, appVersion: Versioning.versionString(bundle:.main)).syncAllOnce()
+            let attempts = await PeerSyncService(
+                repository: repository,
+                historyChanged: { @MainActor in
+                    try? SyncEnvironment.shared.refreshCompatibilityView()
+                    NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+                }, appVersion: Versioning.versionString(bundle: .main)
+            ).syncAllOnce()
             await refreshPeers()
             retryingPeerID = nil
-            status = attempts.first(where: { $0.credentialID == id })?.result != nil ? "History is up to date." : "Sync failed. Check that Rashun is open and both Macs are on the same version."
+            status =
+                attempts.first(where: { $0.credentialID == id })?.result != nil
+                ? "History is up to date."
+                : "Sync failed. Check that Rashun is open and both Macs are on the same version."
         }
     }
 
-    func copyDiagnostics(_ row:PeerRow) {
-        let text=["Device: \(row.peer.displayName)","Presence: \(row.presenceText)","Status: \(row.secondaryStatus)","Error: \(row.peer.lastSyncError ?? "None")","Addresses: \(row.addresses.map(\.url.absoluteString).joined(separator:", "))","Last sync: \(row.peer.lastSyncAt?.description ?? "Never")"].joined(separator:"\n")
-        NSPasteboard.general.clearContents();NSPasteboard.general.setString(text,forType:.string);status="Sync diagnostics copied."
+    func copyDiagnostics(_ row: PeerRow) {
+        let text = [
+            "Device: \(row.peer.displayName)", "Presence: \(row.presenceText)",
+            "Status: \(row.secondaryStatus)", "Error: \(row.peer.lastSyncError ?? "None")",
+            "Addresses: \(row.addresses.map(\.url.absoluteString).joined(separator:", "))",
+            "Last sync: \(row.peer.lastSyncAt?.description ?? "Never")",
+        ].joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        status = "Sync diagnostics copied."
     }
 
     func remove(_ id: UUID) {
-        do { try repository?.revokePeer(credentialID: id); refresh() }
-        catch { status = error.localizedDescription }
+        do {
+            try repository?.revokePeer(credentialID: id)
+            refresh()
+        } catch { status = error.localizedDescription }
     }
 
     private func normalizedURL(_ input: String) -> URL? {
@@ -305,47 +382,80 @@ struct SyncTabView: View {
                     .buttonStyle(OutlinedBrandButtonStyle())
                 }
                 if model.isLoading {
-                    HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Loading connections…").foregroundStyle(.secondary) }
-                        .padding(.vertical, 8)
+                    HStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading connections…").foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
                 }
                 if showingAddConnection {
                     addDesktopCard
                 }
                 if !model.isLoading && model.peers.isEmpty {
-                    Text("No connected devices yet.").foregroundStyle(BrandPalette.textSecondary).padding(.vertical, 12)
+                    Text("No connected devices yet.").foregroundStyle(BrandPalette.textSecondary)
+                        .padding(
+                            .vertical, 12)
                 } else {
                     ForEach(model.peers) { row in
                         HStack(spacing: 14) {
-                            BrandIconTile(systemName: row.peer.scopes.contains(.mobileRead) ? "iphone" : "desktopcomputer")
+                            BrandIconTile(
+                                systemName: row.peer.scopes.contains(.mobileRead)
+                                    ? "iphone" : "desktopcomputer")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.peer.displayName).fontWeight(.semibold)
                                 HStack(spacing: 6) {
-                                    Circle().fill(row.isOnline ? Color.green : BrandPalette.textSecondary).frame(width: 7, height: 7)
+                                    Circle().fill(
+                                        row.isOnline ? Color.green : BrandPalette.textSecondary
+                                    ).frame(
+                                        width: 7, height: 7)
                                     Text(row.presenceText)
                                     Text("·")
                                     Text(row.secondaryStatus)
-                                        .foregroundStyle(row.peer.lastSyncError == nil || row.isMobile ? BrandPalette.textSecondary : BrandPalette.warning)
-                                        .help(row.isMobile ? row.secondaryStatus : (row.peer.lastSyncError ?? row.secondaryStatus))
+                                        .foregroundStyle(
+                                            row.peer.lastSyncError == nil || row.isMobile
+                                                ? BrandPalette.textSecondary : BrandPalette.warning
+                                        )
+                                        .help(
+                                            row.isMobile
+                                                ? row.secondaryStatus
+                                                : (row.peer.lastSyncError ?? row.secondaryStatus))
                                 }.font(.caption).foregroundStyle(BrandPalette.textSecondary)
                             }
                             Spacer()
                             Menu {
-                                Button(model.retryingPeerID == row.id ? "Retrying…" : "Retry sync") { model.retry(row.id) }
-                                    .disabled(model.retryingPeerID != nil)
+                                Button(model.retryingPeerID == row.id ? "Retrying…" : "Retry sync")
+                                {
+                                    model.retry(row.id)
+                                }
+                                .disabled(model.retryingPeerID != nil)
                                 Button("Copy sync diagnostics") { model.copyDiagnostics(row) }
                                 Button("Remove", role: .destructive) { model.remove(row.id) }
-                            } label: { Image(systemName: "ellipsis").foregroundStyle(BrandPalette.textSecondary) }
+                            } label: {
+                                Image(systemName: "ellipsis").foregroundStyle(
+                                    BrandPalette.textSecondary)
+                            }
                             .menuStyle(.borderlessButton)
                         }
                         .padding(16)
-                        .background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(BrandPalette.primary.opacity(0.18)))
+                        .background(
+                            BrandPalette.card,
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13).stroke(
+                                BrandPalette.primary.opacity(0.18)))
                     }
                 }
-                if !model.status.isEmpty { Text(model.status).font(.caption).foregroundStyle(.secondary) }
-            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6).padding(.vertical, 4)
+                if !model.status.isEmpty {
+                    Text(model.status).font(.caption).foregroundStyle(.secondary)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6).padding(
+                .vertical, 4)
         }
-        .onAppear { model.load(syncEnabled: mobileEnabled); if mobileEnabled { model.createMobileLink() } }
+        .onAppear {
+            model.load(syncEnabled: mobileEnabled)
+            if mobileEnabled { model.createMobileLink() }
+        }
         .task(id: mobileEnabled) {
             guard mobileEnabled else { return }
             while !Task.isCancelled {
@@ -364,9 +474,14 @@ struct SyncTabView: View {
                     Text("Mobile access").font(.headline)
                     if mobileEnabled {
                         HStack(spacing: 6) {
-                            Circle().fill(model.serverOnline ? BrandPalette.accent : BrandPalette.textSecondary).frame(width: 8, height: 8)
+                            Circle().fill(
+                                model.serverOnline
+                                    ? BrandPalette.accent : BrandPalette.textSecondary
+                            )
+                            .frame(width: 8, height: 8)
                             Text(model.serverOnline ? "Online" : "Starting…")
-                        }.font(.caption).foregroundStyle(model.serverOnline ? BrandPalette.accent : BrandPalette.textSecondary)
+                        }.font(.caption).foregroundStyle(
+                            model.serverOnline ? BrandPalette.accent : BrandPalette.textSecondary)
                     }
                 }
                 Spacer()
@@ -374,9 +489,16 @@ struct SyncTabView: View {
                 Toggle("", isOn: $mobileEnabled).labelsHidden().toggleStyle(.switch)
                     .onChange(of: mobileEnabled) { _, enabled in
                         SettingsStore.shared.setSyncServerEnabled(enabled)
-                        if enabled { model.load(syncEnabled: true); model.createMobileLink() }
-                        else { model.mobileAccess = nil; model.peers = [] }
-                        DispatchQueue.main.async { PreferencesWindowController.shared.bringToFront() }
+                        if enabled {
+                            model.load(syncEnabled: true)
+                            model.createMobileLink()
+                        } else {
+                            model.mobileAccess = nil
+                            model.peers = []
+                        }
+                        DispatchQueue.main.async {
+                            PreferencesWindowController.shared.bringToFront()
+                        }
                     }
             }.padding(18)
 
@@ -390,31 +512,61 @@ struct SyncTabView: View {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text("Secure mobile access").fontWeight(.semibold)
-                                            Text(tailscale.isEnabled ? "HTTPS through Tailscale" : "Enable HTTPS for notifications")
-                                                .font(.caption).foregroundStyle(BrandPalette.textSecondary)
+                                            Text(
+                                                tailscale.isEnabled
+                                                    ? "HTTPS through Tailscale"
+                                                    : "Enable HTTPS for notifications"
+                                            )
+                                            .font(.caption).foregroundStyle(
+                                                BrandPalette.textSecondary)
                                         }
                                         Spacer()
-                                        if model.isConfiguringTailscale { ProgressView().controlSize(.small) }
-                                        Toggle("", isOn: Binding(
-                                            get: { model.tailscaleServeState?.isEnabled == true },
-                                            set: { model.setTailscaleHTTPS($0) }
-                                        )).labelsHidden().toggleStyle(.switch).disabled(model.isConfiguringTailscale || tailscale.hasConflictingRootHandler)
+                                        if model.isConfiguringTailscale {
+                                            ProgressView().controlSize(.small)
+                                        }
+                                        Toggle(
+                                            "",
+                                            isOn: Binding(
+                                                get: {
+                                                    model.tailscaleServeState?.isEnabled == true
+                                                },
+                                                set: { model.setTailscaleHTTPS($0) }
+                                            )
+                                        ).labelsHidden().toggleStyle(.switch).disabled(
+                                            model.isConfiguringTailscale
+                                                || tailscale.hasConflictingRootHandler)
                                     }
                                     if tailscale.hasConflictingRootHandler {
-                                        Text("Tailscale Serve is already being used by another service on this Mac.")
-                                            .font(.caption).foregroundStyle(BrandPalette.warning)
+                                        Text(
+                                            "Tailscale Serve is already being used by another service on this Mac."
+                                        )
+                                        .font(.caption).foregroundStyle(BrandPalette.warning)
                                     } else if tailscale.isEnabled, let url = tailscale.httpsURL {
-                                        Text(url.absoluteString).font(.caption).monospaced().foregroundStyle(BrandPalette.accent).textSelection(.enabled)
+                                        Text(url.absoluteString).font(.caption).monospaced()
+                                            .foregroundStyle(
+                                                BrandPalette.accent
+                                            ).textSelection(.enabled)
                                     }
                                 }
                             }
-                            Button { model.copyMobileLink() } label: { Label("Copy Link", systemImage: "link") }
-                                .buttonStyle(.bordered)
-                            Label("Link expires at \(access.expiresAt.formatted(date: .omitted, time: .shortened))", systemImage: "clock")
-                                .font(.caption).foregroundStyle(BrandPalette.textSecondary)
+                            Button {
+                                model.copyMobileLink()
+                            } label: {
+                                Label("Copy Link", systemImage: "link")
+                            }
+                            .buttonStyle(.bordered)
+                            Label(
+                                "Link expires at \(access.expiresAt.formatted(date: .omitted, time: .shortened))",
+                                systemImage: "clock"
+                            )
+                            .font(.caption).foregroundStyle(BrandPalette.textSecondary)
                             Divider().opacity(0.3)
-                            Button { model.createMobileLink() } label: { Label("Refresh link", systemImage: "arrow.triangle.2.circlepath") }
-                                .buttonStyle(.plain).foregroundStyle(BrandPalette.primary)
+                            Button {
+                                model.createMobileLink()
+                            } label: {
+                                Label("Refresh link", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .buttonStyle(.plain).foregroundStyle(BrandPalette.primary)
                             HStack(spacing: 6) {
                                 Text("Pairing code").foregroundStyle(BrandPalette.textSecondary)
                                 Text(access.password).monospaced().textSelection(.enabled)
@@ -424,7 +576,9 @@ struct SyncTabView: View {
                         Divider().padding(.vertical, 8)
 
                         HStack(spacing: 20) {
-                            QRCodeView(value: link.absoluteString).frame(width: 150, height: 150).padding(8).background(.white, in: RoundedRectangle(cornerRadius: 10))
+                            QRCodeView(value: link.absoluteString).frame(width: 150, height: 150)
+                                .padding(8)
+                                .background(.white, in: RoundedRectangle(cornerRadius: 10))
                             VStack(alignment: .leading, spacing: 8) {
                                 BrandIconTile(systemName: "iphone")
                                 Text("Scan with your\nphone to open Rashun").font(.headline)
@@ -432,11 +586,21 @@ struct SyncTabView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 178)
                         .padding(14)
-                        .background(BrandPalette.background.opacity(0.45), in: RoundedRectangle(cornerRadius: 13))
-                        .overlay(RoundedRectangle(cornerRadius: 13).stroke(BrandPalette.primary.opacity(0.75)))
+                        .background(
+                            BrandPalette.background.opacity(0.45),
+                            in: RoundedRectangle(cornerRadius: 13)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13).stroke(
+                                BrandPalette.primary.opacity(0.75)))
                     }.padding(18)
                 } else {
-                    HStack { Spacer(); ProgressView(); Text("Preparing mobile access…").foregroundStyle(BrandPalette.textSecondary); Spacer() }.padding(30)
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Text("Preparing mobile access…").foregroundStyle(BrandPalette.textSecondary)
+                        Spacer()
+                    }.padding(30)
                 }
             }
         }
@@ -448,31 +612,52 @@ struct SyncTabView: View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Connect two desktops").font(.headline)
-                Text("Choose either option below. You only need to connect once—Rashun will sync both ways automatically.")
-                    .font(.caption).foregroundStyle(BrandPalette.textSecondary)
+                Text(
+                    "Choose either option below. You only need to connect once—Rashun will sync both ways automatically."
+                )
+                .font(.caption).foregroundStyle(BrandPalette.textSecondary)
             }
 
             HStack(alignment: .top, spacing: 14) {
-                connectionOption(number: "1", title: "Share this Mac’s details", subtitle: "On your other Mac, enter this address and code.") {
+                connectionOption(
+                    number: "1", title: "Share this Mac’s details",
+                    subtitle: "On your other Mac, enter this address and code."
+                ) {
                     VStack(alignment: .leading, spacing: 10) {
-                        connectionValue(label: "Address", value: model.baseURL?.absoluteString ?? "Preparing address…")
-                        connectionValue(label: "Pairing code", value: model.desktopAccess?.password ?? "Preparing code…")
+                        connectionValue(
+                            label: "Address",
+                            value: model.baseURL?.absoluteString ?? "Preparing address…")
+                        connectionValue(
+                            label: "Pairing code",
+                            value: model.desktopAccess?.password ?? "Preparing code…")
                         if let expiry = model.desktopAccess?.expiresAt {
-                            Text("Code expires at \(expiry.formatted(date: .omitted, time: .shortened))")
-                                .font(.caption2).foregroundStyle(BrandPalette.textSecondary)
+                            Text(
+                                "Code expires at \(expiry.formatted(date: .omitted, time: .shortened))"
+                            )
+                            .font(.caption2).foregroundStyle(BrandPalette.textSecondary)
                         }
                     }
                 }
 
-                connectionOption(number: "2", title: "Enter another Mac’s details", subtitle: "Use the address and code displayed on your other Mac.") {
+                connectionOption(
+                    number: "2", title: "Enter another Mac’s details",
+                    subtitle: "Use the address and code displayed on your other Mac."
+                ) {
                     VStack(spacing: 10) {
-                        styledField(icon: "network", placeholder: "IP address or URL", text: $model.joinAddress)
-                        styledSecureField(icon: "key", placeholder: "Pairing code", text: $model.joinPassword)
-                        Button(model.isJoining ? "Connecting…" : "Connect desktops") { model.joinDesktop() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(BrandPalette.primary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .disabled(model.joinAddress.isEmpty || model.joinPassword.isEmpty || model.isJoining)
+                        styledField(
+                            icon: "network", placeholder: "IP address or URL",
+                            text: $model.joinAddress)
+                        styledSecureField(
+                            icon: "key", placeholder: "Pairing code", text: $model.joinPassword)
+                        Button(model.isJoining ? "Connecting…" : "Connect desktops") {
+                            model.joinDesktop()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(BrandPalette.primary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .disabled(
+                            model.joinAddress.isEmpty || model.joinPassword.isEmpty
+                                || model.isJoining)
                     }
                 }
             }
@@ -482,13 +667,20 @@ struct SyncTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 13).stroke(BrandPalette.primary.opacity(0.2)))
     }
 
-    private func connectionOption<Content: View>(number: String, title: String, subtitle: String, @ViewBuilder content: () -> Content) -> some View {
+    private func connectionOption<Content: View>(
+        number: String, title: String, subtitle: String, @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .top, spacing: 10) {
-                Text(number).font(.caption.bold()).foregroundStyle(.white).frame(width: 23, height: 23).background(BrandPalette.primary, in: Circle())
+                Text(number).font(.caption.bold()).foregroundStyle(.white).frame(
+                    width: 23, height: 23
+                )
+                .background(BrandPalette.primary, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).fontWeight(.semibold)
-                    Text(subtitle).font(.caption).foregroundStyle(BrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    Text(subtitle).font(.caption).foregroundStyle(BrandPalette.textSecondary)
+                        .fixedSize(
+                            horizontal: false, vertical: true)
                 }
             }
             content()
@@ -500,24 +692,43 @@ struct SyncTabView: View {
 
     private func connectionValue(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(BrandPalette.textSecondary)
-            Text(value).font(.system(.callout, design: .monospaced)).textSelection(.enabled).lineLimit(1).minimumScaleFactor(0.75)
-                .padding(.horizontal, 11).frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(
+                BrandPalette.textSecondary)
+            Text(value).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .padding(.horizontal, 11).frame(
+                    maxWidth: .infinity, minHeight: 34, alignment: .leading
+                )
                 .background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
         }
     }
 
-    private func styledField(icon: String, placeholder: String, text: Binding<String>) -> some View {
-        HStack(spacing: 9) { Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary); TextField(placeholder, text: text).textFieldStyle(.plain) }
-            .padding(.horizontal, 11).frame(minHeight: 36).background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
+    private func styledField(icon: String, placeholder: String, text: Binding<String>) -> some View
+    {
+        HStack(spacing: 9) {
+            Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary)
+            TextField(placeholder, text: text).textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 11).frame(minHeight: 36).background(
+            BrandPalette.card, in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
     }
 
-    private func styledSecureField(icon: String, placeholder: String, text: Binding<String>) -> some View {
-        HStack(spacing: 9) { Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary); SecureField(placeholder, text: text).textFieldStyle(.plain) }
-            .padding(.horizontal, 11).frame(minHeight: 36).background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
+    private func styledSecureField(icon: String, placeholder: String, text: Binding<String>)
+        -> some View
+    {
+        HStack(spacing: 9) {
+            Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary)
+            SecureField(placeholder, text: text).textFieldStyle(.plain)
+        }
+        .padding(.horizontal, 11).frame(minHeight: 36).background(
+            BrandPalette.card, in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
     }
 }
 
@@ -526,10 +737,12 @@ private enum DesktopConnectionError: Error { case versionMismatch }
 private struct BrandIconTile: View {
     let systemName: String
     var body: some View {
-        Image(systemName: systemName).font(.system(size: 18, weight: .medium)).foregroundStyle(.white)
-            .frame(width: 42, height: 42)
-            .background(BrandPalette.primary.opacity(0.28), in: RoundedRectangle(cornerRadius: 11))
-            .overlay(RoundedRectangle(cornerRadius: 11).stroke(BrandPalette.primary.opacity(0.7)))
+        Image(systemName: systemName).font(.system(size: 18, weight: .medium)).foregroundStyle(
+            .white
+        )
+        .frame(width: 42, height: 42)
+        .background(BrandPalette.primary.opacity(0.28), in: RoundedRectangle(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(BrandPalette.primary.opacity(0.7)))
     }
 }
 
@@ -537,16 +750,23 @@ private struct OutlinedBrandButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.padding(.horizontal, 14).padding(.vertical, 8)
             .foregroundStyle(BrandPalette.primary)
-            .background(BrandPalette.card.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 9))
+            .background(
+                BrandPalette.card.opacity(configuration.isPressed ? 0.8 : 1),
+                in: RoundedRectangle(cornerRadius: 9)
+            )
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(BrandPalette.primary.opacity(0.65)))
     }
 }
 
 private struct QRCodeView: View {
     let value: String
-    var body: some View { if let image { Image(nsImage: image).interpolation(.none).resizable().scaledToFit() } }
+    var body: some View {
+        if let image { Image(nsImage: image).interpolation(.none).resizable().scaledToFit() }
+    }
     private var image: NSImage? {
-        let filter = CIFilter.qrCodeGenerator(); filter.message = Data(value.utf8); filter.correctionLevel = "M"
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(value.utf8)
+        filter.correctionLevel = "M"
         guard let output = filter.outputImage else { return nil }
         let scaled = output.transformed(by: .init(scaleX: 8, y: 8))
         guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }

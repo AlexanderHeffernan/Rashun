@@ -1,9 +1,9 @@
 import Cocoa
-import SwiftUI
-import UserNotifications
 import RashunCore
 import RashunSync
 import RashunSyncServer
+import SwiftUI
+import UserNotifications
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -40,8 +40,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusRingSize: CGFloat = 20
     private let statusRingSpacing: CGFloat = 3
     #if DEBUG
-    private var simulatedCodexWeeklyResetSample: UsageResult?
-    private var simulatedCodexWeeklyResetBaseline: UsageResult?
+        private var simulatedCodexWeeklyResetSample: UsageResult?
+        private var simulatedCodexWeeklyResetBaseline: UsageResult?
     #endif
     private var isSleepSuspended = false
     private var isLockSuspended = false
@@ -52,8 +52,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var trackingCompletionSummary: String?
     private var trackingIndicatorPulseTimer: Timer?
     private var trackingIndicatorPulsePhase = 0.0
-    private var syncServerTask:Task<Void,Never>?
-    private var peerSyncTask:Task<Void,Never>?
+    private var syncServerTask: Task<Void, Never>?
+    private var peerSyncTask: Task<Void, Never>?
 
     private var isPollingSuspended: Bool {
         isSleepSuspended || isLockSuspended
@@ -74,9 +74,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu?.delegate = self
         statusItem?.menu = menu
 
-        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged(_:)), name: .aiSettingsChanged, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleWillSleep), name: NSWorkspace.willSleepNotification, object: nil)
-        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(handleDidWake), name: NSWorkspace.didWakeNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged(_:)), name: .aiSettingsChanged, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(handleWillSleep), name: NSWorkspace.willSleepNotification,
+            object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(handleDidWake), name: NSWorkspace.didWakeNotification,
+            object: nil)
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -95,7 +100,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for source in sources {
             SettingsStore.shared.ensureSourceMetrics(source: source)
             if source.metrics.count <= 1 {
-                if let usage = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+                if let usage = SourceHealthStore.shared.health(for: source.name)?
+                    .lastSuccessfulUsage
+                {
                     let metricId = source.metrics.first?.id ?? "default"
                     results[source.name] = [metricId: usage.formatted]
                 }
@@ -104,7 +111,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             var metricDisplays: [String: String] = [:]
             for metric in source.metrics {
-                if let usage = SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage {
+                if let usage = SourceHealthStore.shared.health(
+                    for: source.name, metricId: metric.id)?
+                    .lastSuccessfulUsage
+                {
                     metricDisplays[metric.id] = usage.formatted
                 }
             }
@@ -143,7 +153,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu?.removeAllItems()
         let enabled = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
         if enabled.isEmpty {
-            menu?.addItem(withTitle: "No sources enabled — open Preferences...", action: #selector(AppDelegate.showPreferences), keyEquivalent: "")
+            menu?.addItem(
+                withTitle: "No sources enabled — open Preferences...",
+                action: #selector(AppDelegate.showPreferences), keyEquivalent: "")
         } else {
             var hasWarnings = false
             for (index, source) in enabled.enumerated() {
@@ -178,10 +190,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshButton.update(loading: !loadingSources.isEmpty, lastRefresh: lastRefreshDate)
         refreshItem.view = refreshButton
         menu?.addItem(refreshItem)
-        menu?.addItem(withTitle: "Usage History...", action: #selector(showChart), keyEquivalent: "")
+        menu?.addItem(
+            withTitle: "Usage History...", action: #selector(showChart), keyEquivalent: "")
 
         menu?.addItem(NSMenuItem.separator())
-        menu?.addItem(withTitle: "Preferences...", action: #selector(AppDelegate.showPreferences), keyEquivalent: ",")
+        menu?.addItem(
+            withTitle: "Preferences...", action: #selector(AppDelegate.showPreferences),
+            keyEquivalent: ",")
         menu?.addItem(NSMenuItem.separator())
         menu?.addItem(withTitle: "Quit", action: #selector(quit), keyEquivalent: "q")
         publishMobileUsagePresentation(enabledSources: enabled)
@@ -201,7 +216,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     sourceName: source.displayName,
                     metricTitle: sourceHasSingleMetric ? "Remaining" : metric.title,
                     headerDetail: sourceHeaderDetails[source.name],
-                    detailText: usage.flatMap { metricTimingText(source: source, metric: metric, usage: $0) },
+                    detailText: usage.flatMap {
+                        metricTimingText(source: source, metric: metric, usage: $0)
+                    },
                     iconName: logoNames.contains(slug) ? slug : nil,
                     colorHex: String(format: "#%06X", source.menuBarBrandColorHex)
                 )
@@ -218,17 +235,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             indicator.isEnabled = false
             menu?.addItem(indicator)
             for metric in TrackedUsageAttributionEngine.results(for: session) {
-                menu?.addItem(withTitle: "   \(metric.sourceName) \(metric.metricTitle): \(String(format: "%.1f", metric.percentagePointsConsumed))%", action: nil, keyEquivalent: "")
+                menu?.addItem(
+                    withTitle:
+                        "   \(metric.sourceName) \(metric.metricTitle): \(String(format: "%.1f", metric.percentagePointsConsumed))%",
+                    action: nil, keyEquivalent: "")
             }
             let stopItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            let stopButton = TrackingMenuButton(target: self, action: #selector(stopTrackingSession))
-            stopButton.update(title: isStoppingTrackingSession ? "Stopping…" : "Stop Session", isEnabled: !isStoppingTrackingSession)
+            let stopButton = TrackingMenuButton(
+                target: self, action: #selector(stopTrackingSession))
+            stopButton.update(
+                title: isStoppingTrackingSession ? "Stopping…" : "Stop Session",
+                isEnabled: !isStoppingTrackingSession)
             stopItem.view = stopButton
             menu?.addItem(stopItem)
         } else {
-            menu?.addItem(withTitle: "Start Session…", action: #selector(startTrackingSession), keyEquivalent: "")
+            menu?.addItem(
+                withTitle: "Start Session…", action: #selector(startTrackingSession),
+                keyEquivalent: "")
         }
-        menu?.addItem(withTitle: "Tracked Usage…", action: #selector(showTrackedUsage), keyEquivalent: "")
+        menu?.addItem(
+            withTitle: "Tracked Usage…", action: #selector(showTrackedUsage), keyEquivalent: "")
     }
 
     private func compactDuration(_ interval: TimeInterval) -> String {
@@ -241,16 +267,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.messageText = "Start tracked session"
         alert.informativeText = "Choose a label for this observed usage session."
         let labels = trackedUsageStore.labels.filter { $0.archivedAt == nil }
-        guard !labels.isEmpty else { openPreferences(tab: .tracking); return }
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 28), pullsDown: false)
-        for label in labels { picker.addItem(withTitle: label.name); picker.lastItem?.representedObject = label.id.uuidString }
+        guard !labels.isEmpty else {
+            openPreferences(tab: .tracking)
+            return
+        }
+        let picker = NSPopUpButton(
+            frame: NSRect(x: 0, y: 0, width: 260, height: 28), pullsDown: false)
+        for label in labels {
+            picker.addItem(withTitle: label.name)
+            picker.lastItem?.representedObject = label.id.uuidString
+        }
         alert.accessoryView = picker
         alert.addButton(withTitle: "Start")
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Manage Labels…")
         let response = alert.runModal()
-        if response == .alertThirdButtonReturn { openPreferences(tab: .tracking); return }
-        guard response == .alertFirstButtonReturn, let identifier = picker.selectedItem?.representedObject as? String, let id = UUID(uuidString: identifier), let label = labels.first(where: { $0.id == id }) else { return }
+        if response == .alertThirdButtonReturn {
+            openPreferences(tab: .tracking)
+            return
+        }
+        guard response == .alertFirstButtonReturn,
+            let identifier = picker.selectedItem?.representedObject as? String,
+            let id = UUID(uuidString: identifier), let label = labels.first(where: { $0.id == id })
+        else { return }
         _ = trackedUsageStore.start(label: label)
         updateMenu()
         updateStatusIcon()
@@ -305,9 +344,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         return MenuDropdownMetricRowModel(
                             title: rowTitle,
                             valueText: "\(Int(round(percent)))%",
-                            detailText: refreshingTimingText(source: source, metric: metric, usage: usage),
+                            detailText: refreshingTimingText(
+                                source: source, metric: metric, usage: usage),
                             progress: percent / 100,
-                            colorHex: metricColorHex(source: source, metric: metric, usage: usage, colorMode: colorMode),
+                            colorHex: metricColorHex(
+                                source: source, metric: metric, usage: usage, colorMode: colorMode),
                             hasValue: true,
                             hasWarning: warning
                         )
@@ -331,7 +372,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         valueText: "\(Int(round(percent)))%",
                         detailText: metricTimingText(source: source, metric: metric, usage: usage),
                         progress: percent / 100,
-                        colorHex: metricColorHex(source: source, metric: metric, usage: usage, colorMode: colorMode),
+                        colorHex: metricColorHex(
+                            source: source, metric: metric, usage: usage, colorMode: colorMode),
                         hasValue: true,
                         hasWarning: warning
                     )
@@ -370,13 +412,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colorMode: MenuBarColorMode
     ) -> UInt32 {
         if colorMode == .pace,
-           let status = paceStatus(source: source, metric: metric, usage: usage) {
+            let status = paceStatus(source: source, metric: metric, usage: usage)
+        {
             return status.colorHex
         }
         return source.menuBarBrandColorHex
     }
 
-    private func refreshingTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
+    private func refreshingTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult)
+        -> String?
+    {
         let timingText = metricTimingText(source: source, metric: metric, usage: usage)
         guard let timingText else {
             return "Refreshing"
@@ -384,7 +429,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return "\(timingText) • Refreshing"
     }
 
-    private func metricTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult) -> String? {
+    private func metricTimingText(source: AISource, metric: AISourceMetric, usage: UsageResult)
+        -> String?
+    {
         let paceLabel = paceStatus(source: source, metric: metric, usage: usage)?.detailText
         let percent = min(max(usage.percentRemaining, 0), 100)
         guard Int(round(percent)) < 100 else {
@@ -396,10 +443,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let resetDate = usage.resetDate, resetDate > now {
             baseText = "Resets \(compactDateDescription(for: resetDate, now: now))"
         } else {
-            let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
+            let history = UsageHistoryStore.shared.history(
+                for: notificationScopeName(source: source, metric: metric))
             if let forecast = source.forecast(for: metric.id, current: usage, history: history),
-               let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date,
-               fullDate > now {
+                let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date,
+                fullDate > now
+            {
                 baseText = "Reaches 100% \(compactDateDescription(for: fullDate, now: now))"
             } else {
                 baseText = nil
@@ -415,14 +464,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return "\(baseText) • \(paceLabel)"
     }
 
-    private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult) -> PaceStatus? {
+    private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult)
+        -> PaceStatus?
+    {
         let percent = min(max(usage.percentRemaining, 0), 100)
-        let history = UsageHistoryStore.shared.history(for: notificationScopeName(source: source, metric: metric))
-        if let assessment = source.pacingAssessment(for: metric.id, current: usage, history: history, now: Date()) {
+        let history = UsageHistoryStore.shared.history(
+            for: notificationScopeName(source: source, metric: metric))
+        if let assessment = source.pacingAssessment(
+            for: metric.id, current: usage, history: history, now: Date())
+        {
             if assessment.recommendation == .limitReached {
-                return PaceStatus(score: assessment.score, isExhausted: true, overrideLabel: assessment.recommendation.label)
+                return PaceStatus(
+                    score: assessment.score, isExhausted: true,
+                    overrideLabel: assessment.recommendation.label
+                )
             }
-            return PaceStatus(score: assessment.score, overrideLabel: assessment.recommendation.label)
+            return PaceStatus(
+                score: assessment.score, overrideLabel: assessment.recommendation.label)
         }
 
         guard source.pacingBehavior != .none else {
@@ -434,7 +492,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if let forecast = source.forecast(for: metric.id, current: usage, history: history),
-           let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date {
+            let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date
+        {
             let hoursToFull = fullDate.timeIntervalSince(Date()) / 3600
             if hoursToFull <= 6 {
                 let urgency = 30 + ((6 - max(hoursToFull, 0)) / 6) * 50
@@ -452,7 +511,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func compactDateDescription(for date: Date, now: Date) -> String {
         let interval = date.timeIntervalSince(now)
         if interval < 24 * 3600,
-           let relative = Self.menuRelativeFormatter.string(from: interval) {
+            let relative = Self.menuRelativeFormatter.string(from: interval)
+        {
             return "in \(relative)"
         }
         return Self.menuDateFormatter.string(from: date)
@@ -498,7 +558,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !isPollingSuspended else { return }
         guard loadingSources.isEmpty else { return }
         if let lastTrigger = lastResumeRefreshTriggerDate,
-           Date().timeIntervalSince(lastTrigger) < resumeRefreshDebounceSeconds {
+            Date().timeIntervalSince(lastTrigger) < resumeRefreshDebounceSeconds
+        {
             return
         }
         lastResumeRefreshTriggerDate = Date()
@@ -510,7 +571,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func schedulePollTimer() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: SettingsStore.shared.pollInterval(), repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(
+            withTimeInterval: SettingsStore.shared.pollInterval(), repeats: true
+        ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 guard !self.isPollingSuspended else { return }
@@ -530,66 +593,75 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     #if DEBUG
-    func simulateCodexWeeklyResetForTesting() {
-        guard let source = sources.first(where: { $0.name == "Codex" }),
-              let metric = source.metrics.first(where: { $0.id == "codex-pro-weekly" }) else {
-            return
+        func simulateCodexWeeklyResetForTesting() {
+            guard let source = sources.first(where: { $0.name == "Codex" }),
+                let metric = source.metrics.first(where: { $0.id == "codex-pro-weekly" })
+            else {
+                return
+            }
+
+            let now = Date()
+            // Keep a dedicated low baseline for each two-click test sequence. Using
+            // the last displayed value would make later runs start at 100% and skip
+            // the extreme-jump path this control is meant to exercise.
+            let stabilityBaseline =
+                simulatedCodexWeeklyResetBaseline
+                ?? UsageResult(
+                    remaining: 25,
+                    limit: 100,
+                    resetDate: now
+                )
+            simulatedCodexWeeklyResetBaseline = stabilityBaseline
+            let reset =
+                simulatedCodexWeeklyResetSample
+                ?? UsageResult(
+                    remaining: 100,
+                    limit: 100,
+                    resetDate: (stabilityBaseline.resetDate ?? now).addingTimeInterval(
+                        7 * 24 * 3600),
+                    cycleStartDate: now
+                )
+            simulatedCodexWeeklyResetSample = reset
+            let scope = "\(source.name)::\(metric.id)"
+
+            guard
+                let verifiedReset = usageSampleStabilityGate.verifiedUsage(
+                    scope: scope,
+                    incoming: reset,
+                    previousAccepted: stabilityBaseline
+                )
+            else {
+                return
+            }
+            simulatedCodexWeeklyResetSample = nil
+            simulatedCodexWeeklyResetBaseline = nil
+
+            var displayedUsages = latestUsageResults[source.name] ?? [:]
+            displayedUsages[metric.id] = verifiedReset.usage
+            latestUsageResults[source.name] = displayedUsages
+            results[source.name] = displayedUsages.mapValues(\.formatted)
+            SourceHealthStore.shared.recordSuccess(
+                sourceName: source.name, metricId: metric.id, usage: verifiedReset.usage)
+            lastRefreshDate = now
+            updateMenu()
+            updateStatusIcon()
+            NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+
+            Task {
+                let celebrations = await evaluateNotifications(
+                    sources: [source],
+                    results: [source.name: [metric.id: verifiedReset.usage]],
+                    previousOverrides: [source.name: [metric.id: verifiedReset.previousAccepted]],
+                    resetCurrentOverrides: verifiedReset.confirmedResetUsage.map {
+                        [source.name: [metric.id: $0]]
+                    } ?? [:],
+                    confirmedResetMetricIds: verifiedReset.wasConfirmed
+                        ? [source.name: [metric.id]]
+                        : [:]
+                )
+                playResetCelebrations(celebrations)
+            }
         }
-
-        let now = Date()
-        // Keep a dedicated low baseline for each two-click test sequence. Using
-        // the last displayed value would make later runs start at 100% and skip
-        // the extreme-jump path this control is meant to exercise.
-        let stabilityBaseline = simulatedCodexWeeklyResetBaseline ?? UsageResult(
-            remaining: 25,
-            limit: 100,
-            resetDate: now
-        )
-        simulatedCodexWeeklyResetBaseline = stabilityBaseline
-        let reset = simulatedCodexWeeklyResetSample ?? UsageResult(
-            remaining: 100,
-            limit: 100,
-            resetDate: (stabilityBaseline.resetDate ?? now).addingTimeInterval(7 * 24 * 3600),
-            cycleStartDate: now
-        )
-        simulatedCodexWeeklyResetSample = reset
-        let scope = "\(source.name)::\(metric.id)"
-
-        guard let verifiedReset = usageSampleStabilityGate.verifiedUsage(
-            scope: scope,
-            incoming: reset,
-            previousAccepted: stabilityBaseline
-        ) else {
-            return
-        }
-        simulatedCodexWeeklyResetSample = nil
-        simulatedCodexWeeklyResetBaseline = nil
-
-        var displayedUsages = latestUsageResults[source.name] ?? [:]
-        displayedUsages[metric.id] = verifiedReset.usage
-        latestUsageResults[source.name] = displayedUsages
-        results[source.name] = displayedUsages.mapValues(\.formatted)
-        SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: verifiedReset.usage)
-        lastRefreshDate = now
-        updateMenu()
-        updateStatusIcon()
-        NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
-
-        Task {
-            let celebrations = await evaluateNotifications(
-                sources: [source],
-                results: [source.name: [metric.id: verifiedReset.usage]],
-                previousOverrides: [source.name: [metric.id: verifiedReset.previousAccepted]],
-                resetCurrentOverrides: verifiedReset.confirmedResetUsage.map {
-                    [source.name: [metric.id: $0]]
-                } ?? [:],
-                confirmedResetMetricIds: verifiedReset.wasConfirmed
-                    ? [source.name: [metric.id]]
-                    : [:]
-            )
-            playResetCelebrations(celebrations)
-        }
-    }
     #endif
 
     func openPreferences(tab: PreferencesTab?) {
@@ -633,17 +705,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     continue
                 }
                 switch result {
-                case let .success(fetchResult):
+                case .success(let fetchResult):
                     var metricUsages: [String: UsageResult] = [:]
                     let previousUsages = latestUsageResults[name] ?? [:]
 
-                    func recordVerifiedUsage(_ verifiedUsage: UsageSampleStabilityGate.VerifiedUsage, metricId: String) {
+                    func recordVerifiedUsage(
+                        _ verifiedUsage: UsageSampleStabilityGate.VerifiedUsage, metricId: String
+                    ) {
                         metricUsages[metricId] = verifiedUsage.usage
                         if verifiedUsage.wasConfirmed {
-                            notificationPreviousOverrides[name, default: [:]][metricId] = verifiedUsage.previousAccepted
+                            notificationPreviousOverrides[name, default: [:]][metricId] =
+                                verifiedUsage.previousAccepted
                         }
                         if let resetUsage = verifiedUsage.confirmedResetUsage {
-                            notificationResetCurrentOverrides[name, default: [:]][metricId] = resetUsage
+                            notificationResetCurrentOverrides[name, default: [:]][metricId] =
+                                resetUsage
                         }
                         if verifiedUsage.wasConfirmed, verifiedUsage.confirmedResetUsage != nil {
                             confirmedResetMetricIds[name, default: []].insert(metricId)
@@ -693,24 +769,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     usageResultsBySource[name] = metricUsages
                     sourceHeaderDetails[name] = await headerDetailText(for: source)
 
-                    if SettingsStore.shared.trackingEnabled, let activeSession = trackedUsageStore.activeSession {
+                    if SettingsStore.shared.trackingEnabled,
+                        let activeSession = trackedUsageStore.activeSession
+                    {
                         let timestamp = Date()
                         let shouldRecord = origin != .poll || !activeSession.observations.isEmpty
-                        let observations: [TrackedUsageObservation] = shouldRecord ? metricUsages.map { metricID, usage in
-                            let title = source.metrics.first(where: { $0.id == metricID })?.title ?? metricID
-                            return TrackedUsageObservation(timestamp: timestamp, sourceName: source.name, metricID: metricID, metricTitle: title, remaining: usage.remaining, limit: usage.limit, resetDate: usage.resetDate, cycleStartDate: usage.cycleStartDate, origin: origin)
-                        } : []
+                        let observations: [TrackedUsageObservation] =
+                            shouldRecord
+                            ? metricUsages.map { metricID, usage in
+                                let title =
+                                    source.metrics.first(where: { $0.id == metricID })?.title
+                                    ?? metricID
+                                return TrackedUsageObservation(
+                                    timestamp: timestamp, sourceName: source.name,
+                                    metricID: metricID,
+                                    metricTitle: title, remaining: usage.remaining,
+                                    limit: usage.limit,
+                                    resetDate: usage.resetDate,
+                                    cycleStartDate: usage.cycleStartDate, origin: origin)
+                            } : []
                         trackedObservations.append(contentsOf: observations)
                     }
 
-                    recordMetricHealth(source: source, metricUsages: metricUsages, errorsByMetric: fetchResult.errorsByMetric)
+                    recordMetricHealth(
+                        source: source, metricUsages: metricUsages,
+                        errorsByMetric: fetchResult.errorsByMetric)
 
                     let enabledMetricSet = Set(enabledMetrics(for: source).map(\.id))
                     let usableMetricIds: [String]
                     if enabledMetricSet.isEmpty {
                         usableMetricIds = source.metrics.map(\.id)
                     } else {
-                        usableMetricIds = source.metrics.map(\.id).filter { enabledMetricSet.contains($0) }
+                        usableMetricIds = source.metrics.map(\.id).filter {
+                            enabledMetricSet.contains($0)
+                        }
                     }
 
                     for metricId in usableMetricIds {
@@ -718,24 +810,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let p = min(max(metricUsage.percentRemaining, 0), 100)
                         percentValues.append(p)
                     }
-                case let .failure(error):
+                case .failure(let error):
                     let mappedMetricId: String
                     let mappedError: Error
                     if let scoped = error as? SourceMetricFetchError {
                         mappedMetricId = scoped.metricId
                         mappedError = scoped.underlying
-                        recordMetricHealth(source: source, metricUsages: [:], errorsByMetric: scoped.errorsByMetric)
+                        recordMetricHealth(
+                            source: source, metricUsages: [:], errorsByMetric: scoped.errorsByMetric
+                        )
                     } else {
                         mappedMetricId = source.metrics.first?.id ?? "default"
                         mappedError = error
                         let presentation = source.mapFetchError(for: mappedMetricId, mappedError)
                         if source.metrics.count <= 1 {
-                            SourceHealthStore.shared.recordFailure(sourceName: name, presentation: presentation)
+                            SourceHealthStore.shared.recordFailure(
+                                sourceName: name, presentation: presentation)
                         } else {
-                            SourceHealthStore.shared.recordFailure(sourceName: name, metricId: mappedMetricId, presentation: presentation)
+                            SourceHealthStore.shared.recordFailure(
+                                sourceName: name, metricId: mappedMetricId,
+                                presentation: presentation)
                         }
                     }
-                    results[name] = fallbackDisplays(source: source, currentDisplays: results[name] ?? [:])
+                    results[name] = fallbackDisplays(
+                        source: source, currentDisplays: results[name] ?? [:])
                     appendFallbackPercents(source: source, into: &percentValues)
                 }
                 loadingSources.remove(name)
@@ -779,7 +877,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func enabledMetrics(for source: AISource) -> [AISourceMetric] {
-        source.metrics.filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
+        source.metrics.filter {
+            SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id)
+        }
     }
 
     private func stablePreviousUsage(
@@ -793,7 +893,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if source.metrics.count <= 1 {
             sourceHealth = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage
         } else {
-            sourceHealth = SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.lastSuccessfulUsage
+            sourceHealth =
+                SourceHealthStore.shared.health(for: source.name, metricId: metricId)?
+                .lastSuccessfulUsage
         }
 
         // An in-memory value can be stale or come from a non-polling path.
@@ -818,21 +920,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func statusItemRingScreenPoint(sourceName: String, metricId: String) -> CGPoint? {
         let metrics = selectedMetricsForStatusIcon()
-        guard let index = metrics.firstIndex(where: {
-            $0.sourceName == sourceName && $0.metricId == metricId
-        }),
-        let button = statusItem?.button,
-        let window = button.window else {
+        guard
+            let index = metrics.firstIndex(where: {
+                $0.sourceName == sourceName && $0.metricId == metricId
+            }),
+            let button = statusItem?.button,
+            let window = button.window
+        else {
             return nil
         }
 
-        let layoutWidth = statusRingSize * CGFloat(metrics.count) + statusRingSpacing * CGFloat(max(0, metrics.count - 1))
+        let layoutWidth =
+            statusRingSize * CGFloat(metrics.count) + statusRingSpacing
+            * CGFloat(max(0, metrics.count - 1))
         guard layoutWidth > 0 else { return nil }
         let imageRect = button.cell?.imageRect(forBounds: button.bounds) ?? button.bounds
         let scale = min(imageRect.width / layoutWidth, imageRect.height / statusRingSize)
         let renderedWidth = layoutWidth * scale
         let renderedOriginX = imageRect.midX - renderedWidth / 2
-        let x = renderedOriginX + (CGFloat(index) * (statusRingSize + statusRingSpacing) + statusRingSize / 2) * scale
+        let x =
+            renderedOriginX
+            + (CGFloat(index) * (statusRingSize + statusRingSpacing) + statusRingSize / 2)
+            * scale
         let pointInWindow = button.convert(NSPoint(x: x, y: imageRect.midY), to: nil)
         return window.convertPoint(toScreen: pointInWindow)
     }
@@ -843,7 +952,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func settingsChanged(_ note: Notification) {
         updateSyncServerLifecycle()
-        let enabled = Set(sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
+        let enabled = Set(
+            sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
         // prune results for disabled sources
         results = results.filter { enabled.contains($0.key) }
         latestUsageResults = latestUsageResults.filter { enabled.contains($0.key) }
@@ -853,7 +963,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         schedulePollTimer()
     }
 
-    private func updateSyncServerLifecycle(){syncServerTask?.cancel();peerSyncTask?.cancel();syncServerTask=nil;peerSyncTask=nil;guard SettingsStore.shared.syncServerEnabled,let repository=SyncEnvironment.shared.repository else{return};let changed:@Sendable () async -> Void = { @MainActor in try? SyncEnvironment.shared.refreshCompatibilityView();NotificationCenter.default.post(name:.aiDataRefreshed,object:nil) };let root=mobileWebRoot(),version=Versioning.versionString(bundle:.main);syncServerTask=Task{do{try await RashunSyncServer(repository:repository,host:"0.0.0.0",port:8787,webRoot:root,historyChanged:changed,appVersion:version).run()}catch{if !Task.isCancelled{NSLog("Rashun sync server stopped: %@",String(describing:error))}}};peerSyncTask=Task{await PeerSyncService(repository:repository,historyChanged:changed,appVersion:version).runForeground()}}
+    private func updateSyncServerLifecycle() {
+        syncServerTask?.cancel()
+        peerSyncTask?.cancel()
+        syncServerTask = nil
+        peerSyncTask = nil
+        guard SettingsStore.shared.syncServerEnabled,
+            let repository = SyncEnvironment.shared.repository
+        else { return }
+        let changed: @Sendable () async -> Void = { @MainActor in
+            try? SyncEnvironment.shared.refreshCompatibilityView()
+            NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
+        }
+        let root = mobileWebRoot()
+        let version = Versioning.versionString(bundle: .main)
+        syncServerTask = Task {
+            do {
+                try await RashunSyncServer(
+                    repository: repository, host: "0.0.0.0", port: 8787, webRoot: root,
+                    historyChanged: changed, appVersion: version
+                ).run()
+            } catch {
+                if !Task.isCancelled {
+                    NSLog("Rashun sync server stopped: %@", String(describing: error))
+                }
+            }
+        }
+        peerSyncTask = Task {
+            await PeerSyncService(
+                repository: repository, historyChanged: changed, appVersion: version
+            )
+            .runForeground()
+        }
+    }
 
     /// Never use `Bundle.module` during app startup. Its generated accessor calls fatalError when
     /// SwiftPM resources are laid out differently by a packaged/re-signed app.
@@ -863,13 +1005,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Bundle.main.bundleURL.appendingPathComponent("Contents/Resources"),
             Bundle.main.bundleURL.appendingPathComponent("Rashun_Rashun.bundle"),
             Bundle.main.resourceURL?.appendingPathComponent("Rashun_Rashun.bundle"),
-            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("Rashun_Rashun.bundle"),
-            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Web")
+            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent(
+                "Rashun_Rashun.bundle"),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent(
+                "Web"),
         ].compactMap { $0 }
         let candidates = bundleCandidates.flatMap { base in
             [
                 base.appendingPathComponent("RashunMobile"),
-                base.appendingPathComponent("Resources/RashunMobile")
+                base.appendingPathComponent("Resources/RashunMobile"),
             ]
         }
         return candidates.first {
@@ -942,18 +1086,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return Self.onPaceColorHex
             }
             if clampedScore > 0 {
-                return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.pushColorHex, fraction: clampedScore / 100)
+                return Self.interpolateHex(
+                    from: Self.onPaceColorHex, to: Self.pushColorHex, fraction: clampedScore / 100)
             }
             // Ease toward red faster so bad pacing reads clearly red well before -100.
             let fraction = (abs(clampedScore) / 100).squareRoot()
-            return Self.interpolateHex(from: Self.onPaceColorHex, to: Self.conserveColorHex, fraction: fraction)
+            return Self.interpolateHex(
+                from: Self.onPaceColorHex, to: Self.conserveColorHex, fraction: fraction)
         }
 
         private static let pushColorHex: UInt32 = 0x0DE2CF
         private static let onPaceColorHex: UInt32 = 0x955CFE
         private static let conserveColorHex: UInt32 = 0xFF1E33
 
-        private static func interpolateHex(from start: UInt32, to end: UInt32, fraction: Double) -> UInt32 {
+        private static func interpolateHex(from start: UInt32, to end: UInt32, fraction: Double)
+            -> UInt32
+        {
             let t = min(max(fraction, 0), 1)
             let startR = Double((start >> 16) & 0xFF)
             let startG = Double((start >> 8) & 0xFF)
@@ -973,7 +1121,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateTrackingSessionTitle(on: button)
         let metrics = selectedMetricsForStatusIcon()
         if metrics.isEmpty {
-            if let placeholder = NSImage(systemSymbolName: "circle.dashed", accessibilityDescription: "No selected metrics") {
+            if let placeholder = NSImage(
+                systemSymbolName: "circle.dashed", accessibilityDescription: "No selected metrics")
+            {
                 placeholder.isTemplate = true
                 button.image = placeholder
                 button.toolTip = nil
@@ -995,33 +1145,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateTrackingSessionTitle(on button: NSStatusBarButton) {
         guard SettingsStore.shared.showTrackingSessionInMenuBar,
-              let session = trackedUsageStore.activeSession,
-              let label = trackedUsageStore.labels.first(where: { $0.id == session.labelID }) else {
+            let session = trackedUsageStore.activeSession,
+            let label = trackedUsageStore.labels.first(where: { $0.id == session.labelID })
+        else {
             trackingIndicatorPulseTimer?.invalidate()
             trackingIndicatorPulseTimer = nil
             button.title = ""
             button.imagePosition = .imageOnly
             return
         }
-        applyTrackingSessionTitle(session: session, color: NSColor(hexString: label.colorHex) ?? .systemPurple, alpha: 1, button: button)
+        applyTrackingSessionTitle(
+            session: session, color: NSColor(hexString: label.colorHex) ?? .systemPurple, alpha: 1,
+            button: button)
         if trackingIndicatorPulseTimer == nil {
-            trackingIndicatorPulseTimer = Timer.scheduledTimer(timeInterval: 0.12, target: self, selector: #selector(pulseTrackingIndicator), userInfo: nil, repeats: true)
+            trackingIndicatorPulseTimer = Timer.scheduledTimer(
+                timeInterval: 0.12, target: self, selector: #selector(pulseTrackingIndicator),
+                userInfo: nil, repeats: true)
         }
     }
 
     @objc private func pulseTrackingIndicator() {
         guard let button = statusItem?.button,
-              let active = trackedUsageStore.activeSession,
-              SettingsStore.shared.showTrackingSessionInMenuBar,
-              let current = trackedUsageStore.labels.first(where: { $0.id == active.labelID }) else { return }
+            let active = trackedUsageStore.activeSession,
+            SettingsStore.shared.showTrackingSessionInMenuBar,
+            let current = trackedUsageStore.labels.first(where: { $0.id == active.labelID })
+        else { return }
         trackingIndicatorPulsePhase += 0.28
-        applyTrackingSessionTitle(session: active, color: NSColor(hexString: current.colorHex) ?? .systemPurple, alpha: 0.56 + 0.44 * ((sin(trackingIndicatorPulsePhase) + 1) / 2), button: button)
+        applyTrackingSessionTitle(
+            session: active, color: NSColor(hexString: current.colorHex) ?? .systemPurple,
+            alpha: 0.56 + 0.44 * ((sin(trackingIndicatorPulsePhase) + 1) / 2), button: button)
     }
 
-    private func applyTrackingSessionTitle(session: TrackedSession, color: NSColor, alpha: CGFloat, button: NSStatusBarButton) {
+    private func applyTrackingSessionTitle(
+        session: TrackedSession, color: NSColor, alpha: CGFloat, button: NSStatusBarButton
+    ) {
         button.attributedTitle = NSAttributedString(
             string: "● \(session.labelNameSnapshot) ",
-            attributes: [.foregroundColor: color.withAlphaComponent(alpha), .font: NSFont.systemFont(ofSize: 12, weight: .semibold)]
+            attributes: [
+                .foregroundColor: color.withAlphaComponent(alpha),
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            ]
         )
         button.imagePosition = .imageRight
     }
@@ -1031,18 +1194,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let appearance = SettingsStore.shared.menuBarAppearance
         let configuredSelections = appearance.selectedMetrics
         let validSelections = configuredSelections.filter { selection in
-            guard let source = enabledSources.first(where: { $0.name == selection.sourceName }) else { return false }
-            guard SettingsStore.shared.isMetricEnabled(sourceName: selection.sourceName, metricId: selection.metricId) else { return false }
+            guard let source = enabledSources.first(where: { $0.name == selection.sourceName })
+            else {
+                return false
+            }
+            guard
+                SettingsStore.shared.isMetricEnabled(
+                    sourceName: selection.sourceName, metricId: selection.metricId)
+            else { return false }
             return source.metrics.contains(where: { $0.id == selection.metricId })
         }
 
         let chosenSelections: [MenuBarMetricSelection]
         if configuredSelections.isEmpty {
-            chosenSelections = enabledSources
+            chosenSelections =
+                enabledSources
                 .flatMap { source in
                     source.metrics
-                        .filter { SettingsStore.shared.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
-                        .map { metric in MenuBarMetricSelection(sourceName: source.name, metricId: metric.id) }
+                        .filter {
+                            SettingsStore.shared.isMetricEnabled(
+                                sourceName: source.name, metricId: $0.id)
+                        }
+                        .map { metric in
+                            MenuBarMetricSelection(sourceName: source.name, metricId: metric.id)
+                        }
                 }
                 .map { $0 }
         } else {
@@ -1052,10 +1227,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         return chosenSelections.compactMap { selection in
             guard let source = enabledSources.first(where: { $0.name == selection.sourceName }),
-                  let metric = source.metrics.first(where: { $0.id == selection.metricId }) else {
+                let metric = source.metrics.first(where: { $0.id == selection.metricId })
+            else {
                 return nil
             }
-            let usage = usageResultForIcon(sourceName: selection.sourceName, metricId: selection.metricId)
+            let usage = usageResultForIcon(
+                sourceName: selection.sourceName, metricId: selection.metricId)
             let clampedPercent = usage.map { min(max($0.percentRemaining, 0), 100) } ?? 0
             return IconRingMetric(
                 sourceName: source.name,
@@ -1079,7 +1256,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if source.metrics.count <= 1 {
             return SourceHealthStore.shared.health(for: sourceName)?.lastSuccessfulUsage
         }
-        return SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.lastSuccessfulUsage
+        return SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?
+            .lastSuccessfulUsage
     }
 
     private func ringMetersImage(
@@ -1139,7 +1317,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let endAngle = startAngle - (2 * CGFloat.pi * progress)
 
         let trackPath = CGMutablePath()
-        trackPath.addArc(center: center, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: false)
+        trackPath.addArc(
+            center: center, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: false)
         context.addPath(trackPath)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
@@ -1149,13 +1328,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard progress > 0 else {
             drawRingCenter(in: rect, metric: metric, colorMode: colorMode, centerMode: centerMode)
             if showMetricBadges {
-                drawMetricBadgeIfNeeded(in: context, rect: rect, metric: metric, colorMode: colorMode)
+                drawMetricBadgeIfNeeded(
+                    in: context, rect: rect, metric: metric, colorMode: colorMode)
             }
             return
         }
 
         let progressPath = CGMutablePath()
-        progressPath.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+        progressPath.addArc(
+            center: center, radius: radius, startAngle: startAngle, endAngle: endAngle,
+            clockwise: true)
 
         switch colorMode {
         case .monochrome:
@@ -1204,8 +1386,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private var brandPrimaryColor: NSColor { NSColor(calibratedRed: 147 / 255, green: 90 / 255, blue: 253 / 255, alpha: 1) }
-    private var brandAccentColor: NSColor { NSColor(calibratedRed: 13 / 255, green: 228 / 255, blue: 209 / 255, alpha: 1) }
+    private var brandPrimaryColor: NSColor {
+        NSColor(calibratedRed: 147 / 255, green: 90 / 255, blue: 253 / 255, alpha: 1)
+    }
+    private var brandAccentColor: NSColor {
+        NSColor(calibratedRed: 13 / 255, green: 228 / 255, blue: 209 / 255, alpha: 1)
+    }
 
     private func trackColor(for mode: MenuBarColorMode) -> NSColor {
         switch mode {
@@ -1236,7 +1422,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         switch centerMode {
         case .logo:
             if let image = logoImage(for: metric) {
-                drawCenteredImage(image, in: centerRect, tint: colorMode == .pace ? foreground : nil)
+                drawCenteredImage(
+                    image, in: centerRect, tint: colorMode == .pace ? foreground : nil)
                 return
             }
             drawPercentageCenter(metric: metric, in: centerRect, color: foreground)
@@ -1261,15 +1448,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Bundle.module can hard-fail with fatalError during initialization.
         let appBundleCandidates: [URL?] = [
             Bundle.main.bundleURL.appendingPathComponent("Rashun_Rashun.bundle"),
-            Bundle.main.resourceURL?.appendingPathComponent("Rashun_Rashun.bundle")
+            Bundle.main.resourceURL?.appendingPathComponent("Rashun_Rashun.bundle"),
         ]
-        for bundleURL in appBundleCandidates.compactMap({ $0 }).filter({ FileManager.default.fileExists(atPath: $0.path) }) {
+        for bundleURL in appBundleCandidates.compactMap({ $0 }).filter({
+            FileManager.default.fileExists(atPath: $0.path)
+        }) {
             let logoCandidates = [
                 bundleURL.appendingPathComponent("SourceLogos/\(assetBaseName).png"),
                 bundleURL.appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png"),
-                bundleURL.appendingPathComponent("\(assetBaseName).png")
+                bundleURL.appendingPathComponent("\(assetBaseName).png"),
             ]
-            for candidate in logoCandidates where FileManager.default.fileExists(atPath: candidate.path) {
+            for candidate in logoCandidates
+            where FileManager.default.fileExists(atPath: candidate.path) {
                 if let image = NSImage(contentsOf: candidate) {
                     return image
                 }
@@ -1280,9 +1470,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                 .appendingPathComponent("Sources/Resources/SourceLogos/\(assetBaseName).png"),
             URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                .appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png")
+                .appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png"),
         ]
-        for candidate in localCandidates where FileManager.default.fileExists(atPath: candidate.path) {
+        for candidate in localCandidates
+        where FileManager.default.fileExists(atPath: candidate.path) {
             if let image = NSImage(contentsOf: candidate) {
                 return image
             }
@@ -1298,7 +1489,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func drawPercentageCenter(metric: IconRingMetric, in rect: CGRect, color: NSColor) {
         guard metric.hasUsage else {
-            drawCenterText("--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
+            drawCenterText(
+                "--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
             return
         }
         let percentRemaining = metric.percentRemaining
@@ -1317,7 +1509,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func drawPacePointsCenter(metric: IconRingMetric, in rect: CGRect, color: NSColor) {
         guard let status = metric.paceStatus else {
-            drawCenterText("--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
+            drawCenterText(
+                "--", in: rect, color: color.withAlphaComponent(0.9), size: 6.0, weight: .semibold)
             return
         }
 
@@ -1334,11 +1527,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         drawCenterText(text, in: rect, color: color, size: fontSize, weight: .bold)
     }
 
-    private func drawCenterText(_ text: String, in rect: CGRect, color: NSColor, size: CGFloat, weight: NSFont.Weight) {
+    private func drawCenterText(
+        _ text: String, in rect: CGRect, color: NSColor, size: CGFloat, weight: NSFont.Weight
+    ) {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: color
+            .foregroundColor: color,
         ]
         let nsText = NSString(string: text)
         let textSize = nsText.size(withAttributes: attributes)
@@ -1381,8 +1576,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         metric: IconRingMetric,
         colorMode: MenuBarColorMode
     ) {
-        guard let badgeText = metric.menuBarBadgeText?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !badgeText.isEmpty else {
+        guard
+            let badgeText = metric.menuBarBadgeText?.trimmingCharacters(
+                in: .whitespacesAndNewlines),
+            !badgeText.isEmpty
+        else {
             return
         }
 
@@ -1391,7 +1589,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor.white
+            .foregroundColor: NSColor.white,
         ]
         let nsText = NSString(string: badgeText)
         var textSize = nsText.size(withAttributes: attributes)
@@ -1400,12 +1598,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
             textSize = nsText.size(withAttributes: [
                 .font: font,
-                .foregroundColor: NSColor.white
+                .foregroundColor: NSColor.white,
             ])
         }
         let finalAttributes: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor.white
+            .foregroundColor: NSColor.white,
         ]
         let horizontalPadding: CGFloat = 2.1
         let badgeSize = CGSize(
@@ -1444,7 +1642,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         context.restoreGState()
     }
 
-    private func badgeFillColor(for metric: IconRingMetric, colorMode: MenuBarColorMode) -> NSColor {
+    private func badgeFillColor(for metric: IconRingMetric, colorMode: MenuBarColorMode) -> NSColor
+    {
         switch colorMode {
         case .monochrome:
             return NSColor.black.withAlphaComponent(0.95)
@@ -1501,19 +1700,27 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
                 let rules = SettingsStore.shared.ruleSettings(for: scopedName)
                 let history = UsageHistoryStore.shared.history(for: scopedName)
-                let previous = previousOverrides[source.name]?[metric.id].map {
-                    UsageSnapshot(timestamp: Date(), usage: $0)
-                } ?? history.last
+                let previous =
+                    previousOverrides[source.name]?[metric.id].map {
+                        UsageSnapshot(timestamp: Date(), usage: $0)
+                    } ?? history.last
                 let definitions = source.notificationDefinitions(for: metric.id)
 
                 for rule in rules where rule.isEnabled {
-                    guard let definition = definitions.first(where: { $0.id == rule.ruleId }) else { continue }
+                    guard let definition = definitions.first(where: { $0.id == rule.ruleId }) else {
+                        continue
+                    }
                     let ruleId = rule.ruleId
-                    guard ruleId != "metricReset" || confirmedResetMetricIds[source.name]?.contains(metric.id) == true else {
+                    guard
+                        ruleId != "metricReset"
+                            || confirmedResetMetricIds[source.name]?.contains(metric.id) == true
+                    else {
                         continue
                     }
                     let valueProvider: (String, Double) -> Double = { inputId, defaultValue in
-                        SettingsStore.shared.ruleInputValue(sourceName: scopedName, ruleId: ruleId, inputId: inputId, defaultValue: defaultValue)
+                        SettingsStore.shared.ruleInputValue(
+                            sourceName: scopedName, ruleId: ruleId, inputId: inputId,
+                            defaultValue: defaultValue)
                     }
 
                     let ctx = NotificationContext(
@@ -1528,15 +1735,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         inputValue: valueProvider
                     )
 
-                    let state = SettingsStore.shared.ruleState(sourceName: scopedName, ruleId: ruleId)
-                    let now=Date()
-                    guard let evaluated=NotificationEvaluator.evaluate(definition:definition,context:ctx,state:state,now:now) else { continue }
+                    let state = SettingsStore.shared.ruleState(
+                        sourceName: scopedName, ruleId: ruleId)
+                    let now = Date()
+                    guard
+                        let evaluated = NotificationEvaluator.evaluate(
+                            definition: definition, context: ctx, state: state, now: now)
+                    else { continue }
                     NotificationManager.shared.sendNotification(
                         title: evaluated.title,
                         body: evaluated.body,
                         route: .usageHistory
                     )
-                    SettingsStore.shared.setRuleState(evaluated.state, sourceName: scopedName, ruleId: ruleId)
+                    SettingsStore.shared.setRuleState(
+                        evaluated.state, sourceName: scopedName, ruleId: ruleId)
                     if ruleId == "metricReset" {
                         celebrations.append(
                             ResetCelebration(
@@ -1550,9 +1762,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
                 if SettingsStore.shared.syncServerEnabled {
                     do {
-                        try SyncEnvironment.shared.record(providerID: source.name, metricID: metric.id, usage: current)
+                        try SyncEnvironment.shared.record(
+                            providerID: source.name, metricID: metric.id, usage: current)
                     } catch {
-                        NSLog("Rashun canonical observation write failed: %@", String(describing: error))
+                        NSLog(
+                            "Rashun canonical observation write failed: %@",
+                            String(describing: error))
                     }
                 } else {
                     UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
@@ -1587,10 +1802,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if source.metrics.count <= 1 {
             return SourceHealthStore.shared.health(for: source.name)?.shortErrorMessage != nil
         }
-        return SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.shortErrorMessage != nil
+        return SourceHealthStore.shared.health(for: source.name, metricId: metricId)?
+            .shortErrorMessage
+            != nil
     }
 
-    private func recordMetricHealth(source: AISource, metricUsages: [String: UsageResult], errorsByMetric: [String: Error]) {
+    private func recordMetricHealth(
+        source: AISource, metricUsages: [String: UsageResult], errorsByMetric: [String: Error]
+    ) {
         if source.metrics.count <= 1 {
             guard let metric = source.metrics.first else { return }
             if let usage = metricUsages[metric.id] {
@@ -1599,25 +1818,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             if let error = errorsByMetric[metric.id] {
                 let presentation = source.mapFetchError(for: metric.id, error)
-                SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+                SourceHealthStore.shared.recordFailure(
+                    sourceName: source.name, presentation: presentation)
             }
             return
         }
 
         for metric in source.metrics {
             if let usage = metricUsages[metric.id] {
-                SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+                SourceHealthStore.shared.recordSuccess(
+                    sourceName: source.name, metricId: metric.id, usage: usage)
             } else if let error = errorsByMetric[metric.id] {
                 let presentation = source.mapFetchError(for: metric.id, error)
-                SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+                SourceHealthStore.shared.recordFailure(
+                    sourceName: source.name, metricId: metric.id, presentation: presentation)
             }
         }
     }
 
-    private func fallbackDisplays(source: AISource, currentDisplays: [String: String]) -> [String: String] {
+    private func fallbackDisplays(source: AISource, currentDisplays: [String: String]) -> [String:
+        String]
+    {
         if source.metrics.count <= 1 {
             guard let metricId = source.metrics.first?.id else { return [:] }
-            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage
+            {
                 return [metricId: previous.formatted]
             }
             return [:]
@@ -1626,7 +1851,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var fallback = currentDisplays
         for metric in source.metrics {
             if fallback[metric.id] != nil { continue }
-            if let previous = SourceHealthStore.shared.health(for: source.name, metricId: metric.id)?.lastSuccessfulUsage {
+            if let previous = SourceHealthStore.shared.health(
+                for: source.name, metricId: metric.id)?
+                .lastSuccessfulUsage
+            {
                 fallback[metric.id] = previous.formatted
             }
         }
@@ -1643,7 +1871,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if source.metrics.count <= 1 {
-            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage {
+            if let previous = SourceHealthStore.shared.health(for: source.name)?.lastSuccessfulUsage
+            {
                 let p = min(max(previous.percentRemaining, 0), 100)
                 percents.append(p)
             }
@@ -1651,7 +1880,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         for metricId in usableMetricIds {
-            guard let previous = SourceHealthStore.shared.health(for: source.name, metricId: metricId)?.lastSuccessfulUsage else { continue }
+            guard
+                let previous = SourceHealthStore.shared.health(
+                    for: source.name, metricId: metricId)?
+                    .lastSuccessfulUsage
+            else { continue }
             let p = min(max(previous.percentRemaining, 0), 100)
             percents.append(p)
         }
@@ -1672,15 +1905,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         if usages.isEmpty, let firstError {
-            throw SourceMetricFetchError(metricId: firstError.metricId, underlying: firstError.error, errorsByMetric: errorsByMetric)
+            throw SourceMetricFetchError(
+                metricId: firstError.metricId, underlying: firstError.error,
+                errorsByMetric: errorsByMetric)
         }
         return MetricFetchResult(usages: usages, errorsByMetric: errorsByMetric)
     }
 
     private func headerDetailText(for source: AISource) async -> String? {
         guard source.name == "Codex",
-              let balance = await CodexSource.latestResetBalance(),
-              balance.count > 0 else {
+            let balance = await CodexSource.latestResetBalance(),
+            balance.count > 0
+        else {
             return nil
         }
 
@@ -1706,11 +1942,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 }
 
-private extension NSColor {
-    convenience init?(hexString: String) {
+extension NSColor {
+    fileprivate convenience init?(hexString: String) {
         let value = hexString.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard let number = UInt64(value, radix: 16) else { return nil }
-        self.init(red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255, blue: CGFloat(number & 255) / 255, alpha: 1)
+        self.init(
+            red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255,
+            blue: CGFloat(number & 255) / 255, alpha: 1)
     }
 }
 
@@ -1719,7 +1957,8 @@ extension AppDelegate: @preconcurrency UNUserNotificationCenterDelegate {
     func userNotificationCenter(
         _: UNUserNotificationCenter,
         willPresent _: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .list, .sound])
     }
@@ -1731,7 +1970,10 @@ extension AppDelegate: @preconcurrency UNUserNotificationCenterDelegate {
     ) {
         defer { completionHandler() }
 
-        guard let route = NotificationManager.shared.route(for: response.notification.request.content.userInfo) else {
+        guard
+            let route = NotificationManager.shared.route(
+                for: response.notification.request.content.userInfo)
+        else {
             return
         }
 

@@ -33,18 +33,21 @@ struct StatusCommand: AsyncParsableCommand {
             try emitErrorAndExit(
                 code: "unknown_source",
                 short: "Unknown source",
-                detail: "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
+                detail:
+                    "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
                 exitCode: 2
             )
             return
         }
 
         if let metric,
-           !source.metrics.contains(where: { $0.id == metric }) {
+            !source.metrics.contains(where: { $0.id == metric })
+        {
             try emitErrorAndExit(
                 code: "unknown_metric",
                 short: "Unknown metric",
-                detail: "Source '\(source.name)' does not provide metric '\(metric)'. Available metrics: \(source.metrics.map(\.id).joined(separator: ", ")).",
+                detail:
+                    "Source '\(source.name)' does not provide metric '\(metric)'. Available metrics: \(source.metrics.map(\.id).joined(separator: ", ")).",
                 exitCode: 2
             )
             return
@@ -52,7 +55,7 @@ struct StatusCommand: AsyncParsableCommand {
 
         let outcome = await fetchSource(source)
         switch outcome {
-        case let .success(metrics):
+        case .success(let metrics):
             let filteredMetrics: [(AISourceMetric, UsageResult)]
             if let metric {
                 filteredMetrics = metrics.filter { $0.0.id == metric }
@@ -61,20 +64,21 @@ struct StatusCommand: AsyncParsableCommand {
             }
 
             if global.json {
-                try JSONOutput.print(SingleSourceStatusResponse(
-                    source: source.name,
-                    metrics: filteredMetrics.map { metric, usage in
-                        MetricStatus(
-                            id: metric.id,
-                            title: metric.title,
-                            percentRemaining: usage.percentRemaining,
-                            remaining: usage.remaining,
-                            limit: usage.limit,
-                            resetDate: usage.resetDate,
-                            cycleStartDate: usage.cycleStartDate
-                        )
-                    }
-                ))
+                try JSONOutput.print(
+                    SingleSourceStatusResponse(
+                        source: source.name,
+                        metrics: filteredMetrics.map { metric, usage in
+                            MetricStatus(
+                                id: metric.id,
+                                title: metric.title,
+                                percentRemaining: usage.percentRemaining,
+                                remaining: usage.remaining,
+                                limit: usage.limit,
+                                resetDate: usage.resetDate,
+                                cycleStartDate: usage.cycleStartDate
+                            )
+                        }
+                    ))
                 return
             }
 
@@ -89,10 +93,12 @@ struct StatusCommand: AsyncParsableCommand {
                 if let reset = usage.resetDate {
                     suffix = "  (resets \(shortResetText(reset)))"
                 }
-                print("  \(label.padding(toLength: 14, withPad: " ", startingAt: 0)) \(formatter.colorize(bar, as: color))  \(formatter.colorize(percent, as: color)) remaining\(suffix)")
+                print(
+                    "  \(label.padding(toLength: 14, withPad: " ", startingAt: 0)) \(formatter.colorize(bar, as: color))  \(formatter.colorize(percent, as: color)) remaining\(suffix)"
+                )
             }
 
-        case let .failure(code, presentation):
+        case .failure(let code, let presentation):
             try emitErrorAndExit(
                 code: code,
                 short: presentation.shortMessage,
@@ -110,26 +116,30 @@ struct StatusCommand: AsyncParsableCommand {
         for source in allSources {
             let outcome = await fetchSource(source)
             switch outcome {
-            case let .success(metrics):
-                active.append(AllSourcesActive(
-                    source: source.name,
-                    metrics: metrics.map { metric, usage in
-                        MetricStatus(
-                            id: metric.id,
-                            title: metric.title,
-                            percentRemaining: usage.percentRemaining,
-                            remaining: usage.remaining,
-                            limit: usage.limit,
-                            resetDate: usage.resetDate,
-                            cycleStartDate: usage.cycleStartDate
-                        )
-                    }
-                ))
-            case let .failure(code, presentation):
-                inactive.append(AllSourcesInactive(
-                    source: source.name,
-                    error: ErrorStatus(code: code, short: presentation.shortMessage, detail: presentation.detailedMessage)
-                ))
+            case .success(let metrics):
+                active.append(
+                    AllSourcesActive(
+                        source: source.name,
+                        metrics: metrics.map { metric, usage in
+                            MetricStatus(
+                                id: metric.id,
+                                title: metric.title,
+                                percentRemaining: usage.percentRemaining,
+                                remaining: usage.remaining,
+                                limit: usage.limit,
+                                resetDate: usage.resetDate,
+                                cycleStartDate: usage.cycleStartDate
+                            )
+                        }
+                    ))
+            case .failure(let code, let presentation):
+                inactive.append(
+                    AllSourcesInactive(
+                        source: source.name,
+                        error: ErrorStatus(
+                            code: code, short: presentation.shortMessage,
+                            detail: presentation.detailedMessage)
+                    ))
             }
         }
 
@@ -139,12 +149,15 @@ struct StatusCommand: AsyncParsableCommand {
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("📊", fallback: "*")) \(formatter.colorize("AI Usage Status", as: .bold))")
+        print(
+            "\(formatter.emoji("📊", fallback: "*")) \(formatter.colorize("AI Usage Status", as: .bold))"
+        )
         print("")
 
         for source in active {
             for metric in source.metrics {
-                let rowLabel = source.metrics.count > 1 ? "\(source.source) \(metric.title)" : source.source
+                let rowLabel =
+                    source.metrics.count > 1 ? "\(source.source) \(metric.title)" : source.source
                 let bar = formatter.progressBar(percent: metric.percentRemaining)
                 let color = colorForPercent(metric.percentRemaining)
                 let percent = String(format: "%5.1f%%", metric.percentRemaining)
@@ -152,15 +165,21 @@ struct StatusCommand: AsyncParsableCommand {
                 if let reset = metric.resetDate {
                     suffix = "  (resets \(shortResetText(reset)))"
                 }
-                print("\(rowLabel.padding(toLength: 18, withPad: " ", startingAt: 0)) \(formatter.colorize(bar, as: color))  \(formatter.colorize(percent, as: color)) remaining\(suffix)")
+                print(
+                    "\(rowLabel.padding(toLength: 18, withPad: " ", startingAt: 0)) \(formatter.colorize(bar, as: color))  \(formatter.colorize(percent, as: color)) remaining\(suffix)"
+                )
             }
         }
 
         if !inactive.isEmpty {
             print("")
-            print("\(formatter.emoji("⚠️", fallback: "!")) \(formatter.colorize("Inactive sources:", as: .yellow))")
+            print(
+                "\(formatter.emoji("⚠️", fallback: "!")) \(formatter.colorize("Inactive sources:", as: .yellow))"
+            )
             for failed in inactive {
-                print("  \(failed.source) - \(failed.error.short). Run `rashun check \(failed.source)` for details.")
+                print(
+                    "  \(failed.source) - \(failed.error.short). Run `rashun check \(failed.source)` for details."
+                )
             }
         }
     }
@@ -173,9 +192,11 @@ struct StatusCommand: AsyncParsableCommand {
         for metric in source.metrics {
             do {
                 let usage = try await source.fetchUsage(for: metric.id)
-                try SyncEnvironment.shared.record(providerID: source.name, metricID: metric.id, usage: usage)
+                try SyncEnvironment.shared.record(
+                    providerID: source.name, metricID: metric.id, usage: usage)
                 if source.metrics.count > 1 {
-                    SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+                    SourceHealthStore.shared.recordSuccess(
+                        sourceName: source.name, metricId: metric.id, usage: usage)
                 } else {
                     SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
                 }
@@ -184,9 +205,11 @@ struct StatusCommand: AsyncParsableCommand {
                 let presentation = source.mapFetchError(for: metric.id, error)
                 let code = classificationCode(error)
                 if source.metrics.count > 1 {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, metricId: metric.id, presentation: presentation)
                 } else {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, presentation: presentation)
                 }
                 if firstFailure == nil {
                     firstFailure = (code, presentation)
@@ -209,11 +232,14 @@ struct StatusCommand: AsyncParsableCommand {
             return "source_not_configured"
         case CopilotFetchError.ghNotInstalled, CopilotFetchError.ghNoToken:
             return "source_not_configured"
-        case CodexFetchError.sessionsDirectoryMissing, CodexFetchError.sessionsDirectoryUnreadable, CodexFetchError.noSessionFiles:
+        case CodexFetchError.sessionsDirectoryMissing, CodexFetchError.sessionsDirectoryUnreadable,
+            CodexFetchError.noSessionFiles:
             return "source_not_configured"
-        case GeminiFetchError.credentialsMissing, GeminiFetchError.accessTokenExpiredNoRefresh, GeminiFetchError.oauthClientUnavailable, GeminiFetchError.projectResolutionFailed:
+        case GeminiFetchError.credentialsMissing, GeminiFetchError.accessTokenExpiredNoRefresh,
+            GeminiFetchError.oauthClientUnavailable, GeminiFetchError.projectResolutionFailed:
             return "source_not_configured"
-        case CursorFetchError.stateDatabaseMissing, CursorFetchError.sqlite3NotFound, CursorFetchError.accessTokenMissing:
+        case CursorFetchError.stateDatabaseMissing, CursorFetchError.sqlite3NotFound,
+            CursorFetchError.accessTokenMissing:
             return "source_not_configured"
         default:
             return "fetch_failed"
@@ -253,12 +279,17 @@ struct StatusCommand: AsyncParsableCommand {
         return "\(value)\(unit) ago"
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)

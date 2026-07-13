@@ -9,7 +9,10 @@ public struct NotificationInputSpec {
     public let max: Double
     public let step: Double
 
-    public init(id: String, label: String, unit: String?, defaultValue: Double, min: Double, max: Double, step: Double) {
+    public init(
+        id: String, label: String, unit: String?, defaultValue: Double, min: Double, max: Double,
+        step: Double
+    ) {
         self.id = id
         self.label = label
         self.unit = unit
@@ -27,7 +30,10 @@ public struct NotificationDefinition {
     public let inputs: [NotificationInputSpec]
     public let evaluate: (NotificationContext) -> NotificationEvent?
 
-    public init(id: String, title: String, detail: String, inputs: [NotificationInputSpec], evaluate: @escaping (NotificationContext) -> NotificationEvent?) {
+    public init(
+        id: String, title: String, detail: String, inputs: [NotificationInputSpec],
+        evaluate: @escaping (NotificationContext) -> NotificationEvent?
+    ) {
         self.id = id
         self.title = title
         self.detail = detail
@@ -61,7 +67,7 @@ public struct UsageSnapshot: Codable {
 }
 
 public struct NotificationContext {
-    public let now:Date
+    public let now: Date
     public let sourceName: String
     public let metricId: String?
     public let metricTitle: String?
@@ -70,8 +76,12 @@ public struct NotificationContext {
     public let history: [UsageSnapshot]
     public let inputValue: (String, Double) -> Double
 
-    public init(sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult, previous: UsageSnapshot?, history: [UsageSnapshot], now:Date=Date(), inputValue: @escaping (String, Double) -> Double) {
-        self.now=now
+    public init(
+        sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult,
+        previous: UsageSnapshot?, history: [UsageSnapshot], now: Date = Date(),
+        inputValue: @escaping (String, Double) -> Double
+    ) {
+        self.now = now
         self.sourceName = sourceName
         self.metricId = metricId
         self.metricTitle = metricTitle

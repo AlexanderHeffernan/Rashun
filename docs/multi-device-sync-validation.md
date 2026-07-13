@@ -17,7 +17,7 @@ This file distinguishes implementation evidence from physical-platform release g
 | Complete/incremental backfill | Origin summaries/gaps, range planner, 500-record pages, durable per-page inserts, 1,201-record three-page convergence and address fallback tests |
 | Current mobile API | Authenticated deterministic current projection; wrong-scope and replay rejection tests |
 | Embedded service | Hummingbird bounded routes, exact CORS, optional trusted TLS, fail-closed non-loopback CLI configuration, static PWA route tests |
-| Discovery/fallback | Apple Bonjour browser/advertiser, Avahi and Windows DNS-SD adapters, parser tests, manual/Tailscale HTTPS validation and persistent address health |
+| Connectivity/fallback | Bonjour advertisement, manual/Tailscale HTTPS validation, persistent peer addresses, and address health tracking |
 | Mobile PWA | Packaged offline shell; three screens; IndexedDB; non-extractable AES-GCM key; HMAC requests; deterministic multi-peer merge; stale cache; visible-only polling/backoff; Node vectors |
 | Notification extraction | Injected clock, deterministic crossing event ID and state transition tests; existing macOS delivery retained |
 | Existing behavior | Complete `swift test` suite and macOS product build |
