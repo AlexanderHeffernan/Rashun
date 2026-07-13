@@ -104,6 +104,24 @@
         </div>
         <div id="usage-list" class="usage-list" aria-live="polite"></div>
       </section>
+      <section id="widget-setup" class="widget-setup" hidden>
+        <header class="setup-header">
+          <button id="widget-back" class="icon-button small" aria-label="Back">‹</button>
+          <div><span class="eyebrow">One-time setup</span><h1>iOS Widget</h1></div>
+        </header>
+        <div class="setup-hero">
+          <img src="assets/rashun-icon.jpg" alt="" />
+          <div><h2>Rashun at a glance</h2><p>Your widget follows the rings and colours selected on your Mac automatically.</p></div>
+        </div>
+        <ol class="setup-steps">
+          <li><span>1</span><div><h3>Install Scriptable</h3><p>Scriptable securely hosts the widget on iOS.</p><a class="action secondary" href="https://apps.apple.com/app/scriptable/id1405459188">Open App Store</a></div></li>
+          <li><span>2</span><div><h3>Add the Rashun script</h3><p>Download the script, then share or open it with Scriptable. You can also copy it and create a script named “Rashun Widget”.</p><div class="action-row"><a class="action primary" href="RashunWidget.js" download>Download script</a><button id="copy-script" class="action secondary">Copy script</button></div></div></li>
+          <li><span>3</span><div><h3>Copy your secure setup code</h3><p>This short-lived code pairs Scriptable with this Mac. It contains no AI-provider credentials.</p><button id="copy-widget-code" class="action primary">Create & copy setup code</button><p id="widget-code-status" class="setting-note" role="status"></p></div></li>
+          <li><span>4</span><div><h3>Run once in Scriptable</h3><p>Open “Rashun Widget”, tap Run, then choose <strong>Set up from clipboard</strong>. Rashun will test the connection and save it securely.</p></div></li>
+          <li><span>5</span><div><h3>Add it to your Home or Lock Screen</h3><p>Long-press the Home or Lock Screen → Add Widget → Scriptable, then select “Rashun Widget”. Small widgets mirror your selected menu-bar rings.</p><p>To choose a specific ring, set its widget parameter to <code>Source:metric-id</code>, for example <code>Codex:codex-pro-weekly</code>. Leave it blank to use your first selected menu-bar ring. For multiple Lock Screen rings, add the circular Scriptable widget more than once and give each copy a different parameter.</p></div></li>
+        </ol>
+        <p class="setup-footnote">Rashun requests a refresh every 15 minutes, but iOS chooses the actual time based on battery, usage, and other system conditions. The displayed timestamp is the newest reading received from your Mac.</p>
+      </section>
     </main>
 
     <dialog id="settings-dialog">
@@ -133,6 +151,7 @@
           ><input id="notifications-toggle" type="checkbox" /><span></span
         ></label>
       </section>
+      <button id="open-widget-setup" class="settings-link" type="button"><span>◉</span><span><strong>Widget Setup</strong><small>Add Rashun to your iPhone Home Screen</small></span><b>›</b></button>
       <button id="disconnect" class="danger-button" type="button">
         <span>↗</span> Disconnect this device
       </button>

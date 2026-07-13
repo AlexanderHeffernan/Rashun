@@ -1,9 +1,10 @@
-const CACHE = "rashun-shell-v5",
+const CACHE = "rashun-shell-v8",
   ASSETS = [
     "./",
     "index.html",
     "app.css",
     "app.js",
+    "RashunWidget.js",
     "manifest.webmanifest",
     "assets/rashun-icon.jpg",
     "assets/amp.png",

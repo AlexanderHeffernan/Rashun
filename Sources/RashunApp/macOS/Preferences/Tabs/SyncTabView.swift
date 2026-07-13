@@ -11,12 +11,13 @@ final class SyncPreferencesViewModel: ObservableObject {
         let addresses: [SyncRepository.PeerAddress]
         var id: UUID { peer.credentialID }
         var isMobile: Bool { peer.scopes.contains(.mobileRead) }
+        var isWidget: Bool { peer.scopes.contains(.widgetRead) }
         var lastActivityAt: Date? {
             ([peer.lastSeenAt] + addresses.map(\.lastSuccessAt)).compactMap { $0 }.max()
         }
         var isOnline: Bool {
             guard let lastActivityAt else { return false }
-            return Date().timeIntervalSince(lastActivityAt) < (isMobile ? 90 : 35)
+            return Date().timeIntervalSince(lastActivityAt) < (isMobile || isWidget ? 90 : 35)
         }
         var presenceText: String {
             guard !isOnline else { return "Connected just now" }
@@ -32,6 +33,7 @@ final class SyncPreferencesViewModel: ObservableObject {
             if isMobile {
                 return peer.hasPushSubscription ? "Notifications enabled" : "Notifications off"
             }
+            if isWidget { return "Read-only widget" }
             return syncStatus
         }
         var syncStatus: String {
@@ -362,8 +364,8 @@ struct SyncTabView: View {
                     ForEach(model.peers) { row in
                         HStack(spacing: 14) {
                             BrandIconTile(
-                                systemName: row.peer.scopes.contains(.mobileRead)
-                                    ? "iphone" : "desktopcomputer")
+                                systemName: row.isWidget
+                                    ? "rectangle.on.rectangle" : (row.isMobile ? "iphone" : "desktopcomputer"))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.peer.displayName).fontWeight(.semibold)
                                 HStack(spacing: 6) {
@@ -386,11 +388,13 @@ struct SyncTabView: View {
                             }
                             Spacer()
                             Menu {
-                                Button(model.retryingPeerID == row.id ? "Retrying…" : "Retry sync")
-                                {
-                                    model.retry(row.id)
+                                if !row.isMobile && !row.isWidget {
+                                    Button(model.retryingPeerID == row.id ? "Retrying…" : "Retry sync")
+                                    {
+                                        model.retry(row.id)
+                                    }
+                                    .disabled(model.retryingPeerID != nil)
                                 }
-                                .disabled(model.retryingPeerID != nil)
                                 Button("Copy sync diagnostics") { model.copyDiagnostics(row) }
                                 Button("Remove", role: .destructive) { model.remove(row.id) }
                             } label: {

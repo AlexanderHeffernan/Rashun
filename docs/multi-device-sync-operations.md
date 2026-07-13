@@ -42,6 +42,18 @@ LAN HTTP supports the immediate browser experience but is not a secure context. 
 
 iOS does not provide reliable service-worker background timers. Rashun makes no background polling claim. Web Push is disabled until installed-iOS delivery is demonstrated with the PWA closed, the device locked, and the PWA terminated.
 
+### Scriptable Home Screen widget
+
+The optional iOS widget is configured from **Rashun Mobile → Settings → Widget Setup**. The guide links to Scriptable, provides the self-contained `RashunWidget.js`, and creates a short-lived setup code. Running the script once exchanges that code for an independent `widgetRead` credential stored in Scriptable Keychain. Removing the “iOS Widget” device in desktop Preferences revokes it.
+
+Small widgets follow the desktop menu-bar metric order, color mode, center content, and badge settings. Medium and large widgets use the same enabled metrics, titles, colors, and timing details as Rashun Mobile. Changes are returned in later snapshots and do not require re-pairing. Scriptable caches only validated snapshot data in local storage; credentials never enter cache files.
+
+Accessory circular and rectangular Lock Screen families show one selected ring. Set the Scriptable widget parameter to `Source:metric-id` (for example `Codex:codex-pro-weekly`) or `source=Codex;metric=codex-pro-weekly`. When omitted, Rashun uses the first selected menu-bar ring. Source logos are served as versioned Rashun assets and cached locally by Scriptable; a Rashun app-version change naturally refreshes that cache.
+
+To show several Lock Screen rings, add several circular Scriptable widgets and assign a different metric parameter to each copy.
+
+Widget refresh timing is controlled by iOS. Rashun requests its next refresh after 15 minutes, but that is only the earliest permitted time. The displayed timestamp uses the newest source observation, and the widget falls back to the last valid cache when the desktop is unavailable. HTTPS is preferred. HTTP setup requires an explicit trusted-network warning in Scriptable and should not be used on an untrusted network.
+
 ## Diagnostics and validation
 
 ```sh

@@ -206,6 +206,7 @@ async function refresh({ showProgress = false } = {}) {
   }
 }
 function render(value, stale) {
+  if (!document.querySelector("#widget-setup").hidden) return;
   document.querySelector("#setup").hidden = true;
   document.querySelector("#usage").hidden = false;
   document.querySelector("#reachability").textContent = stale
@@ -222,11 +223,14 @@ function render(value, stale) {
             item.limit > 0
               ? Math.max(0, Math.min(100, (item.remaining / item.limit) * 100))
               : 0,
-          color = validColor(item.colorHex) ? item.colorHex : "#935AFD",
+          color = validColor(item.displayColorHex)
+            ? item.displayColorHex
+            : validColor(item.colorHex) ? item.colorHex : "#935AFD",
           icon = item.iconName
             ? `<img src="assets/${encodeURIComponent(item.iconName)}.png" alt="">`
             : `<span class="source-fallback">${escapeHTML(initials(item.sourceName || item.providerID))}</span>`;
-        return `<article class="metric-card" style="--metric:${color}"><div class="metric-header"><div class="source">${icon}<span>${escapeHTML(item.sourceName || item.providerID)}</span></div>${item.headerDetail ? `<span class="header-detail">${escapeHTML(item.headerDetail)}</span>` : ""}</div><div class="metric-line"><span class="metric-title">${escapeHTML(item.metricTitle || item.metricID)}</span><span class="bar"><i style="width:${percent}%"></i></span><span class="percent">${percent.toFixed(0)}%</span></div><div class="detail">${escapeHTML(item.detailText || resetDescription(item.resetAt, percent))}${stale ? " · Cached" : ""}</div></article>`;
+        const warning = `<span class="metric-warning${item.hasWarning ? "" : " absent"}"${item.hasWarning ? ' aria-label="Rashun reported a warning"' : ""}>${item.hasWarning ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.7 20h18.6L12 3Z"/><path d="M12 8v6M12 17.2v.1"/></svg>' : ""}</span>`;
+        return `<article class="metric-card" style="--metric:${color}"><div class="metric-header"><div class="source">${icon}<span>${escapeHTML(item.sourceName || item.providerID)}</span></div>${item.headerDetail ? `<span class="header-detail">${escapeHTML(item.headerDetail)}</span>` : ""}</div><div class="metric-line"><span class="metric-title">${escapeHTML(item.metricTitle || item.metricID)}</span><span class="bar"><i style="width:${percent}%"></i></span>${warning}<span class="percent">${percent.toFixed(0)}%</span></div><div class="detail">${escapeHTML(item.detailText || resetDescription(item.resetAt, percent))}${stale ? " · Cached" : ""}</div></article>`;
       })
       .join("") ||
     '<p class="empty">No metrics are currently shown in Rashun’s desktop menu. Enable them from Preferences → Sources.</p>';
@@ -428,6 +432,10 @@ async function disconnect() {
   }
 }
 async function start() {
+  if (location.hash === "#widget-setup") {
+    showWidgetSetup();
+    return;
+  }
   try {
     if (await pairFromLink())
       history.replaceState(null, "", location.pathname + location.search);
@@ -467,8 +475,45 @@ document
   .querySelector("#notifications-toggle")
   .addEventListener("change", toggleNotifications);
 document.querySelector("#disconnect").addEventListener("click", disconnect);
+function showWidgetSetup() {
+  document.querySelector("#settings-dialog").close();
+  document.querySelector("#usage").hidden = true;
+  document.querySelector("#widget-setup").hidden = false;
+  history.replaceState(null, "", `${location.pathname}${location.search}#widget-setup`);
+  scrollTo(0, 0);
+}
+function hideWidgetSetup() {
+  document.querySelector("#widget-setup").hidden = true;
+  document.querySelector("#usage").hidden = false;
+  history.replaceState(null, "", location.pathname + location.search);
+}
+async function copyWidgetSetup() {
+  const status = document.querySelector("#widget-code-status");
+  status.textContent = "Creating a secure setup code…";
+  try {
+    const { headers } = await requestHeaders("POST", "/v1/widget/setup"),
+      response = await fetch("/v1/widget/setup", { method: "POST", headers, credentials: "same-origin" });
+    if (!response.ok) throw new Error("Could not create a setup code.");
+    const access = await response.json(), payload = {
+      version: 1, endpoint: location.origin, password: access.password,
+      deviceName: document.title || "Rashun", openURL: location.origin,
+      allowInsecureHTTP: location.protocol === "http:"
+    };
+    await navigator.clipboard.writeText(`RASHUN-WIDGET-1:${btoa(unescape(encodeURIComponent(JSON.stringify(payload))))}`);
+    status.textContent = "Copied. Return to Scriptable and run the Rashun script.";
+  } catch (error) { status.textContent = error.message || "Copy failed. Try again."; }
+}
+document.querySelector("#open-widget-setup").addEventListener("click", showWidgetSetup);
+document.querySelector("#widget-back").addEventListener("click", hideWidgetSetup);
+document.querySelector("#copy-widget-code").addEventListener("click", copyWidgetSetup);
+document.querySelector("#copy-script").addEventListener("click", async () => {
+  const script = await fetch("RashunWidget.js").then((response) => response.text());
+  await navigator.clipboard.writeText(script);
+  document.querySelector("#copy-script").textContent = "Copied";
+});
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden) refresh();
+  if (!document.hidden && document.querySelector("#widget-setup").hidden)
+    refresh();
 });
 if ("serviceWorker" in navigator && window.isSecureContext)
   navigator.serviceWorker.register("service-worker.js");

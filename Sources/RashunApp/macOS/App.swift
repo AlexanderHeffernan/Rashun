@@ -204,12 +204,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func publishMobileUsagePresentation(enabledSources: [AISource]) {
         let logoNames = Set(["amp", "codex", "copilot", "cursor", "gemini"])
+        let appearance = SettingsStore.shared.menuBarAppearance
         let presentations = enabledSources.flatMap { source -> [MobileMetricPresentation] in
             let metrics = enabledMetrics(for: source)
             let sourceHasSingleMetric = source.metrics.count <= 1 && metrics.count <= 1
             return metrics.map { metric in
                 let usage = usageResultForIcon(sourceName: source.name, metricId: metric.id)
+                let pace = usage.flatMap { paceStatus(source: source, metric: metric, usage: $0) }
                 let slug = source.name.lowercased()
+                let displayColor: UInt32 = {
+                    if appearance.colorMode == .pace { return pace?.colorHex ?? source.menuBarBrandColorHex }
+                    return source.menuBarBrandColorHex
+                }()
+                let badgeBase = appearance.colorMode == .brandGradient ? 0x0DE4D1 : displayColor
+                let badgeColor = appearance.colorMode == .monochrome
+                    ? UInt32(0) : Self.darkenWidgetColor(badgeBase)
                 return MobileMetricPresentation(
                     providerID: source.name,
                     metricID: metric.id,
@@ -220,11 +229,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         metricTimingText(source: source, metric: metric, usage: $0)
                     },
                     iconName: logoNames.contains(slug) ? slug : nil,
-                    colorHex: String(format: "#%06X", source.menuBarBrandColorHex)
+                    colorHex: String(format: "#%06X", source.menuBarBrandColorHex),
+                    menuBarBadgeText: metric.menuBarBadgeText,
+                    displayColorHex: String(format: "#%06X", displayColor),
+                    paceColorHex: pace.map { String(format: "#%06X", $0.colorHex) },
+                    paceScore: pace?.score,
+                    iconPath: logoNames.contains(slug) ? "assets/\(slug).png" : nil,
+                    badgeColorHex: String(format: "#%06X", badgeColor),
+                    hasWarning: metricHasWarning(source: source, metricId: metric.id)
                 )
             }
         }
-        Task { await MobileUsagePresentationStore.shared.replace(presentations) }
+        let widgetAppearance = MobileWidgetAppearance(
+            colorMode: appearance.colorMode.rawValue,
+            centerContentMode: appearance.centerContentMode.rawValue,
+            showMetricBadges: appearance.showMetricBadges,
+            metrics: selectedMetricsForStatusIcon().map {
+                .init(providerID: $0.sourceName, metricID: $0.metricId)
+            })
+        Task {
+            await MobileUsagePresentationStore.shared.replace(presentations)
+            await MobileUsagePresentationStore.shared.replaceAppearance(widgetAppearance)
+        }
+    }
+
+    private static func darkenWidgetColor(_ color: UInt32) -> UInt32 {
+        let red = UInt32(round(Double((color >> 16) & 0xFF) * 0.58))
+        let green = UInt32(round(Double((color >> 8) & 0xFF) * 0.58))
+        let blue = UInt32(round(Double(color & 0xFF) * 0.58))
+        return (red << 16) | (green << 8) | blue
     }
 
     private func addTrackingMenuSection() {

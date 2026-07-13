@@ -14,6 +14,13 @@ public struct CurrentUsageDTO: Codable, Sendable {
         public let detailText: String?
         public let iconName: String?
         public let colorHex: String
+        public let displayColorHex: String
+        public let paceColorHex: String?
+        public let paceScore: Double?
+        public let iconPath: String?
+        public let badgeColorHex: String
+        public let menuBarBadgeText: String?
+        public let hasWarning: Bool
         public let remaining: Double
         public let limit: Double
         public let resetAt: Date?
@@ -25,6 +32,36 @@ public struct CurrentUsageDTO: Codable, Sendable {
     public let items: [Item]
     public let generatedAt: Date
 }
+
+public struct WidgetSnapshotDTO: Codable, Sendable {
+    public struct Device: Codable, Sendable { public let id: UUID; public let name: String }
+    public struct Appearance: Codable, Sendable {
+        public struct Metric: Codable, Sendable {
+            public let providerID: String; public let metricID: String
+        }
+        public let colorMode: String
+        public let centerContentMode: String
+        public let showMetricBadges: Bool
+        public let metrics: [Metric]
+        public let backgroundColorHex: String
+        public let cardColorHex: String
+        public let cardAlternateColorHex: String
+        public let primaryTextColorHex: String
+        public let secondaryTextColorHex: String
+        public let warningColorHex: String
+        public let primaryBrandColorHex: String
+        public let accentBrandColorHex: String
+        public let ringTrackColorHex: String
+    }
+    public let schemaVersion: Int
+    public let assetVersion: String?
+    public let generatedAt: Date
+    public let device: Device
+    public let appearance: Appearance
+    public let items: [CurrentUsageDTO.Item]
+}
+
+private struct WidgetSetupDTO: Codable { let password: String; let expiresAt: Date }
 
 private struct WebPushKeyDTO: Codable { let publicKey: String }
 private struct WebPushSubscriptionDTO: Codable {
@@ -209,12 +246,49 @@ public struct RashunSyncServer: Sendable {
                                 sourceName: display.sourceName, metricTitle: display.metricTitle,
                                 headerDetail: display.headerDetail, detailText: display.detailText,
                                 iconName: display.iconName, colorHex: display.colorHex,
+                                displayColorHex: display.displayColorHex,
+                                paceColorHex: display.paceColorHex, paceScore: display.paceScore,
+                                iconPath: display.iconPath,
+                                badgeColorHex: display.badgeColorHex,
+                                menuBarBadgeText: display.menuBarBadgeText,
+                                hasWarning: display.hasWarning,
                                 remaining: value.remaining,
                                 limit: value.limit, resetAt: value.resetAt,
                                 cycleStartedAt: value.cycleStartedAt,
                                 observedAt: value.observedAt, originDeviceID: value.origin.deviceID,
                                 originEpoch: value.origin.epoch)
                         }, generatedAt: Date())))
+        }
+        router.post("/v1/widget/setup") { request, _ -> String in
+            _ = try authenticate(
+                request: request, body: Data(), repository: repository, required: .mobileRead)
+            let access = try PairingCoordinator.simpleAccess(repository: repository, scope: .widgetRead)
+            return try json(WidgetSetupDTO(password: access.password, expiresAt: access.expiresAt))
+        }
+        router.get("/v1/widget/snapshot") { request, _ -> String in
+            _ = try authenticate(
+                request: request, body: Data(), repository: repository, required: .widgetRead)
+            let items = try await currentItems(repository: repository)
+            let configured = await MobileUsagePresentationStore.shared.appearanceSnapshot()
+            let appearance = WidgetSnapshotDTO.Appearance(
+                colorMode: configured?.colorMode ?? "sourceSolid",
+                centerContentMode: configured?.centerContentMode ?? "percentage",
+                showMetricBadges: configured?.showMetricBadges ?? true,
+                metrics: (configured?.metrics ?? []).map {
+                    .init(providerID: $0.providerID, metricID: $0.metricID)
+                }, backgroundColorHex: configured?.backgroundColorHex ?? "#131129",
+                cardColorHex: configured?.cardColorHex ?? "#1C1836",
+                cardAlternateColorHex: configured?.cardAlternateColorHex ?? "#241E44",
+                primaryTextColorHex: configured?.primaryTextColorHex ?? "#FFFFFF",
+                secondaryTextColorHex: configured?.secondaryTextColorHex ?? "#B9B4D6",
+                warningColorHex: configured?.warningColorHex ?? "#FFD166",
+                primaryBrandColorHex: configured?.primaryBrandColorHex ?? "#935AFD",
+                accentBrandColorHex: configured?.accentBrandColorHex ?? "#0DE4D1",
+                ringTrackColorHex: configured?.ringTrackColorHex ?? "#5C596A")
+            return try json(WidgetSnapshotDTO(
+                schemaVersion: 1, assetVersion: appVersion, generatedAt: Date(),
+                device: .init(id: repository.identity.deviceID, name: repository.identity.displayName),
+                appearance: appearance, items: items))
         }
         router.post("/v1/mobile/disconnect") { request, _ -> Response in
             let credential = try authenticate(
@@ -365,6 +439,41 @@ private func authenticate(
     else { throw HTTPError(.unauthorized) }
     try repository.markPeerSeen(credentialID: id)
     return credential
+}
+
+private func currentItems(repository: SyncRepository) async throws -> [CurrentUsageDTO.Item] {
+    let values = HistoryProjector.current(try repository.allObservations()).values.sorted {
+        $0.series.description < $1.series.description
+    }
+    let presentation = await MobileUsagePresentationStore.shared.snapshot()
+    let selected = presentation.map { configured in
+        configured.compactMap { item in
+            values.first(where: {
+                $0.series.providerID == item.providerID && $0.series.metricID == item.metricID
+            }).map { ($0, item) }
+        }
+    } ?? values.map { value in
+        (value, MobileMetricPresentation(
+            providerID: value.series.providerID, metricID: value.series.metricID,
+            sourceName: value.series.providerID, metricTitle: value.series.metricID,
+            headerDetail: nil, detailText: nil, iconName: nil, colorHex: "#935AFD"))
+    }
+    return selected.map { value, display in
+        .init(
+            providerID: value.series.providerID, metricID: value.series.metricID,
+            sourceName: display.sourceName, metricTitle: display.metricTitle,
+            headerDetail: display.headerDetail, detailText: display.detailText,
+            iconName: display.iconName, colorHex: display.colorHex,
+            displayColorHex: display.displayColorHex,
+            paceColorHex: display.paceColorHex, paceScore: display.paceScore,
+            iconPath: display.iconPath,
+            badgeColorHex: display.badgeColorHex,
+            menuBarBadgeText: display.menuBarBadgeText,
+            hasWarning: display.hasWarning,
+            remaining: value.remaining, limit: value.limit, resetAt: value.resetAt,
+            cycleStartedAt: value.cycleStartedAt, observedAt: value.observedAt,
+            originDeviceID: value.origin.deviceID, originEpoch: value.origin.epoch)
+    }
 }
 private func cookieValue(for credential: PeerCredential) -> String {
     "\(credential.id.uuidString):\(credential.secret.base64EncodedString())"

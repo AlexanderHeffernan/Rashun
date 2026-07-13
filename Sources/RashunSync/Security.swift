@@ -2,7 +2,7 @@ import Crypto
 import Foundation
 
 public struct PeerCredential: Codable, Sendable {
-    public enum Scope: String, Codable, Sendable { case desktopSync, mobileRead }
+    public enum Scope: String, Codable, Sendable { case desktopSync, mobileRead, widgetRead }
     public let id: UUID
     public let secret: Data
     public let scopes: Set<Scope>

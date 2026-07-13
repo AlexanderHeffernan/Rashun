@@ -247,6 +247,77 @@ final class ServerTests: XCTestCase {
         }
     }
 
+    func testWidgetCredentialCanOnlyReadVersionedSnapshot() async throws {
+        let repo = try repository()
+        let widget = PeerCredential(
+            secret: Data(repeating: 14, count: 32), scopes: [.widgetRead])
+        try repo.savePeer(widget, deviceID: UUID(), epoch: UUID(), displayName: "iOS Widget")
+        _ = try repo.record(
+            series: .init(providerID: "Codex", metricID: "weekly"),
+            usage: .init(
+                remaining: 31, limit: 100,
+                resetDate: Date(timeIntervalSince1970: 2_000_000_000)))
+        await MobileUsagePresentationStore.shared.replaceAppearance(
+            .init(
+                colorMode: "pace", centerContentMode: "logo", showMetricBadges: true,
+                metrics: [.init(providerID: "Codex", metricID: "weekly")],
+                backgroundColorHex: "#010203", accentBrandColorHex: "#AABBCC"))
+        let app = try RashunSyncServer(repository: repo, appVersion: "1.2.3").application()
+        let header = "RashunBearer \(widget.id.uuidString):\(widget.secret.base64EncodedString())"
+        try await app.test(.router) { client in
+            try await client.execute(
+                uri: "/v1/widget/snapshot", method: .get,
+                headers: [.authorization: header]
+            ) { response in
+                XCTAssertEqual(response.status, .ok)
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .iso8601
+                let snapshot = try decoder.decode(
+                    WidgetSnapshotDTO.self, from: Data(buffer: response.body))
+                XCTAssertEqual(snapshot.schemaVersion, 1)
+                XCTAssertEqual(snapshot.assetVersion, "1.2.3")
+                XCTAssertEqual(snapshot.appearance.colorMode, "pace")
+                XCTAssertEqual(snapshot.appearance.backgroundColorHex, "#010203")
+                XCTAssertEqual(snapshot.appearance.accentBrandColorHex, "#AABBCC")
+                XCTAssertEqual(snapshot.items.map(\.metricID), ["weekly"])
+                XCTAssertEqual(snapshot.items.first?.remaining, 31)
+            }
+            try await client.execute(
+                uri: "/v1/current", method: .get, headers: [.authorization: header]
+            ) { XCTAssertEqual($0.status, .unauthorized) }
+            try await client.execute(
+                uri: "/v1/mobile/push/key", method: .get, headers: [.authorization: header]
+            ) { XCTAssertEqual($0.status, .unauthorized) }
+        }
+        try repo.revokePeer(credentialID: widget.id)
+        try await app.test(.router) { client in
+            try await client.execute(
+                uri: "/v1/widget/snapshot", method: .get,
+                headers: [.authorization: header]
+            ) { XCTAssertEqual($0.status, .unauthorized) }
+        }
+        await MobileUsagePresentationStore.shared.reset()
+    }
+
+    func testMobileCredentialCanCreateShortLivedWidgetSetup() async throws {
+        let repo = try repository()
+        let mobile = PeerCredential(
+            secret: Data(repeating: 15, count: 32), scopes: [.mobileRead])
+        try repo.savePeer(mobile, deviceID: UUID(), epoch: UUID(), displayName: "iPhone")
+        let header = "RashunBearer \(mobile.id.uuidString):\(mobile.secret.base64EncodedString())"
+        try await RashunSyncServer(repository: repo).application().test(.router) { client in
+            try await client.execute(
+                uri: "/v1/widget/setup", method: .post, headers: [.authorization: header]
+            ) { response in
+                XCTAssertEqual(response.status, .ok)
+                let object = try JSONSerialization.jsonObject(
+                    with: Data(buffer: response.body)) as? [String: Any]
+                XCTAssertNotNil(object?["password"])
+                XCTAssertNotNil(object?["expiresAt"])
+            }
+        }
+    }
+
     func testCurrentAcceptsDurableSessionCookie() async throws {
         let repo = try repository()
         let credential = PeerCredential(
@@ -279,7 +350,9 @@ final class ServerTests: XCTestCase {
                 providerID: "Codex", metricID: "weekly", sourceName: "Codex",
                 metricTitle: "Pro Weekly",
                 headerDetail: "2 resets", detailText: "Resets in 5 days", iconName: "codex",
-                colorHex: "#3C35FF")
+                colorHex: "#3C35FF", menuBarBadgeText: "7d",
+                displayColorHex: "#FF1E33", paceColorHex: "#FF1E33", paceScore: -42,
+                iconPath: "assets/codex.png", badgeColorHex: "#940F1E", hasWarning: true)
         ])
         defer { Task { await MobileUsagePresentationStore.shared.reset() } }
         let cookie =
@@ -295,6 +368,12 @@ final class ServerTests: XCTestCase {
                 XCTAssertEqual(current.items.first?.metricTitle, "Pro Weekly")
                 XCTAssertEqual(current.items.first?.detailText, "Resets in 5 days")
                 XCTAssertEqual(current.items.first?.colorHex, "#3C35FF")
+                XCTAssertEqual(current.items.first?.displayColorHex, "#FF1E33")
+                XCTAssertEqual(current.items.first?.paceScore, -42)
+                XCTAssertEqual(current.items.first?.menuBarBadgeText, "7d")
+                XCTAssertEqual(current.items.first?.iconPath, "assets/codex.png")
+                XCTAssertEqual(current.items.first?.badgeColorHex, "#940F1E")
+                XCTAssertEqual(current.items.first?.hasWarning, true)
             }
         }
         await MobileUsagePresentationStore.shared.reset()
