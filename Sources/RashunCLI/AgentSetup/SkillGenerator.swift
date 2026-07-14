@@ -46,8 +46,7 @@ enum SkillGenerator {
         on the forecast summary — it accounts for reset timing and usage rate.
 
         The forecast summary will tell you one of:
-        - When the source will reach 100% (regenerating sources like Amp)
-        - When the source will hit 0% and when it resets (depleting sources Copilot)
+        - When the source will hit 0% and when it resets (daily/weekly/monthly quotas)
         - How much will remain at reset (assuming the current usage rate continues)
 
         ### When to warn the user

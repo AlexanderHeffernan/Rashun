@@ -9,3 +9,4 @@ DerivedData/
 *.app
 .vscode
 Sources/GeneratedSourceList.swift
+.amp/

@@ -1,11 +1,13 @@
 import Foundation
 
 public struct AmpSource: AISource {
+    /// Keep this stable so existing usage history and source settings continue to work.
     public let name = "AMP"
+    public let displayName = "Amp Free"
     public let requirements = "OS support: macOS/Linux/Windows (where AMP CLI is available). Requires the amp CLI installed and available on PATH (or at ~/.amp/bin/amp)."
-    public let metrics = [AISourceMetric(id: "amp-free", title: "AMP", menuBarBadgeText: "1d")]
+    public let metrics = [AISourceMetric(id: "amp-free", title: "Amp Free", menuBarBadgeText: "1d")]
     public let menuBarBrandColorHex: UInt32 = 0xF34E3F
-    public var pacingBehavior: SourcePacingBehavior { .none }
+    public var pacingBehavior: SourcePacingBehavior { .resetWindow }
     public var agentConfigDirectory: String? { "~/.config/amp" }
     public var agentInstructionFilePath: String? { "~/.config/amp/AGENTS.md" }
     public var agentName: String { "Amp" }
@@ -50,7 +52,7 @@ public struct AmpSource: AISource {
             case .parseFailed:
                 return SourceFetchErrorPresentation(
                     shortMessage: "Could not parse AMP output",
-                    detailedMessage: "Rashun could not parse AMP usage output. Run `~/.amp/bin/amp usage` in Terminal and confirm it returns `Amp Free: $x/$y remaining`."
+                    detailedMessage: "Rashun could not parse AMP usage output. Run `~/.amp/bin/amp usage` in Terminal and confirm it returns `Amp Free: x% remaining today (resets daily)`."
                 )
             }
         }
@@ -118,55 +120,84 @@ public struct AmpSource: AISource {
         return output
     }
 
+    public func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
+        { current, _, _ in current.cycleStartDate }
+    }
+
     public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
-        let regenRatePerHour = 0.42 // Amp Free: +$0.42/hour
-        guard current.limit > 0 else { return nil }
-        let percentPerHour = (regenRatePerHour / current.limit) * 100
-        let currentPercent = current.percentRemaining
-
-        guard currentPercent < 100 else {
-            return ForecastResult(points: [], summary: "AMP: fully charged ✓")
-        }
-
-        let hoursToFull = (100 - currentPercent) / percentPerHour
         let now = Date()
-        let fullDate = now.addingTimeInterval(hoursToFull * 3600)
-
-        let steps = min(100, max(10, Int(hoursToFull * 2)))
-        var points: [ForecastPoint] = []
-        for i in 0...steps {
-            let fraction = Double(i) / Double(steps)
-            let date = now.addingTimeInterval(fraction * hoursToFull * 3600)
-            let value = min(currentPercent + percentPerHour * fraction * hoursToFull, 100)
-            points.append(ForecastPoint(date: date, value: value))
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, MMM d 'at' h:mm a"
-        return ForecastResult(
-            points: points,
-            summary: "AMP: reaches 100% \(formatter.string(from: fullDate))"
+        guard let resetDate = current.resetDate ?? dailyResetDate(reference: now) else { return nil }
+        return UsageForecastEngine.resetWindowForecast(
+            sourceLabel: displayName,
+            current: current,
+            history: history,
+            resetDate: resetDate,
+            historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24,
+            now: now
         )
     }
 
+    public func forecastHistoryWindowHours(for metricId: String) -> Double? {
+        24
+    }
+
     public func parseUsage(from output: String) -> UsageResult? {
-        let pattern = #"Amp Free: \$([\d.]+)/\$([\d.]+) remaining"#
+        let pattern = #"(?im)^\s*Amp Free:\s*([\d.]+)%\s+remaining\s+today\s*\(resets\s+daily\)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
 
         let range = NSRange(output.startIndex..., in: output)
         guard let match = regex.firstMatch(in: output, range: range),
-              match.numberOfRanges == 3,
-              let currentRange = Range(match.range(at: 1), in: output),
-              let limitRange = Range(match.range(at: 2), in: output) else {
+              match.numberOfRanges == 2,
+              let percentRange = Range(match.range(at: 1), in: output) else {
             return nil
         }
 
-        guard let remaining = Double(output[currentRange]),
-              let limit = Double(output[limitRange]) else {
+        guard let remaining = Double(output[percentRange]), remaining >= 0, remaining <= 100,
+              let resetDate = dailyResetDate(),
+              let cycleStartDate = dailyCycleStartDate() else {
             return nil
         }
 
-        return UsageResult(remaining: remaining, limit: limit)
+        return UsageResult(remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
+    }
+
+    /// Amp reports only "today" and does not expose a reset timestamp.
+    /// Per Amp Discord, Amp Free resets daily at 5:00 PM Pacific Time
+    /// (`America/Los_Angeles`, observing PST/PDT).
+    private static let pacificTimeZone = TimeZone(identifier: "America/Los_Angeles")
+    private static let dailyResetHourPacific = 17
+
+    /// Internal for tests — cycle start is the previous 5pm Pacific reset.
+    func dailyCycleStartDate(reference: Date = Date()) -> Date? {
+        // Use calendar day arithmetic (not a fixed 24h) so spring/fall DST
+        // transitions keep the window anchored to consecutive 5pm Pacific resets.
+        guard let resetDate = dailyResetDate(reference: reference),
+              let pacific = Self.pacificTimeZone else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = pacific
+        return calendar.date(byAdding: .day, value: -1, to: resetDate)
+    }
+
+    /// Internal for tests — next Amp Free reset at 5:00 PM Pacific.
+    func dailyResetDate(reference: Date = Date()) -> Date? {
+        guard let pacific = Self.pacificTimeZone else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = pacific
+
+        var components = calendar.dateComponents([.year, .month, .day], from: reference)
+        components.hour = Self.dailyResetHourPacific
+        components.minute = 0
+        components.second = 0
+        components.timeZone = pacific
+
+        guard let todaysReset = calendar.date(from: components) else { return nil }
+
+        // At or after today's 5pm Pacific, the next window opens tomorrow at 5pm.
+        // Calendar day math (not +24h) preserves wall-clock 5pm across DST.
+        if reference < todaysReset {
+            return todaysReset
+        }
+        return calendar.date(byAdding: .day, value: 1, to: todaysReset)
     }
 }
 
