@@ -257,16 +257,18 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertEqual(guide?.points.last?.value ?? -1, 0, accuracy: 0.001)
     }
 
-    func testAmpRefillSourceDoesNotExposePacingAssessment() {
+    func testAmpDailySourceExposesPacingAssessment() {
         let source = AmpSource()
+        let now = fixedDate(hour: 12)
+        let reset = fixedDate(dayOffset: 1, hour: 0)
         let assessment = source.pacingAssessment(
             for: source.metrics[0].id,
-            current: UsageResult(remaining: 5, limit: 10),
+            current: UsageResult(remaining: 50, limit: 100, resetDate: reset, cycleStartDate: fixedDate(hour: 0)),
             history: [],
-            now: fixedDate(hour: 12)
+            now: now
         )
 
-        XCTAssertNil(assessment)
+        XCTAssertNotNil(assessment)
     }
 
     private func fixedDate(dayOffset: Int = 0, hour: Int) -> Date {
