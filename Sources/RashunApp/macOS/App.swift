@@ -1014,7 +1014,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             do {
                 try await RashunSyncServer(
                     repository: repository, host: "0.0.0.0", port: 8787, webRoot: root,
-                    historyChanged: changed, appVersion: version
+                    historyChanged: changed, appVersion: version, trackedUsage: .live
                 ).run()
             } catch {
                 if !Task.isCancelled {
@@ -1024,9 +1024,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         peerSyncTask = Task {
             await PeerSyncService(
-                repository: repository, historyChanged: changed, appVersion: version
+                repository: repository, historyChanged: changed, appVersion: version,
+                trackedUsage: .live
             )
-            .runForeground()
+            .runForeground(interval: .seconds(SettingsStore.shared.syncInterval()))
         }
     }
 

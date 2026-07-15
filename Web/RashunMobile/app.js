@@ -205,6 +205,15 @@ async function refresh({ showProgress = false } = {}) {
     }
   }
 }
+async function renderCachedUsage() {
+  try {
+    const cached = await get("current", "latest");
+    if (cached) render(cached, true);
+    return cached;
+  } catch {
+    return undefined;
+  }
+}
 function render(value, stale) {
   if (!document.querySelector("#widget-setup").hidden) return;
   document.querySelector("#setup").hidden = true;
@@ -448,6 +457,7 @@ async function activateDashboard() {
   document.querySelector("#usage").hidden = false;
   document.querySelector("#refresh").onclick = () =>
     refresh({ showProgress: true });
+  await renderCachedUsage();
   await refresh();
   clearInterval(pollTimer);
   pollTimer = setInterval(() => {
@@ -488,20 +498,69 @@ function hideWidgetSetup() {
   history.replaceState(null, "", location.pathname + location.search);
 }
 async function copyWidgetSetup() {
-  const status = document.querySelector("#widget-code-status");
+  const status = document.querySelector("#widget-code-status"),
+    button = document.querySelector("#copy-widget-code");
+  if (pendingWidgetCode) {
+    try {
+      await copyText(pendingWidgetCode);
+      pendingWidgetCode = undefined;
+      button.textContent = "Create & copy setup code";
+      status.textContent = "Copied. Return to Scriptable and run the Rashun script.";
+    } catch {
+      status.textContent = `Clipboard access is blocked. Select and copy this code manually: ${pendingWidgetCode}`;
+    }
+    return;
+  }
   status.textContent = "Creating a secure setup code…";
+  let codePromise;
   try {
-    const { headers } = await requestHeaders("POST", "/v1/widget/setup"),
-      response = await fetch("/v1/widget/setup", { method: "POST", headers, credentials: "same-origin" });
-    if (!response.ok) throw new Error("Could not create a setup code.");
-    const access = await response.json(), payload = {
-      version: 1, endpoint: location.origin, password: access.password,
-      deviceName: document.title || "Rashun", openURL: location.origin,
-      allowInsecureHTTP: location.protocol === "http:"
-    };
-    await navigator.clipboard.writeText(`RASHUN-WIDGET-1:${btoa(unescape(encodeURIComponent(JSON.stringify(payload))))}`);
+    codePromise = createWidgetSetupCode();
+    if (navigator.clipboard?.write && "ClipboardItem" in window) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": codePromise.then(
+            (code) => new Blob([code], { type: "text/plain" }),
+          ),
+        }),
+      ]);
+    } else {
+      await copyText(await codePromise);
+    }
     status.textContent = "Copied. Return to Scriptable and run the Rashun script.";
-  } catch (error) { status.textContent = error.message || "Copy failed. Try again."; }
+  } catch (error) {
+    try {
+      pendingWidgetCode = await codePromise;
+      button.textContent = "Copy setup code";
+      status.textContent = "Code ready. Tap Copy setup code to allow clipboard access.";
+    } catch {
+      status.textContent = error.message || "Could not create a setup code. Try again.";
+    }
+  }
+}
+let pendingWidgetCode;
+async function createWidgetSetupCode() {
+  const { headers } = await requestHeaders("POST", "/v1/widget/setup"),
+      response = await fetch("/v1/widget/setup", { method: "POST", headers, credentials: "same-origin" });
+  if (!response.ok) throw new Error("Could not create a setup code.");
+  const access = await response.json(), payload = {
+    version: 1, endpoint: location.origin, password: access.password,
+    deviceName: document.title || "Rashun", openURL: location.origin,
+    allowInsecureHTTP: location.protocol === "http:"
+  };
+  return `RASHUN-WIDGET-1:${btoa(unescape(encodeURIComponent(JSON.stringify(payload))))}`;
+}
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
+  const field = document.createElement("textarea");
+  field.value = value;
+  field.setAttribute("readonly", "");
+  field.style.position = "fixed";
+  field.style.opacity = "0";
+  document.body.appendChild(field);
+  field.select();
+  const copied = document.execCommand("copy");
+  field.remove();
+  if (!copied) throw new Error("Clipboard access is blocked.");
 }
 document.querySelector("#open-widget-setup").addEventListener("click", showWidgetSetup);
 document.querySelector("#widget-back").addEventListener("click", hideWidgetSetup);

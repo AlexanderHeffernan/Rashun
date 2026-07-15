@@ -78,7 +78,7 @@ struct SyncCommand: AsyncParsableCommand {
                     repository: repository,
                     historyChanged: { @MainActor in
                         try? SyncEnvironment.shared.refreshCompatibilityView()
-                    }, appVersion: Versioning.versionString()
+                    }, appVersion: Versioning.versionString(), trackedUsage: .live
                 ).runForeground()
             }
             defer { syncTask.cancel() }
@@ -120,7 +120,8 @@ struct SyncCommand: AsyncParsableCommand {
             do {
                 let result = try await PeerConnectionService.connect(
                     repository: repository, endpoint: endpoint, password: code,
-                    requesterAddress: ownEndpoint, appVersion: Versioning.versionString())
+                    requesterAddress: ownEndpoint, appVersion: Versioning.versionString(),
+                    trackedUsage: .live)
                 if result.sync.accepted > 0 {
                     try SyncEnvironment.shared.refreshCompatibilityView()
                 }
@@ -215,7 +216,7 @@ struct SyncCommand: AsyncParsableCommand {
                 repository: repository,
                 historyChanged: { @MainActor in
                     try? SyncEnvironment.shared.refreshCompatibilityView()
-                }, appVersion: Versioning.versionString()
+                }, appVersion: Versioning.versionString(), trackedUsage: .live
             ).syncAllOnce()
             guard !attempts.isEmpty else {
                 print("No desktop devices are connected.")

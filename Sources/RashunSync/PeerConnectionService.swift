@@ -30,7 +30,7 @@ public enum PeerConnectionService {
 
     public static func connect(
         repository: SyncRepository, endpoint: URL, password: String, requesterAddress: URL?,
-        appVersion: String
+        appVersion: String, trackedUsage: TrackedUsageSyncAccess? = nil
     ) async throws -> PeerConnectionResult {
         let request = SimplePairingRequest(
             password: password.uppercased(), requesterName: repository.identity.displayName,
@@ -57,7 +57,7 @@ public enum PeerConnectionService {
         try repository.beginPeerSync(credentialID: response.credential.id)
         do {
             let sync = try await SyncCoordinator(
-                repository: repository, requiredAppVersion: appVersion
+                repository: repository, requiredAppVersion: appVersion, trackedUsage: trackedUsage
             ).reconcile(
                 with: HTTPPeerTransport(baseURL: endpoint, credential: response.credential))
             try repository.recordAddressResult(

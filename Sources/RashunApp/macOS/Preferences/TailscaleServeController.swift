@@ -110,7 +110,9 @@ enum TailscaleServeController {
     }
 
     private static var cliCandidates: [URL] {
-        [
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            home.appendingPathComponent(".local/bin/tailscale").path,
             "/opt/homebrew/bin/tailscale", "/usr/local/bin/tailscale", "/usr/bin/tailscale",
             "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
             "/Applications/Tailscale (App Store).app/Contents/MacOS/Tailscale",

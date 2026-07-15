@@ -44,9 +44,41 @@ public struct TrackedSession: Codable, Identifiable, Hashable, Sendable {
     public var observations: [TrackedUsageObservation]
     public var completionState: TrackedSessionCompletionState
     public var interruptionNote: String?
+    public var updatedAt: Date
 
-    public init(id: UUID = UUID(), labelID: UUID, labelNameSnapshot: String, startedAt: Date = Date(), endedAt: Date? = nil, observations: [TrackedUsageObservation] = [], completionState: TrackedSessionCompletionState = .active, interruptionNote: String? = nil) {
-        self.id = id; self.labelID = labelID; self.labelNameSnapshot = labelNameSnapshot; self.startedAt = startedAt; self.endedAt = endedAt; self.observations = observations; self.completionState = completionState; self.interruptionNote = interruptionNote
+    public init(id: UUID = UUID(), labelID: UUID, labelNameSnapshot: String, startedAt: Date = Date(), endedAt: Date? = nil, observations: [TrackedUsageObservation] = [], completionState: TrackedSessionCompletionState = .active, interruptionNote: String? = nil, updatedAt: Date? = nil) {
+        self.id = id; self.labelID = labelID; self.labelNameSnapshot = labelNameSnapshot; self.startedAt = startedAt; self.endedAt = endedAt; self.observations = observations; self.completionState = completionState; self.interruptionNote = interruptionNote; self.updatedAt = updatedAt ?? endedAt ?? startedAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, labelID, labelNameSnapshot, startedAt, endedAt, observations, completionState, interruptionNote, updatedAt }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        labelID = try values.decode(UUID.self, forKey: .labelID)
+        labelNameSnapshot = try values.decode(String.self, forKey: .labelNameSnapshot)
+        startedAt = try values.decode(Date.self, forKey: .startedAt)
+        endedAt = try values.decodeIfPresent(Date.self, forKey: .endedAt)
+        observations = try values.decode([TrackedUsageObservation].self, forKey: .observations)
+        completionState = try values.decode(TrackedSessionCompletionState.self, forKey: .completionState)
+        interruptionNote = try values.decodeIfPresent(String.self, forKey: .interruptionNote)
+        updatedAt = try values.decodeIfPresent(Date.self, forKey: .updatedAt) ?? endedAt ?? startedAt
+    }
+}
+
+public struct TrackedUsageTombstone: Codable, Identifiable, Hashable, Sendable {
+    public let id: UUID
+    public let deletedAt: Date
+    public init(id: UUID, deletedAt: Date = Date()) { self.id = id; self.deletedAt = deletedAt }
+}
+
+public struct TrackedUsageSyncSnapshot: Codable, Sendable {
+    public let schemaVersion: Int
+    public let labels: [TrackingLabel]
+    public let sessions: [TrackedSession]
+    public let deletedLabels: [TrackedUsageTombstone]
+    public let deletedSessions: [TrackedUsageTombstone]
+    public init(schemaVersion: Int = 1, labels: [TrackingLabel], sessions: [TrackedSession], deletedLabels: [TrackedUsageTombstone], deletedSessions: [TrackedUsageTombstone]) {
+        self.schemaVersion = schemaVersion; self.labels = labels; self.sessions = sessions; self.deletedLabels = deletedLabels; self.deletedSessions = deletedSessions
     }
 }
 
@@ -129,14 +161,33 @@ public enum TrackedUsageAttributionEngine {
 public final class TrackedUsageStore {
     public static let shared = TrackedUsageStore(backend: PersistenceBackendFactory.default())
     private static let storageKey = "trackedUsage.v1"
-    private struct Payload: Codable { var schemaVersion: Int = 1; var labels: [TrackingLabel] = []; var sessions: [TrackedSession] = []; var activeSession: TrackedSession? }
+    private struct Payload: Codable {
+        var schemaVersion: Int = 2
+        var labels: [TrackingLabel] = []
+        var sessions: [TrackedSession] = []
+        var activeSession: TrackedSession?
+        var deletedLabels: [TrackedUsageTombstone] = []
+        var deletedSessions: [TrackedUsageTombstone] = []
+        private enum CodingKeys: String, CodingKey { case schemaVersion, labels, sessions, activeSession, deletedLabels, deletedSessions }
+        init() {}
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            schemaVersion = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+            labels = try values.decodeIfPresent([TrackingLabel].self, forKey: .labels) ?? []
+            sessions = try values.decodeIfPresent([TrackedSession].self, forKey: .sessions) ?? []
+            activeSession = try values.decodeIfPresent(TrackedSession.self, forKey: .activeSession)
+            deletedLabels = try values.decodeIfPresent([TrackedUsageTombstone].self, forKey: .deletedLabels) ?? []
+            deletedSessions = try values.decodeIfPresent([TrackedUsageTombstone].self, forKey: .deletedSessions) ?? []
+            schemaVersion = 2
+        }
+    }
     private let backend: PersistenceBackend
     private var payload: Payload
 
     public init(backend: PersistenceBackend) {
         self.backend = backend
         let decoded = backend.data(forKey: Self.storageKey).flatMap { try? JSONDecoder().decode(Payload.self, from: $0) }
-        self.payload = (decoded?.schemaVersion ?? 1) <= 1 ? (decoded ?? Payload()) : Payload()
+        self.payload = (decoded?.schemaVersion ?? 2) <= 2 ? (decoded ?? Payload()) : Payload()
     }
     public var labels: [TrackingLabel] { payload.labels.sorted { $0.updatedAt > $1.updatedAt } }
     public var sessions: [TrackedSession] { payload.sessions.sorted { $0.startedAt > $1.startedAt } }
@@ -164,7 +215,7 @@ public final class TrackedUsageStore {
         NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
     }
     public func archiveLabel(id: UUID, archived: Bool = true) { guard let i = payload.labels.firstIndex(where: { $0.id == id }) else { return }; payload.labels[i].archivedAt = archived ? Date() : nil; payload.labels[i].updatedAt = Date(); save() }
-    public func deleteLabelPermanently(id: UUID) { guard !payload.sessions.contains(where: { $0.labelID == id }) && payload.activeSession?.labelID != id else { return }; payload.labels.removeAll { $0.id == id }; save() }
+    public func deleteLabelPermanently(id: UUID) { guard !payload.sessions.contains(where: { $0.labelID == id }) && payload.activeSession?.labelID != id else { return }; payload.labels.removeAll { $0.id == id }; upsertTombstone(id: id, in: &payload.deletedLabels); save() }
     public func start(label: TrackingLabel, at date: Date = Date()) -> TrackedSession {
         if var active = payload.activeSession {
             finalize(&active, at: date, state: .interrupted, note: "Switched labels")
@@ -211,9 +262,30 @@ public final class TrackedUsageStore {
         save()
         return active
     }
-    public func replaceSession(_ session: TrackedSession) { guard let i = payload.sessions.firstIndex(where: { $0.id == session.id }) else { return }; payload.sessions[i] = session; save() }
-    public func deleteSession(id: UUID) { payload.sessions.removeAll { $0.id == id }; save() }
-    private func finalize(_ session: inout TrackedSession, at date: Date, state: TrackedSessionCompletionState, note: String?) { session.endedAt = date; session.completionState = state; session.interruptionNote = note }
+    public func replaceSession(_ session: TrackedSession) { guard let i = payload.sessions.firstIndex(where: { $0.id == session.id }) else { return }; var updated = session; updated.updatedAt = Date(); payload.sessions[i] = updated; save() }
+    public func deleteSession(id: UUID) { payload.sessions.removeAll { $0.id == id }; upsertTombstone(id: id, in: &payload.deletedSessions); save() }
+    public func syncSnapshot() -> TrackedUsageSyncSnapshot {
+        TrackedUsageSyncSnapshot(labels: payload.labels, sessions: payload.sessions.filter { $0.completionState != .active }, deletedLabels: payload.deletedLabels, deletedSessions: payload.deletedSessions)
+    }
+    @discardableResult public func mergeSyncSnapshot(_ remote: TrackedUsageSyncSnapshot) -> Bool {
+        guard remote.schemaVersion == 1 else { return false }
+        let before = try? JSONEncoder().encode(payload)
+        payload.deletedLabels = mergedTombstones(payload.deletedLabels, remote.deletedLabels)
+        payload.deletedSessions = mergedTombstones(payload.deletedSessions, remote.deletedSessions)
+        let labelDeletes = Dictionary(uniqueKeysWithValues: payload.deletedLabels.map { ($0.id, $0.deletedAt) })
+        let sessionDeletes = Dictionary(uniqueKeysWithValues: payload.deletedSessions.map { ($0.id, $0.deletedAt) })
+        payload.labels = mergeByID(payload.labels, remote.labels, modified: \TrackingLabel.updatedAt).filter { (labelDeletes[$0.id] ?? .distantPast) < $0.updatedAt }
+        payload.sessions = mergeByID(payload.sessions, remote.sessions.filter { $0.completionState != .active }, modified: \TrackedSession.updatedAt).filter { (sessionDeletes[$0.id] ?? .distantPast) < $0.updatedAt }
+        let names = Dictionary(uniqueKeysWithValues: payload.labels.map { ($0.id, $0.name) })
+        for index in payload.sessions.indices { if let name = names[payload.sessions[index].labelID] { payload.sessions[index].labelNameSnapshot = name } }
+        let changed = before != (try? JSONEncoder().encode(payload))
+        if changed { save(); NotificationCenter.default.post(name: .aiDataRefreshed, object: nil) }
+        return changed
+    }
+    private func finalize(_ session: inout TrackedSession, at date: Date, state: TrackedSessionCompletionState, note: String?) { session.endedAt = date; session.completionState = state; session.interruptionNote = note; session.updatedAt = date }
+    private func upsertTombstone(id: UUID, in values: inout [TrackedUsageTombstone]) { values.removeAll { $0.id == id }; values.append(.init(id: id)) }
+    private func mergedTombstones(_ local: [TrackedUsageTombstone], _ remote: [TrackedUsageTombstone]) -> [TrackedUsageTombstone] { Dictionary(grouping: local + remote, by: \TrackedUsageTombstone.id).compactMap { $0.value.max { $0.deletedAt < $1.deletedAt } } }
+    private func mergeByID<T: Identifiable>(_ local: [T], _ remote: [T], modified: KeyPath<T, Date>) -> [T] where T.ID == UUID { Dictionary(grouping: local + remote, by: \T.id).compactMap { $0.value.max { $0[keyPath: modified] < $1[keyPath: modified] } } }
     private func metricKey(for observation: TrackedUsageObservation) -> String { "\(observation.sourceName)::\(observation.metricID)" }
     private func shouldCoalesce(_ previous: TrackedUsageObservation, _ current: TrackedUsageObservation) -> Bool {
         guard current.origin == .poll || current.origin == .recovery else { return false }

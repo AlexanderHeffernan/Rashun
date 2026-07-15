@@ -1,4 +1,5 @@
 import Foundation
+import RashunCore
 
 #if canImport(FoundationNetworking)
     import FoundationNetworking
@@ -25,6 +26,12 @@ public struct HTTPPeerTransport: SyncPeerTransport, Sendable {
     public func ingest(_ observations: [UsageObservation]) async throws -> IngestAcknowledgement {
         try await sendExact(
             "POST", path: "/v1/observations", value: observations, as: IngestAcknowledgement.self)
+    }
+    public func trackedUsage() async throws -> TrackedUsageSyncSnapshot {
+        try await get("/v1/tracked-usage", as: TrackedUsageSyncSnapshot.self)
+    }
+    public func mergeTrackedUsage(_ snapshot: TrackedUsageSyncSnapshot) async throws -> TrackedUsageSyncSnapshot {
+        try await sendExact("POST", path: "/v1/tracked-usage", value: snapshot, as: TrackedUsageSyncSnapshot.self)
     }
     public func current() async throws -> Data {
         let (data, _) = try await execute("GET", path: "/v1/current", body: Data())

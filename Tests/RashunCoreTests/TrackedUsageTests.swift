@@ -61,4 +61,37 @@ final class TrackedUsageTests: XCTestCase {
         store.updateLabel(label)
         XCTAssertEqual(store.labels.first?.name, "Original")
     }
+    @MainActor func testSyncSnapshotExcludesActiveSessionAndMergesCompletedSession() {
+        let source = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        let label = source.createLabel(name: "Client work")
+        _ = source.start(label: label, at: base)
+        source.append(observation(0, 80, origin: .start))
+        XCTAssertTrue(source.syncSnapshot().sessions.isEmpty)
+
+        source.append(observation(1, 60, origin: .stop))
+        let completed = source.stop(at: base.addingTimeInterval(60))
+        XCTAssertNotNil(completed)
+
+        let destination = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        XCTAssertTrue(destination.mergeSyncSnapshot(source.syncSnapshot()))
+        XCTAssertEqual(destination.labels.map(\.id), [label.id])
+        XCTAssertEqual(destination.sessions.map(\.id), [completed!.id])
+        XCTAssertNil(destination.activeSession)
+    }
+    @MainActor func testSyncedSessionDeletionDoesNotResurrect() {
+        let source = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        let label = source.createLabel(name: "Client work")
+        _ = source.start(label: label, at: base)
+        source.append(observation(0, 80, origin: .start))
+        source.append(observation(1, 60, origin: .stop))
+        let session = source.stop(at: base.addingTimeInterval(60))!
+        let stale = source.syncSnapshot()
+        source.deleteSession(id: session.id)
+
+        let destination = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        _ = destination.mergeSyncSnapshot(stale)
+        _ = destination.mergeSyncSnapshot(source.syncSnapshot())
+        _ = destination.mergeSyncSnapshot(stale)
+        XCTAssertTrue(destination.sessions.isEmpty)
+    }
 }

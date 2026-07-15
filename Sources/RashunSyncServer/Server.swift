@@ -2,6 +2,7 @@ import Crypto
 import Foundation
 import Hummingbird
 import HummingbirdTLS
+import RashunCore
 import RashunSync
 
 public struct CurrentUsageDTO: Codable, Sendable {
@@ -89,11 +90,13 @@ public struct RashunSyncServer: Sendable {
     public let allowedBrowserOrigin: String?
     public let tlsFiles: TLSFiles?
     public let historyChanged: (@Sendable () async -> Void)?
+    public let trackedUsage: TrackedUsageSyncAccess?
     public let appVersion: String?
     public init(
         repository: SyncRepository, host: String = "127.0.0.1", port: Int = 8787,
         webRoot: String? = nil, allowedBrowserOrigin: String? = nil, tlsFiles: TLSFiles? = nil,
-        historyChanged: (@Sendable () async -> Void)? = nil, appVersion: String? = nil
+        historyChanged: (@Sendable () async -> Void)? = nil, appVersion: String? = nil,
+        trackedUsage: TrackedUsageSyncAccess? = .live
     ) {
         self.repository = repository
         self.host = host
@@ -103,10 +106,12 @@ public struct RashunSyncServer: Sendable {
         self.tlsFiles = tlsFiles
         self.historyChanged = historyChanged
         self.appVersion = appVersion
+        self.trackedUsage = trackedUsage
     }
 
     public func application() throws -> Application<RouterResponder<BasicRequestContext>> {
         let repository = repository
+        let trackedUsage = trackedUsage
         let router = Router()
         if let allowedBrowserOrigin {
             router.addMiddleware {
@@ -162,7 +167,8 @@ public struct RashunSyncServer: Sendable {
                     do {
                         try repository.beginPeerSync(credentialID: credential.id)
                         let result = try await SyncCoordinator(
-                            repository: repository, requiredAppVersion: appVersion
+                            repository: repository, requiredAppVersion: appVersion,
+                            trackedUsage: trackedUsage
                         ).reconcile(
                             with: HTTPPeerTransport(baseURL: address, credential: credential))
                         try repository.recordAddressResult(
@@ -368,6 +374,22 @@ public struct RashunSyncServer: Sendable {
                 IngestAcknowledgement(
                     accepted: accepted, duplicates: duplicates, rejected: [],
                     origins: try repository.originSummaries()))
+        }
+        router.get("/v1/tracked-usage") { request, _ -> String in
+            _ = try authenticate(
+                request: request, body: Data(), repository: repository, required: .desktopSync)
+            guard let trackedUsage else { throw HTTPError(.notImplemented) }
+            return try exactJSON(await trackedUsage.snapshot())
+        }
+        router.post("/v1/tracked-usage") { request, _ -> String in
+            let buffer = try await request.body.collect(upTo: 4_194_304)
+            let body = Data(buffer.readableBytesView)
+            _ = try authenticate(
+                request: request, body: body, repository: repository, required: .desktopSync)
+            guard let trackedUsage else { throw HTTPError(.notImplemented) }
+            let snapshot = try decodeExactJSON(TrackedUsageSyncSnapshot.self, from: body)
+            _ = await trackedUsage.merge(snapshot)
+            return try exactJSON(await trackedUsage.snapshot())
         }
         router.post("/v1/peers/rotate") { request, _ -> String in
             let buffer = try await request.body.collect(upTo: 64)

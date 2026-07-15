@@ -1,4 +1,4 @@
-const CACHE = "rashun-shell-v8",
+const CACHE = "rashun-shell-v10",
   ASSETS = [
     "./",
     "index.html",
@@ -14,7 +14,12 @@ const CACHE = "rashun-shell-v8",
     "assets/gemini.png",
   ];
 self.addEventListener("install", (e) =>
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS))),
+  e.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => c.addAll(ASSETS))
+      .then(() => self.skipWaiting()),
+  ),
 );
 self.addEventListener("activate", (e) =>
   e.waitUntil(
@@ -24,20 +29,36 @@ self.addEventListener("activate", (e) =>
         Promise.all(
           keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)),
         ),
-      ),
+      )
+      .then(() => self.clients.claim()),
   ),
 );
 self.addEventListener("fetch", (e) => {
-  if (e.request.method === "GET")
+  if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith("/v1/"))
+    return;
+
+  if (e.request.mode === "navigate") {
     e.respondWith(
-      fetch(e.request)
-        .then((r) => {
-          const copy = r.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-          return r;
-        })
-        .catch(() => caches.match(e.request)),
+      caches.match("index.html").then((cached) => cached || fetch(e.request)),
     );
+    return;
+  }
+
+  e.respondWith(
+    caches.match(e.request).then(
+      (cached) =>
+        cached ||
+        fetch(e.request).then((response) => {
+          if (response.ok)
+            caches
+              .open(CACHE)
+              .then((cache) => cache.put(e.request, response.clone()));
+          return response;
+        }),
+    ),
+  );
 });
 self.addEventListener("push", (event) => {
   let payload = { title: "Rashun", body: "Your usage notification is ready." };

@@ -67,7 +67,25 @@ final class SyncPreferencesViewModel: ObservableObject {
     @Published var tailscaleServeState: TailscaleServeState?
     @Published var isConfiguringTailscale = false
     @Published var retryingPeerID: UUID?
+    @Published var syncMinutesText = ""
     private var repository: SyncRepository? { SyncEnvironment.shared.repository }
+
+    init() {
+        syncMinutesText = Self.formattedMinutes(SettingsStore.shared.syncInterval())
+    }
+
+    func applySyncInterval() {
+        guard let minutes = Double(syncMinutesText), minutes > 0 else {
+            syncMinutesText = Self.formattedMinutes(SettingsStore.shared.syncInterval())
+            return
+        }
+        SettingsStore.shared.setSyncIntervalSeconds(minutes * 60)
+        syncMinutesText = Self.formattedMinutes(SettingsStore.shared.syncInterval())
+    }
+
+    private static func formattedMinutes(_ seconds: TimeInterval) -> String {
+        String(format: "%.0f", seconds / 60)
+    }
 
     var baseURL: URL? {
         if tailscaleServeState?.isEnabled == true { return tailscaleServeState?.httpsURL }
@@ -243,14 +261,14 @@ final class SyncPreferencesViewModel: ObservableObject {
                 let version = Versioning.versionString(bundle: .main)
                 let result = try await PeerConnectionService.connect(
                     repository: repository, endpoint: endpoint, password: joinPassword,
-                    requesterAddress: ownAddress, appVersion: version)
+                    requesterAddress: ownAddress, appVersion: version, trackedUsage: .live)
                 if result.sync.accepted > 0 {
                     try SyncEnvironment.shared.refreshCompatibilityView()
                 }
                 joinAddress = ""
                 joinPassword = ""
                 refresh()
-                status = "Connected to \(result.peer.displayName). Histories are up to date."
+                status = "Connected to \(result.peer.displayName). Usage and tracked sessions are up to date."
             } catch PeerConnectionError.versionMismatch {
                 status =
                     "Both devices must be running the same Rashun version. Update Rashun on both devices, then try again."
@@ -264,20 +282,20 @@ final class SyncPreferencesViewModel: ObservableObject {
     func retry(_ id: UUID) {
         guard let repository, retryingPeerID == nil else { return }
         retryingPeerID = id
-        status = "Retrying history sync…"
+        status = "Retrying sync…"
         Task {
             let attempts = await PeerSyncService(
                 repository: repository,
                 historyChanged: { @MainActor in
                     try? SyncEnvironment.shared.refreshCompatibilityView()
                     NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
-                }, appVersion: Versioning.versionString(bundle: .main)
+                }, appVersion: Versioning.versionString(bundle: .main), trackedUsage: .live
             ).syncAllOnce()
             await refreshPeers()
             retryingPeerID = nil
             status =
                 attempts.first(where: { $0.credentialID == id })?.result != nil
-                ? "History is up to date."
+                ? "Usage and tracked sessions are up to date."
                 : "Sync failed. Check that Rashun is running and both devices are on the same version."
         }
     }
@@ -323,6 +341,8 @@ struct SyncTabView: View {
                 }
 
                 mobileAccessCard
+
+                autoSyncCard
 
                 HStack {
                     Text("Connected devices").font(.headline)
@@ -431,6 +451,25 @@ struct SyncTabView: View {
                 await model.refreshPeers()
             }
         }
+    }
+
+    private var autoSyncCard: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            BrandIconTile(systemName: "arrow.triangle.2.circlepath")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Automatic desktop sync").font(.headline)
+                Text("Sync usage history, completed tracked sessions, and labels every")
+                    .font(.caption).foregroundStyle(BrandPalette.textSecondary)
+            }
+            Spacer()
+            BrandNumericField(text: $model.syncMinutesText, width: 76) {
+                model.applySyncInterval()
+            }
+            Text("minute(s)").fontWeight(.medium)
+        }
+        .padding(18)
+        .background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(BrandPalette.primary.opacity(0.2)))
     }
 
     private var mobileAccessCard: some View {

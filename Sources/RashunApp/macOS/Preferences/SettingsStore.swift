@@ -11,6 +11,7 @@ final class SettingsStore {
     private let notificationDefaultsKey = "ai.notificationSettings.v1"
     private let notificationStateKey = "ai.notificationState.v1"
     private let pollIntervalKey = "ai.pollIntervalSeconds.v1"
+    private let syncIntervalKey = "ai.syncIntervalSeconds.v1"
     private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
     private let menuBarAppearanceKey = "ai.menuBarAppearance.v1"
     private let trackingEnabledKey = "ai.trackingEnabled.v1"
@@ -22,6 +23,7 @@ final class SettingsStore {
     private var notificationState: [String: NotificationRuleState] = [:]
 
     private(set) var pollIntervalSeconds: TimeInterval = 120
+    private(set) var syncIntervalSeconds: TimeInterval = 120
     private(set) var autoUpdateCheckEnabled: Bool = true
     private(set) var menuBarAppearance = MenuBarAppearanceSettings()
     private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
@@ -61,6 +63,10 @@ final class SettingsStore {
         let poll = UserDefaults.standard.double(forKey: pollIntervalKey)
         if poll > 0 {
             pollIntervalSeconds = poll
+        }
+        let sync = UserDefaults.standard.double(forKey: syncIntervalKey)
+        if sync > 0 {
+            syncIntervalSeconds = sync
         }
 
         if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
@@ -168,6 +174,14 @@ final class SettingsStore {
     func setPollIntervalSeconds(_ seconds: TimeInterval) {
         pollIntervalSeconds = max(30, seconds)
         UserDefaults.standard.set(pollIntervalSeconds, forKey: pollIntervalKey)
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    func syncInterval() -> TimeInterval { syncIntervalSeconds }
+
+    func setSyncIntervalSeconds(_ seconds: TimeInterval) {
+        syncIntervalSeconds = max(30, seconds)
+        UserDefaults.standard.set(syncIntervalSeconds, forKey: syncIntervalKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 

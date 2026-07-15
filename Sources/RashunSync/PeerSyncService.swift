@@ -14,16 +14,19 @@ public actor PeerSyncService {
     private let factory: TransportFactory
     private let historyChanged: HistoryChanged?
     private let appVersion: String?
+    private let trackedUsage: TrackedUsageSyncAccess?
     public init(
         repository: SyncRepository,
         factory: @escaping TransportFactory = { url, credential in
             try HTTPPeerTransport(baseURL: url, credential: credential)
-        }, historyChanged: HistoryChanged? = nil, appVersion: String? = nil
+        }, historyChanged: HistoryChanged? = nil, appVersion: String? = nil,
+        trackedUsage: TrackedUsageSyncAccess? = nil
     ) {
         self.repository = repository
         self.factory = factory
         self.historyChanged = historyChanged
         self.appVersion = appVersion
+        self.trackedUsage = trackedUsage
     }
     public func syncAllOnce() async -> [PeerSyncAttempt] {
         var attempts: [PeerSyncAttempt] = []
@@ -38,7 +41,8 @@ public actor PeerSyncService {
                 for address in addresses {
                     do {
                         let result = try await SyncCoordinator(
-                            repository: repository, requiredAppVersion: appVersion
+                            repository: repository, requiredAppVersion: appVersion,
+                            trackedUsage: trackedUsage
                         ).reconcile(with: factory(address.url, credential))
                         try repository.recordAddressResult(
                             credentialID: peer.credentialID, url: address.url, succeeded: true)
@@ -85,7 +89,7 @@ public actor PeerSyncService {
         }
         return attempts
     }
-    public func runForeground(interval: Duration = .seconds(15)) async {
+    public func runForeground(interval: Duration = .seconds(120)) async {
         var failureCount = 0
         while !Task.isCancelled {
             let results = await syncAllOnce()

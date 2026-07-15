@@ -1,4 +1,5 @@
 import Foundation
+import RashunCore
 
 public struct HelloDTO: Codable, Sendable {
     public let deviceID: UUID
@@ -107,6 +108,22 @@ public protocol SyncPeerTransport: Sendable {
     func origins() async throws -> [OriginSummary]
     func query(_ request: ObservationQuery) async throws -> ObservationPage
     func ingest(_ observations: [UsageObservation]) async throws -> IngestAcknowledgement
+    func trackedUsage() async throws -> TrackedUsageSyncSnapshot
+    func mergeTrackedUsage(_ snapshot: TrackedUsageSyncSnapshot) async throws -> TrackedUsageSyncSnapshot
+}
+public enum TrackedUsageSyncError: Error, Sendable { case unsupported }
+public extension SyncPeerTransport {
+    func trackedUsage() async throws -> TrackedUsageSyncSnapshot { throw TrackedUsageSyncError.unsupported }
+    func mergeTrackedUsage(_ snapshot: TrackedUsageSyncSnapshot) async throws -> TrackedUsageSyncSnapshot { throw TrackedUsageSyncError.unsupported }
+}
+
+public struct TrackedUsageSyncAccess: Sendable {
+    public let snapshot: @Sendable () async -> TrackedUsageSyncSnapshot
+    public let merge: @Sendable (TrackedUsageSyncSnapshot) async -> Bool
+    public init(snapshot: @escaping @Sendable () async -> TrackedUsageSyncSnapshot, merge: @escaping @Sendable (TrackedUsageSyncSnapshot) async -> Bool) { self.snapshot = snapshot; self.merge = merge }
+    public static let live = TrackedUsageSyncAccess(
+        snapshot: { await TrackedUsageStore.shared.syncSnapshot() },
+        merge: { await TrackedUsageStore.shared.mergeSyncSnapshot($0) })
 }
 
 public struct SyncResult: Sendable {
@@ -117,9 +134,11 @@ public struct SyncResult: Sendable {
 public struct SyncCoordinator: Sendable {
     private let repository: SyncRepository
     private let requiredAppVersion: String?
-    public init(repository: SyncRepository, requiredAppVersion: String? = nil) {
+    private let trackedUsage: TrackedUsageSyncAccess?
+    public init(repository: SyncRepository, requiredAppVersion: String? = nil, trackedUsage: TrackedUsageSyncAccess? = nil) {
         self.repository = repository
         self.requiredAppVersion = requiredAppVersion
+        self.trackedUsage = trackedUsage
     }
     public func pull(from peer: any SyncPeerTransport) async throws -> SyncResult {
         let hello = try await compatibleHello(from: peer)
@@ -143,6 +162,11 @@ public struct SyncCoordinator: Sendable {
                 if end == UInt64.max { break }
                 next = end + 1
             }
+        }
+        if let trackedUsage {
+            _ = await trackedUsage.merge(try await peer.trackedUsage())
+            let converged = try await peer.mergeTrackedUsage(await trackedUsage.snapshot())
+            _ = await trackedUsage.merge(converged)
         }
         return pulled
     }
