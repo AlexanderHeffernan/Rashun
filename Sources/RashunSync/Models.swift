@@ -14,19 +14,13 @@ public struct DeviceIdentity: Codable, Sendable, Equatable {
     public let deviceID: UUID
     public let epoch: UUID
     public var displayName: String
-    public let signingPublicKey: Data
-    public init(
-        deviceID: UUID = UUID(), epoch: UUID = UUID(), displayName: String,
-        signingPublicKey: Data
-    ) {
+    public init(deviceID: UUID = UUID(), epoch: UUID = UUID(), displayName: String) {
         self.deviceID = deviceID
         self.epoch = epoch
         self.displayName = displayName
-        self.signingPublicKey = signingPublicKey
     }
 }
 
 public enum SyncValidationError: Error, Equatable {
-    case invalidObservation, hashMismatch, originSequenceConflict, payloadTooLarge
     case incompatibleProtocol
 }

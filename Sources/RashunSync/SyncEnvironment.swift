@@ -22,8 +22,6 @@ public final class SyncEnvironment {
         UsageHistoryStore.shared.append(sourceName: sourceName, usage: usage)
     }
 
-    public func refreshCompatibilityView() throws {}
-
     public static func dataDirectory() -> URL {
         #if os(Windows)
             if let appData = ProcessInfo.processInfo.environment["APPDATA"], !appData.isEmpty {

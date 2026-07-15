@@ -136,9 +136,8 @@ public struct RashunSyncServer: Sendable {
             router.addMiddleware { FileMiddleware(webRoot, searchForIndexHtml: true) }
         }
         router.post("/v1/pairing/connect") { request, _ in
-            let buffer = try await request.body.collect(upTo: 4_096)
             let value = try decodeJSON(
-                SimplePairingRequest.self, from: Data(buffer.readableBytesView))
+                SimplePairingRequest.self, from: try await collectBody(request, upTo: 4_096))
             if value.scope == .desktopSync, let appVersion, value.requesterVersion != appVersion {
                 throw HTTPError(.conflict)
             }
@@ -306,10 +305,8 @@ public struct RashunSyncServer: Sendable {
                 WebPushKeyDTO(publicKey: base64URL(privateKey.publicKey.x963Representation)))
         }
         router.put("/v1/mobile/push/subscription") { request, _ -> Response in
-            let buffer = try await request.body.collect(upTo: 8_192)
-            let body = Data(buffer.readableBytesView)
-            let credential = try authenticate(
-                request: request, body: body, repository: repository, required: .mobileRead)
+            let (credential, body) = try await authenticatedBody(
+                request, upTo: 8_192, repository: repository, required: .mobileRead)
             let value = try decodeJSON(WebPushSubscriptionDTO.self, from: body)
             guard let endpoint = URL(string: value.endpoint),
                 let key = base64URLData(value.keys.p256dh),
@@ -327,10 +324,8 @@ public struct RashunSyncServer: Sendable {
             return Response(status: .noContent)
         }
         router.post("/v1/history/reconcile") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 16_777_216)
-            let body = Data(buffer.readableBytesView)
-            let credential = try authenticate(
-                request: request, body: body, repository: repository, required: .desktopSync)
+            let (credential, body) = try await authenticatedBody(
+                request, upTo: 16_777_216, repository: repository, required: .desktopSync)
             let value = try decodeExactJSON(HistoryReconcileRequest.self, from: body)
             let changed = await history.merge(value.changes)
             let outgoing = await history.snapshot(value.knownRemoteRevision)
@@ -352,20 +347,16 @@ public struct RashunSyncServer: Sendable {
             return try exactJSON(await trackedUsage.snapshot())
         }
         router.post("/v1/tracked-usage") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 4_194_304)
-            let body = Data(buffer.readableBytesView)
-            _ = try authenticate(
-                request: request, body: body, repository: repository, required: .desktopSync)
+            let (_, body) = try await authenticatedBody(
+                request, upTo: 4_194_304, repository: repository, required: .desktopSync)
             guard let trackedUsage else { throw HTTPError(.notImplemented) }
             let snapshot = try decodeExactJSON(TrackedUsageSyncSnapshot.self, from: body)
             _ = await trackedUsage.merge(snapshot)
             return try exactJSON(await trackedUsage.snapshot())
         }
         router.post("/v1/peers/rotate") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 64)
-            let body = Data(buffer.readableBytesView)
-            let credential = try authenticate(
-                request: request, body: body, repository: repository, required: .desktopSync)
+            let (credential, _) = try await authenticatedBody(
+                request, upTo: 64, repository: repository, required: .desktopSync)
             return try json(try repository.rotatePeer(credentialID: credential.id))
         }
         if let tlsFiles {
@@ -382,6 +373,22 @@ public struct RashunSyncServer: Sendable {
             router: router, configuration: .init(address: .hostname(host, port: port)))
     }
     public func run() async throws { try await application().runService() }
+}
+
+private func collectBody(_ request: Request, upTo maximumBytes: Int) async throws -> Data {
+    let buffer = try await request.body.collect(upTo: maximumBytes)
+    return Data(buffer.readableBytesView)
+}
+
+private func authenticatedBody(
+    _ request: Request, upTo maximumBytes: Int, repository: SyncRepository,
+    required: PeerCredential.Scope
+) async throws -> (PeerCredential, Data) {
+    let body = try await collectBody(request, upTo: maximumBytes)
+    return (
+        try authenticate(request: request, body: body, repository: repository, required: required),
+        body
+    )
 }
 
 private func authenticate(

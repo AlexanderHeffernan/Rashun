@@ -6,7 +6,6 @@ import Foundation
 
 public struct PeerConnectionResult: Sendable {
     public let peer: DeviceIdentity
-    public let credentialID: UUID
     public let sync: SyncResult
 }
 
@@ -67,8 +66,7 @@ public enum PeerConnectionService {
                 credentialID: response.credential.id, url: endpoint, succeeded: true)
             try repository.finishPeerSync(
                 credentialID: response.credential.id, imported: sync.accepted)
-            return .init(
-                peer: response.host, credentialID: response.credential.id, sync: sync)
+            return .init(peer: response.host, sync: sync)
         } catch {
             try? repository.recordAddressResult(
                 credentialID: response.credential.id, url: endpoint, succeeded: false)

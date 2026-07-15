@@ -2,7 +2,6 @@ import Foundation
 
 public struct PeerSyncAttempt: Sendable {
     public let credentialID: UUID
-    public let address: URL?
     public let result: SyncResult?
     public let errorDescription: String?
 }
@@ -56,8 +55,7 @@ public actor PeerSyncService {
                             if result.accepted > 0 { await historyChanged?() }
                             attempts.append(
                                 .init(
-                                    credentialID: peer.credentialID, address: address.url,
-                                    result: result,
+                                    credentialID: peer.credentialID, result: result,
                                     errorDescription: nil))
                             completed = true
                             break
@@ -70,8 +68,7 @@ public actor PeerSyncService {
                                 credentialID: peer.credentialID, url: address.url, succeeded: false)
                             attempts.append(
                                 .init(
-                                    credentialID: peer.credentialID, address: address.url,
-                                    result: nil,
+                                    credentialID: peer.credentialID, result: nil,
                                     errorDescription: Self.message(
                                         for: error, appVersion: appVersion)))
                             break
@@ -91,7 +88,7 @@ public actor PeerSyncService {
                     if addresses.isEmpty {
                         attempts.append(
                             .init(
-                                credentialID: peer.credentialID, address: nil, result: nil,
+                                credentialID: peer.credentialID, result: nil,
                                 errorDescription: message))
                     }
                 }
@@ -99,7 +96,7 @@ public actor PeerSyncService {
         } catch {
             attempts.append(
                 .init(
-                    credentialID: UUID(), address: nil, result: nil,
+                    credentialID: UUID(), result: nil,
                     errorDescription: String(describing: error)))
         }
         return attempts

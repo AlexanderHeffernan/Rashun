@@ -101,8 +101,6 @@ public struct TrackedUsageSyncAccess: Sendable {
 
 public struct SyncResult: Sendable {
     public let accepted: Int
-    public let duplicates: Int
-    public let pages: Int
 }
 
 public struct SyncCoordinator: Sendable {
@@ -157,13 +155,7 @@ public struct SyncCoordinator: Sendable {
                 // Retried by the next normal sync cycle.
             }
         }
-        return .init(
-            accepted: changed ? response.changes.historyBySource.count : 0,
-            duplicates: 0, pages: response.changes.historyBySource.isEmpty ? 0 : 1)
-    }
-
-    public func pull(from peer: any SyncPeerTransport) async throws -> SyncResult {
-        try await reconcile(with: peer)
+        return .init(accepted: changed ? response.changes.historyBySource.count : 0)
     }
 
     private func compatibleHello(from peer: any SyncPeerTransport) async throws -> HelloDTO {

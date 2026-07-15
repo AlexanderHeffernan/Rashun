@@ -287,9 +287,6 @@ final class SyncPreferencesViewModel: ObservableObject {
                 let result = try await PeerConnectionService.connect(
                     repository: repository, endpoint: endpoint, password: joinPassword,
                     requesterAddress: ownAddress, appVersion: version, trackedUsage: .live)
-                if result.sync.accepted > 0 {
-                    try SyncEnvironment.shared.refreshCompatibilityView()
-                }
                 joinAddress = ""
                 joinPassword = ""
                 refresh()
@@ -313,7 +310,6 @@ final class SyncPreferencesViewModel: ObservableObject {
             let attempts = await PeerSyncService(
                 repository: repository,
                 historyChanged: { @MainActor in
-                    try? SyncEnvironment.shared.refreshCompatibilityView()
                     NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
                 }, appVersion: Versioning.versionString(bundle: .main), trackedUsage: .live
             ).syncAllOnce()

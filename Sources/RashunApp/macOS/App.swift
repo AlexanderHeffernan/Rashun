@@ -213,11 +213,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let pace = usage.flatMap { paceStatus(source: source, metric: metric, usage: $0) }
                 let slug = source.name.lowercased()
                 let displayColor: UInt32 = {
-                    if appearance.colorMode == .pace { return pace?.colorHex ?? source.menuBarBrandColorHex }
+                    if appearance.colorMode == .pace {
+                        return pace?.colorHex ?? source.menuBarBrandColorHex
+                    }
                     return source.menuBarBrandColorHex
                 }()
                 let badgeBase = appearance.colorMode == .brandGradient ? 0x0DE4D1 : displayColor
-                let badgeColor = appearance.colorMode == .monochrome
+                let badgeColor =
+                    appearance.colorMode == .monochrome
                     ? UInt32(0) : Self.darkenWidgetColor(badgeBase)
                 return MobileMetricPresentation(
                     providerID: source.name,
@@ -1005,7 +1008,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let repository = SyncEnvironment.shared.repository
         else { return }
         let changed: @Sendable () async -> Void = { @MainActor in
-            try? SyncEnvironment.shared.refreshCompatibilityView()
             NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
         }
         let root = mobileWebRoot()

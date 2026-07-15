@@ -58,7 +58,6 @@ public final class SecretProtector: @unchecked Sendable {
         guard protected.starts(with: Data("RSE1".utf8)) else { return protected }
         return try AES.GCM.open(.init(combined: protected.dropFirst(4)), using: key)
     }
-    public func isProtected(_ data: Data) -> Bool { data.starts(with: Data("RSE1".utf8)) }
     private static func random() -> Data {
         var rng = SystemRandomNumberGenerator()
         return Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &rng) })

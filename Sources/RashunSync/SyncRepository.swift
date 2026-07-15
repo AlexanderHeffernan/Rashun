@@ -84,7 +84,7 @@ public final class SyncRepository: @unchecked Sendable {
             state = try JSONDecoder.sync.decode(State.self, from: data)
         } else {
             state = State(
-                identity: DeviceIdentity(displayName: displayName, signingPublicKey: Data()))
+                identity: DeviceIdentity(displayName: displayName))
             try Self.write(state, to: stateURL)
         }
     }
@@ -372,7 +372,7 @@ public final class SyncRepository: @unchecked Sendable {
     ) throws {
         guard subscription.endpoint.scheme == "https", subscription.clientPublicKey.count == 65,
             subscription.authSecret.count >= 16
-        else { throw SyncValidationError.invalidObservation }
+        else { throw SyncRepositoryError.invalidPushSubscription }
         try mutate { state in
             guard state.peers[credentialID]?.revokedAt == nil else {
                 throw SyncRepositoryError.peerNotFound
@@ -467,5 +467,5 @@ extension JSONDecoder {
 
 public enum SyncRepositoryError: Error, Equatable {
     case corruptDatabase(String)
-    case peerNotFound
+    case peerNotFound, invalidPushSubscription
 }

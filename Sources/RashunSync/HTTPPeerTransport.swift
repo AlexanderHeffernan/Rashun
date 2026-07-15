@@ -26,16 +26,11 @@ public struct HTTPPeerTransport: SyncPeerTransport, Sendable {
     public func trackedUsage() async throws -> TrackedUsageSyncSnapshot {
         try await get("/v1/tracked-usage", as: TrackedUsageSyncSnapshot.self)
     }
-    public func mergeTrackedUsage(_ snapshot: TrackedUsageSyncSnapshot) async throws -> TrackedUsageSyncSnapshot {
-        try await sendExact("POST", path: "/v1/tracked-usage", value: snapshot, as: TrackedUsageSyncSnapshot.self)
-    }
-    public func current() async throws -> Data {
-        let (data, _) = try await execute("GET", path: "/v1/current", body: Data())
-        return data
-    }
-    public func rotate() async throws -> PeerCredential {
-        let (data, _) = try await execute("POST", path: "/v1/peers/rotate", body: Data())
-        return try decoder().decode(PeerCredential.self, from: data)
+    public func mergeTrackedUsage(_ snapshot: TrackedUsageSyncSnapshot) async throws
+        -> TrackedUsageSyncSnapshot
+    {
+        try await sendExact(
+            "POST", path: "/v1/tracked-usage", value: snapshot, as: TrackedUsageSyncSnapshot.self)
     }
     private func get<T: Decodable>(_ path: String, as: T.Type) async throws -> T {
         let (data, _) = try await execute("GET", path: path, body: Data())
