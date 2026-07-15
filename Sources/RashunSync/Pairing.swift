@@ -1,44 +1,5 @@
 import Foundation
 
-public struct PairingInvitation: Codable, Sendable {
-    public let sessionID: UUID
-    public let secret: Data
-    public let expiresAt: Date
-    public let scope: PeerCredential.Scope
-    public init(sessionID: UUID, secret: Data, expiresAt: Date, scope: PeerCredential.Scope) {
-        self.sessionID = sessionID
-        self.secret = secret
-        self.expiresAt = expiresAt
-        self.scope = scope
-    }
-}
-public struct PairingExchangeRequest: Codable, Sendable {
-    public let sessionID: UUID
-    public let secret: Data
-    public let requester: DeviceIdentity
-    public init(sessionID: UUID, secret: Data, requester: DeviceIdentity) {
-        self.sessionID = sessionID
-        self.secret = secret
-        self.requester = requester
-    }
-}
-public struct PairingCompleteRequest: Codable, Sendable {
-    public let sessionID: UUID
-    public let secret: Data
-    public init(sessionID: UUID, secret: Data) {
-        self.sessionID = sessionID
-        self.secret = secret
-    }
-}
-public struct PairingStatusDTO: Codable, Sendable {
-    public let pendingApproval: Bool
-    public let credential: PeerCredential?
-    public init(pendingApproval: Bool, credential: PeerCredential? = nil) {
-        self.pendingApproval = pendingApproval
-        self.credential = credential
-    }
-}
-
 public struct SimplePairingAccess: Codable, Sendable {
     public let password: String
     public let expiresAt: Date
@@ -79,17 +40,6 @@ public struct SimplePairingResponse: Codable, Sendable {
 }
 
 public enum PairingCoordinator {
-    public static func invite(
-        repository: SyncRepository, scope: PeerCredential.Scope, now: Date = Date()
-    ) throws -> PairingInvitation {
-        var rng = SystemRandomNumberGenerator()
-        let secret = Data((0..<32).map { _ in UInt8.random(in: .min ... .max, using: &rng) })
-        let expires = now.addingTimeInterval(120)
-        let id = try repository.createPairingSession(
-            scope: scope, secret: secret, expiresAt: expires)
-        return .init(sessionID: id, secret: secret, expiresAt: expires, scope: scope)
-    }
-
     public static func simpleAccess(
         repository: SyncRepository, scope: PeerCredential.Scope, now: Date = Date()
     ) throws -> SimplePairingAccess {

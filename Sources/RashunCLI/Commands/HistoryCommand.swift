@@ -533,15 +533,9 @@ struct HistoryExportCommand: AsyncParsableCommand {
     func run() async throws {
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         do {
-            let data: Data
-            if let repository = SyncEnvironment.shared.repository {
-                data = try CanonicalHistoryTransfer.export(
-                    repository: repository, appVersion: Versioning.versionString())
-            } else {
-                data = try UsageHistoryTransferService.makeExportData(
-                    historyBySource: UsageHistoryStore.shared.allHistory(),
-                    appVersion: Versioning.versionString())
-            }
+            let data = try UsageHistoryTransferService.makeExportData(
+                historyBySource: UsageHistoryStore.shared.allHistory(),
+                appVersion: Versioning.versionString())
             try data.write(to: url, options: .atomic)
 
             let stats = UsageHistoryStore.shared.stats()
@@ -621,17 +615,9 @@ struct HistoryImportCommand: AsyncParsableCommand {
             return
         }
 
-        let canonical: CanonicalHistoryExport?
         let imported: [String: [UsageSnapshot]]
         do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            canonical = try? decoder.decode(CanonicalHistoryExport.self, from: data)
-            if let canonical {
-                imported = HistoryProjector.project(canonical.observations)
-            } else {
-                imported = try UsageHistoryTransferService.readImportData(from: data)
-            }
+            imported = try UsageHistoryTransferService.readImportData(from: data)
         } catch {
             try emitErrorAndExit(
                 code: "invalid_import",
@@ -673,26 +659,7 @@ struct HistoryImportCommand: AsyncParsableCommand {
             }
         }
 
-        let didReplace: Bool
-        if let repository = SyncEnvironment.shared.repository {
-            let hasCanonical = !(try repository.allObservations()).isEmpty
-            if replace && hasCanonical {
-                try emitErrorAndExit(
-                    code: "canonical_replace_unsupported", short: "Replace unavailable",
-                    detail:
-                        "Canonical synchronized history is immutable. Import with merge semantics instead.",
-                    exitCode: 2)
-                return
-            }
-            _ = try CanonicalHistoryTransfer.importData(
-                data, repository: repository,
-                backupRoot: SyncEnvironment.dataDirectory().appendingPathComponent(
-                    "Backups/imports", isDirectory: true))
-            try SyncEnvironment.shared.refreshCompatibilityView()
-            didReplace = true
-        } else {
-            didReplace = UsageHistoryStore.shared.replaceAllHistory(mergedOrReplaced, force: true)
-        }
+        let didReplace = UsageHistoryStore.shared.replaceAllHistory(mergedOrReplaced, force: true)
         if !didReplace {
             try emitErrorAndExit(
                 code: "import_blocked",
@@ -747,7 +714,7 @@ struct HistoryImportCommand: AsyncParsableCommand {
                 deduped.append(snapshot)
             }
 
-            merged[source] = Array(deduped.suffix(10_000))
+            merged[source] = UsageHistoryStore.compressed(deduped)
         }
 
         return merged

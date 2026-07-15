@@ -56,7 +56,7 @@ public struct NotificationEvent {
     }
 }
 
-public struct UsageSnapshot: Codable {
+public struct UsageSnapshot: Codable, Equatable, Hashable, Sendable {
     public let timestamp: Date
     public let usage: UsageResult
 

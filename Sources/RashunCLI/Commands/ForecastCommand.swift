@@ -53,7 +53,7 @@ struct ForecastCommand: AsyncParsableCommand {
                 let usage = try await source.fetchUsage(for: selectedMetric.id)
                 let scoped = scopedSourceName(source: source, metric: selectedMetric)
                 try SyncEnvironment.shared.record(
-                    providerID: source.name, metricID: selectedMetric.id, usage: usage)
+                    sourceName: scoped, usage: usage)
 
                 if source.metrics.count > 1 {
                     SourceHealthStore.shared.recordSuccess(

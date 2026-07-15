@@ -22,6 +22,25 @@ public struct HistoryStorageStats {
     }
 }
 
+public struct HistorySyncSnapshot: Codable, Sendable, Equatable {
+    public let revision: UInt64
+    public let baseRevision: UInt64
+    public let isComplete: Bool
+    public let historyBySource: [String: [UsageSnapshot]]
+    public let deletedSources: Set<String>
+
+    public init(
+        revision: UInt64, baseRevision: UInt64, isComplete: Bool,
+        historyBySource: [String: [UsageSnapshot]], deletedSources: Set<String> = []
+    ) {
+        self.revision = revision
+        self.baseRevision = baseRevision
+        self.isComplete = isComplete
+        self.historyBySource = historyBySource
+        self.deletedSources = deletedSources
+    }
+}
+
 @MainActor
 public final class UsageHistoryStore {
     public static let shared = UsageHistoryStore(backend: PersistenceBackendFactory.default())
@@ -34,12 +53,17 @@ public final class UsageHistoryStore {
         load()
     }
 
-    private let maxSnapshots = 10_000
     private let userDefaultsKey = "ai.notificationHistory.v1"
     private let migrationKey = "ai.notificationHistory.migrated.v1"
+    private let syncMetadataKey = "ai.notificationHistory.sync.v1"
     private let backend: PersistenceBackend
     private let legacyBackends: [PersistenceBackend]
     private var historyBySource: [String: [UsageSnapshot]] = [:]
+    private var syncRevision: UInt64 = 0
+    private var changedSourcesByRevision: [UInt64: Set<String>] = [:]
+    private var sourceDeletionRevisions: [String: UInt64] = [:]
+    private var storedHistoryChecksum: UInt64?
+    private let retainedSyncRevisions = 512
 
     public func history(for sourceName: String) -> [UsageSnapshot] {
         historyBySource[sourceName] ?? []
@@ -47,12 +71,17 @@ public final class UsageHistoryStore {
 
     public func clearHistory(for sourceName: String) {
         historyBySource.removeValue(forKey: sourceName)
-        save()
+        didChange(sources: [sourceName])
+        sourceDeletionRevisions[sourceName] = syncRevision
+        saveSyncMetadata()
     }
 
     public func clearAllHistory() {
+        let sources = Set(historyBySource.keys)
         historyBySource.removeAll()
-        save()
+        didChange(sources: sources)
+        for source in sources { sourceDeletionRevisions[source] = syncRevision }
+        saveSyncMetadata()
     }
 
     public func resetMigrationStateForTesting() {
@@ -71,7 +100,9 @@ public final class UsageHistoryStore {
     }
 
     @discardableResult
-    public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]], force: Bool = false) -> Bool {
+    public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]], force: Bool = false)
+        -> Bool
+    {
         let normalized = Self.normalizedHistory(newHistory)
         let currentCount = Self.snapshotCount(in: historyBySource)
         let incomingCount = Self.snapshotCount(in: normalized)
@@ -80,8 +111,14 @@ public final class UsageHistoryStore {
             return false
         }
 
+        let previousSources = Set(historyBySource.keys)
         historyBySource = normalized
-        save()
+        didChange(sources: previousSources.union(normalized.keys))
+        for source in previousSources.subtracting(normalized.keys) {
+            sourceDeletionRevisions[source] = syncRevision
+        }
+        for source in normalized.keys { sourceDeletionRevisions.removeValue(forKey: source) }
+        saveSyncMetadata()
         return true
     }
 
@@ -116,33 +153,31 @@ public final class UsageHistoryStore {
     }
 
     public func append(sourceName: String, usage: UsageResult) {
+        sourceDeletionRevisions.removeValue(forKey: sourceName)
         var history = historyBySource[sourceName] ?? []
         let now = Date()
         if let last = history.last, hasSameUsageState(lhs: last.usage, rhs: usage) {
             if history.count >= 2,
-               let secondLast = history.dropLast().last,
-               hasSameUsageState(lhs: secondLast.usage, rhs: usage) {
+                let secondLast = history.dropLast().last,
+                hasSameUsageState(lhs: secondLast.usage, rhs: usage)
+            {
                 history[history.count - 1] = UsageSnapshot(timestamp: now, usage: usage)
             } else {
                 history.append(UsageSnapshot(timestamp: now, usage: usage))
             }
-            if history.count > maxSnapshots {
-                history.removeFirst(history.count - maxSnapshots)
-            }
             historyBySource[sourceName] = history
-            save()
+            didChange(sources: [sourceName])
             return
         }
         history.append(UsageSnapshot(timestamp: now, usage: usage))
-        if history.count > maxSnapshots {
-            history.removeFirst(history.count - maxSnapshots)
-        }
         historyBySource[sourceName] = history
-        save()
+        didChange(sources: [sourceName])
     }
 
     private func load() {
         let hasMigrated = backend.data(forKey: migrationKey) != nil
+        loadSyncMetadata()
+        defer { reconcileSyncMetadataWithHistory() }
 
         let sharedHistory = decodeHistory(from: backend.data(forKey: userDefaultsKey))
         let sharedCount = Self.snapshotCount(in: sharedHistory)
@@ -184,7 +219,8 @@ public final class UsageHistoryStore {
 
     private func decodeHistory(from data: Data?) -> [String: [UsageSnapshot]] {
         guard let data,
-              let decoded = try? JSONDecoder().decode([String: [UsageSnapshot]].self, from: data) else {
+            let decoded = try? JSONDecoder().decode([String: [UsageSnapshot]].self, from: data)
+        else {
             return [:]
         }
         return decoded
@@ -200,21 +236,181 @@ public final class UsageHistoryStore {
         }
     }
 
+    public func syncSnapshot(since revision: UInt64?) -> HistorySyncSnapshot {
+        guard let revision, revision <= syncRevision else {
+            return .init(
+                revision: syncRevision, baseRevision: 0, isComplete: true,
+                historyBySource: historyBySource,
+                deletedSources: Set(sourceDeletionRevisions.keys))
+        }
+        if revision == syncRevision {
+            return .init(
+                revision: syncRevision, baseRevision: revision, isComplete: false,
+                historyBySource: [:])
+        }
+        let earliest = changedSourcesByRevision.keys.min() ?? syncRevision
+        guard revision + 1 >= earliest else {
+            return .init(
+                revision: syncRevision, baseRevision: 0, isComplete: true,
+                historyBySource: historyBySource,
+                deletedSources: Set(sourceDeletionRevisions.keys))
+        }
+        let changed =
+            changedSourcesByRevision
+            .filter { $0.key > revision }
+            .values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        return .init(
+            revision: syncRevision, baseRevision: revision, isComplete: false,
+            historyBySource: Dictionary(
+                uniqueKeysWithValues: changed.map {
+                    ($0, historyBySource[$0] ?? [])
+                }),
+            deletedSources: Set(
+                sourceDeletionRevisions.compactMap {
+                    $0.value > revision ? $0.key : nil
+                }))
+    }
+
+    public var currentSyncRevision: UInt64 { syncRevision }
+
+    @discardableResult
+    public func mergeSyncSnapshot(_ snapshot: HistorySyncSnapshot) -> Bool {
+        var changed = Set<String>()
+        var deleted = Set<String>()
+        for source in snapshot.deletedSources {
+            if historyBySource.removeValue(forKey: source) != nil {
+                changed.insert(source)
+                deleted.insert(source)
+            }
+        }
+        for (source, incoming) in snapshot.historyBySource {
+            guard !snapshot.deletedSources.contains(source) else { continue }
+            if incoming.isEmpty {
+                if historyBySource.removeValue(forKey: source) != nil { changed.insert(source) }
+                continue
+            }
+            let merged = Self.compressed((historyBySource[source] ?? []) + incoming)
+            if merged != historyBySource[source] {
+                historyBySource[source] = merged
+                sourceDeletionRevisions.removeValue(forKey: source)
+                changed.insert(source)
+            }
+        }
+        guard !changed.isEmpty else { return false }
+        didChange(sources: changed)
+        for source in deleted { sourceDeletionRevisions[source] = syncRevision }
+        saveSyncMetadata()
+        return true
+    }
+
+    nonisolated public static func compressed(_ snapshots: [UsageSnapshot]) -> [UsageSnapshot] {
+        let ordered = Array(Set(snapshots)).sorted {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            return snapshotTieBreaker($0) < snapshotTieBreaker($1)
+        }
+        var result: [UsageSnapshot] = []
+        for snapshot in ordered {
+            if result.count >= 2,
+                sameUsageState(result[result.count - 1].usage, snapshot.usage),
+                sameUsageState(result[result.count - 2].usage, snapshot.usage)
+            {
+                result[result.count - 1] = snapshot
+            } else {
+                result.append(snapshot)
+            }
+        }
+        return result
+    }
+
+    private func didChange(sources: Set<String>) {
+        guard !sources.isEmpty else { return }
+        syncRevision &+= 1
+        changedSourcesByRevision[syncRevision] = sources
+        if changedSourcesByRevision.count > retainedSyncRevisions {
+            for key in changedSourcesByRevision.keys.sorted().dropLast(retainedSyncRevisions) {
+                changedSourcesByRevision.removeValue(forKey: key)
+            }
+        }
+        save()
+        saveSyncMetadata()
+    }
+
+    private struct SyncMetadata: Codable {
+        let revision: UInt64
+        let changes: [UInt64: Set<String>]
+        let historyChecksum: UInt64?
+        let deletionRevisions: [String: UInt64]?
+    }
+
+    private func loadSyncMetadata() {
+        guard let data = backend.data(forKey: syncMetadataKey),
+            let value = try? JSONDecoder().decode(SyncMetadata.self, from: data)
+        else { return }
+        syncRevision = value.revision
+        changedSourcesByRevision = value.changes
+        storedHistoryChecksum = value.historyChecksum
+        sourceDeletionRevisions = value.deletionRevisions ?? [:]
+    }
+
+    private func saveSyncMetadata() {
+        let value = SyncMetadata(
+            revision: syncRevision, changes: changedSourcesByRevision,
+            historyChecksum: historyChecksum(), deletionRevisions: sourceDeletionRevisions)
+        if let data = try? JSONEncoder().encode(value) {
+            backend.set(data, forKey: syncMetadataKey)
+        }
+    }
+
+    private func reconcileSyncMetadataWithHistory() {
+        let checksum = historyChecksum()
+        guard storedHistoryChecksum != checksum else { return }
+        syncRevision &+= 1
+        changedSourcesByRevision = [syncRevision: Set(historyBySource.keys)]
+        saveSyncMetadata()
+    }
+
+    private func historyChecksum() -> UInt64 {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(historyBySource) else { return 0 }
+        return data.reduce(14_695_981_039_346_656_037) { hash, byte in
+            (hash ^ UInt64(byte)) &* 1_099_511_628_211
+        }
+    }
+
+    nonisolated private static func snapshotTieBreaker(_ snapshot: UsageSnapshot) -> String {
+        let usage = snapshot.usage
+        return [
+            String(usage.remaining.bitPattern), String(usage.limit.bitPattern),
+            usage.resetDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
+            usage.cycleStartDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
+        ].joined(separator: ":")
+    }
+
+    nonisolated private static func sameUsageState(_ lhs: UsageResult, _ rhs: UsageResult) -> Bool {
+        lhs.remaining == rhs.remaining && lhs.limit == rhs.limit
+            && lhs.resetDate == rhs.resetDate && lhs.cycleStartDate == rhs.cycleStartDate
+    }
+
     private func writeMigrationBackup(named suffix: String, history: [String: [UsageSnapshot]]) {
         guard !history.isEmpty else { return }
         #if os(macOS)
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        let backupDir = appSupport
-            .appendingPathComponent("Rashun", isDirectory: true)
-            .appendingPathComponent("Backups", isDirectory: true)
-        try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let fileURL = backupDir.appendingPathComponent("history-\(suffix)-\(stamp).json")
-        if let data = try? JSONEncoder().encode(history) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
+            let fm = FileManager.default
+            let appSupport =
+                fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? fm.homeDirectoryForCurrentUser.appendingPathComponent(
+                    "Library/Application Support", isDirectory: true)
+            let backupDir =
+                appSupport
+                .appendingPathComponent("Rashun", isDirectory: true)
+                .appendingPathComponent("Backups", isDirectory: true)
+            try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(
+                of: ":", with: "-")
+            let fileURL = backupDir.appendingPathComponent("history-\(suffix)-\(stamp).json")
+            if let data = try? JSONEncoder().encode(history) {
+                try? data.write(to: fileURL, options: .atomic)
+            }
         #endif
     }
 
@@ -257,19 +453,18 @@ public final class UsageHistoryStore {
         return removed
     }
 
-    private static func normalizedHistory(_ input: [String: [UsageSnapshot]]) -> [String: [UsageSnapshot]] {
+    private static func normalizedHistory(_ input: [String: [UsageSnapshot]]) -> [String:
+        [UsageSnapshot]]
+    {
         var normalized: [String: [UsageSnapshot]] = [:]
         for (source, snapshots) in input {
             let sorted = snapshots.sorted(by: { $0.timestamp < $1.timestamp })
-            normalized[source] = Array(sorted.suffix(10_000))
+            normalized[source] = compressed(sorted)
         }
         return normalized
     }
 
     private func hasSameUsageState(lhs: UsageResult, rhs: UsageResult) -> Bool {
-        lhs.remaining == rhs.remaining &&
-            lhs.limit == rhs.limit &&
-            lhs.resetDate == rhs.resetDate &&
-            lhs.cycleStartDate == rhs.cycleStartDate
+        Self.sameUsageState(lhs, rhs)
     }
 }

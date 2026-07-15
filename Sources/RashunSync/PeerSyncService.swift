@@ -37,33 +37,47 @@ public actor PeerSyncService {
                 }
                 let addresses = try repository.addresses(credentialID: peer.credentialID)
                 var completed = false
-                try? repository.beginPeerSync(credentialID: peer.credentialID)
+                let attemptStartedAt = Date()
+                try? repository.beginPeerSync(
+                    credentialID: peer.credentialID, at: attemptStartedAt)
                 for address in addresses {
-                    do {
-                        let result = try await SyncCoordinator(
-                            repository: repository, requiredAppVersion: appVersion,
-                            trackedUsage: trackedUsage
-                        ).reconcile(with: factory(address.url, credential))
-                        try repository.recordAddressResult(
-                            credentialID: peer.credentialID, url: address.url, succeeded: true)
-                        try repository.finishPeerSync(
-                            credentialID: peer.credentialID, imported: result.accepted)
-                        if result.accepted > 0 { await historyChanged?() }
-                        attempts.append(
-                            .init(
-                                credentialID: peer.credentialID, address: address.url,
-                                result: result,
-                                errorDescription: nil))
-                        completed = true
-                        break
-                    } catch {
-                        try? repository.recordAddressResult(
-                            credentialID: peer.credentialID, url: address.url, succeeded: false)
-                        attempts.append(
-                            .init(
-                                credentialID: peer.credentialID, address: address.url, result: nil,
-                                errorDescription: Self.message(for: error, appVersion: appVersion)))
+                    for attempt in 0..<2 {
+                        do {
+                            let result = try await SyncCoordinator(
+                                repository: repository, requiredAppVersion: appVersion,
+                                trackedUsage: trackedUsage
+                            ).reconcile(
+                                with: factory(address.url, credential),
+                                credentialID: peer.credentialID)
+                            try repository.recordAddressResult(
+                                credentialID: peer.credentialID, url: address.url, succeeded: true)
+                            try repository.finishPeerSync(
+                                credentialID: peer.credentialID, imported: result.accepted)
+                            if result.accepted > 0 { await historyChanged?() }
+                            attempts.append(
+                                .init(
+                                    credentialID: peer.credentialID, address: address.url,
+                                    result: result,
+                                    errorDescription: nil))
+                            completed = true
+                            break
+                        } catch {
+                            if attempt == 0, Self.shouldRetry(error) {
+                                try? await Task.sleep(for: .milliseconds(750))
+                                continue
+                            }
+                            try? repository.recordAddressResult(
+                                credentialID: peer.credentialID, url: address.url, succeeded: false)
+                            attempts.append(
+                                .init(
+                                    credentialID: peer.credentialID, address: address.url,
+                                    result: nil,
+                                    errorDescription: Self.message(
+                                        for: error, appVersion: appVersion)))
+                            break
+                        }
                     }
+                    if completed { break }
                 }
                 if !completed {
                     let message =
@@ -71,8 +85,9 @@ public actor PeerSyncService {
                         ? "No return address is available."
                         : (attempts.last?.errorDescription
                             ?? "The other device could not be reached.")
-                    try? repository.finishPeerSync(
-                        credentialID: peer.credentialID, imported: 0, error: message)
+                    try? repository.failPeerSync(
+                        credentialID: peer.credentialID, error: message,
+                        attemptStartedAt: attemptStartedAt)
                     if addresses.isEmpty {
                         attempts.append(
                             .init(
@@ -108,5 +123,13 @@ public actor PeerSyncService {
         }
         return
             "Could not reach the other device. Check that Rashun is running and the address is reachable."
+    }
+
+    private static func shouldRetry(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if case HTTPPeerTransportError.httpStatus(let status) = error {
+            return status == 408 || status == 429 || status >= 500
+        }
+        return false
     }
 }

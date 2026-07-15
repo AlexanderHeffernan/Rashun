@@ -11,21 +11,6 @@ public enum PairingHTTPClient {
         try await post(request, path: "/v1/pairing/connect", endpoint: endpoint)
     }
 
-    public static func exchange(
-        invitation: PairingInvitation, with endpoint: URL, requester: DeviceIdentity
-    ) async throws -> PairingStatusDTO {
-        try await post(
-            PairingExchangeRequest(
-                sessionID: invitation.sessionID, secret: invitation.secret, requester: requester),
-            path: "/v1/pairing/exchange", endpoint: endpoint)
-    }
-    public static func complete(invitation: PairingInvitation, with endpoint: URL) async throws
-        -> PairingStatusDTO
-    {
-        try await post(
-            PairingCompleteRequest(sessionID: invitation.sessionID, secret: invitation.secret),
-            path: "/v1/pairing/complete", endpoint: endpoint)
-    }
     private static func post<I: Encodable, O: Decodable>(_ value: I, path: String, endpoint: URL)
         async throws -> O
     {

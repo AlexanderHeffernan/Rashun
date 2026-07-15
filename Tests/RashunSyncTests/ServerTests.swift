@@ -162,44 +162,28 @@ final class ServerTests: XCTestCase {
         try await app.test(.router) { client in
             let wrong = Data("{}".utf8)
             let wrongHeader = Self.authorization(
-                method: "POST", path: "/v1/observations/query", body: wrong, credential: mobile)
+                method: "POST", path: "/v1/history/reconcile", body: wrong, credential: mobile)
             try await client.execute(
-                uri: "/v1/observations/query", method: .post,
+                uri: "/v1/history/reconcile", method: .post,
                 headers: [.authorization: wrongHeader],
                 body: .init(data: wrong)
             ) { XCTAssertEqual($0.status, .unauthorized) }
             let malformed = Data("not-json".utf8)
             let malformedHeader = Self.authorization(
-                method: "POST", path: "/v1/observations/query", body: malformed, credential: desktop
+                method: "POST", path: "/v1/history/reconcile", body: malformed, credential: desktop
             )
             try await client.execute(
-                uri: "/v1/observations/query", method: .post,
+                uri: "/v1/history/reconcile", method: .post,
                 headers: [.authorization: malformedHeader],
                 body: .init(data: malformed)
             ) { XCTAssertEqual($0.status, .badRequest) }
-            let query = ObservationQuery(
-                protocolVersion: 99,
-                requests: [
-                    .init(
-                        origin: .init(deviceID: UUID(), epoch: UUID()),
-                        range: .init(from: 1, through: 1))
-                ], limit: 1, pageToken: nil)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let incompatible = try encoder.encode(query)
-            let incompatibleHeader = Self.authorization(
-                method: "POST", path: "/v1/observations/query", body: incompatible,
+            let oversized = Data(repeating: 65, count: 16_777_217)
+            let oversizedHeader = Self.authorization(
+                method: "POST", path: "/v1/history/reconcile", body: oversized,
                 credential: desktop)
             try await client.execute(
-                uri: "/v1/observations/query", method: .post,
-                headers: [.authorization: incompatibleHeader],
-                body: .init(data: incompatible)
-            ) { XCTAssertEqual($0.status, .badRequest) }
-            let oversized = Data(repeating: 65, count: 1_048_577)
-            let oversizedHeader = Self.authorization(
-                method: "POST", path: "/v1/observations", body: oversized, credential: desktop)
-            try await client.execute(
-                uri: "/v1/observations", method: .post, headers: [.authorization: oversizedHeader],
+                uri: "/v1/history/reconcile", method: .post,
+                headers: [.authorization: oversizedHeader],
                 body: .init(data: oversized)
             ) { XCTAssertNotEqual($0.status, .ok) }
         }
@@ -209,10 +193,8 @@ final class ServerTests: XCTestCase {
         let credential = PeerCredential(
             secret: Data(repeating: 9, count: 32), scopes: [.mobileRead])
         try repo.savePeer(credential, deviceID: UUID(), epoch: UUID(), displayName: "Phone")
-        _ = try repo.record(
-            series: .init(providerID: "Codex", metricID: "weekly"),
-            usage: .init(remaining: 42, limit: 100, resetDate: nil, cycleStartDate: nil))
-        let app = try RashunSyncServer(repository: repo).application()
+        let history = TestHistory(["Codex::weekly": [snapshot(42)]])
+        let app = try RashunSyncServer(repository: repo, history: history.access).application()
         try await app.test(.router) { client in
             try await client.execute(uri: "/v1/current", method: .get) {
                 XCTAssertEqual($0.status, .unauthorized)
@@ -252,17 +234,20 @@ final class ServerTests: XCTestCase {
         let widget = PeerCredential(
             secret: Data(repeating: 14, count: 32), scopes: [.widgetRead])
         try repo.savePeer(widget, deviceID: UUID(), epoch: UUID(), displayName: "iOS Widget")
-        _ = try repo.record(
-            series: .init(providerID: "Codex", metricID: "weekly"),
-            usage: .init(
-                remaining: 31, limit: 100,
-                resetDate: Date(timeIntervalSince1970: 2_000_000_000)))
+        let history = TestHistory([
+            "Codex::weekly": [
+                snapshot(
+                    31, reset: Date(timeIntervalSince1970: 2_000_000_000))
+            ]
+        ])
         await MobileUsagePresentationStore.shared.replaceAppearance(
             .init(
                 colorMode: "pace", centerContentMode: "logo", showMetricBadges: true,
                 metrics: [.init(providerID: "Codex", metricID: "weekly")],
                 backgroundColorHex: "#010203", accentBrandColorHex: "#AABBCC"))
-        let app = try RashunSyncServer(repository: repo, appVersion: "1.2.3").application()
+        let app = try RashunSyncServer(
+            repository: repo, appVersion: "1.2.3", history: history.access
+        ).application()
         let header = "RashunBearer \(widget.id.uuidString):\(widget.secret.base64EncodedString())"
         try await app.test(.router) { client in
             try await client.execute(
@@ -310,8 +295,9 @@ final class ServerTests: XCTestCase {
                 uri: "/v1/widget/setup", method: .post, headers: [.authorization: header]
             ) { response in
                 XCTAssertEqual(response.status, .ok)
-                let object = try JSONSerialization.jsonObject(
-                    with: Data(buffer: response.body)) as? [String: Any]
+                let object =
+                    try JSONSerialization.jsonObject(
+                        with: Data(buffer: response.body)) as? [String: Any]
                 XCTAssertNotNil(object?["password"])
                 XCTAssertNotNil(object?["expiresAt"])
             }
@@ -339,12 +325,9 @@ final class ServerTests: XCTestCase {
         let credential = PeerCredential(
             secret: Data(repeating: 4, count: 32), scopes: [.mobileRead])
         try repo.savePeer(credential, deviceID: UUID(), epoch: UUID(), displayName: "Phone")
-        _ = try repo.record(
-            series: .init(providerID: "Codex", metricID: "weekly"),
-            usage: .init(remaining: 54, limit: 100, resetDate: nil, cycleStartDate: nil))
-        _ = try repo.record(
-            series: .init(providerID: "Codex", metricID: "hidden"),
-            usage: .init(remaining: 10, limit: 100, resetDate: nil, cycleStartDate: nil))
+        let history = TestHistory([
+            "Codex::weekly": [snapshot(54)], "Codex::hidden": [snapshot(10)],
+        ])
         await MobileUsagePresentationStore.shared.replace([
             .init(
                 providerID: "Codex", metricID: "weekly", sourceName: "Codex",
@@ -357,7 +340,9 @@ final class ServerTests: XCTestCase {
         defer { Task { await MobileUsagePresentationStore.shared.reset() } }
         let cookie =
             "rashun_session=\(credential.id.uuidString):\(credential.secret.base64EncodedString())"
-        try await RashunSyncServer(repository: repo).application().test(.router) { client in
+        try await RashunSyncServer(repository: repo, history: history.access).application().test(
+            .router
+        ) { client in
             try await client.execute(uri: "/v1/current", method: .get, headers: [.cookie: cookie]) {
                 response in
                 let decoder = JSONDecoder()
@@ -397,43 +382,38 @@ final class ServerTests: XCTestCase {
         XCTAssertNil(try repo.peerCredential(id: credential.id))
     }
 
-    func testDesktopCanQueryBackfillPage() async throws {
+    func testDesktopCanReconcileChangedHistory() async throws {
         let repo = try repository()
         let credential = PeerCredential(
             secret: Data(repeating: 3, count: 32), scopes: [.desktopSync])
         try repo.savePeer(credential, deviceID: UUID(), epoch: UUID(), displayName: "Desktop")
-        let observation = try repo.record(
-            series: .init(providerID: "Codex", metricID: "weekly"),
-            usage: .init(remaining: 42, limit: 100, resetDate: nil, cycleStartDate: nil))
-        let query = ObservationQuery(
-            protocolVersion: 1,
-            requests: [.init(origin: observation.origin, range: .init(from: 1, through: 1))],
-            limit: 500,
-            pageToken: nil)
+        let history = TestHistory(["Codex::weekly": [snapshot(42)]])
+        let query = HistoryReconcileRequest(
+            knownRemoteRevision: nil,
+            changes: .init(
+                revision: 2, baseRevision: 0, isComplete: false,
+                historyBySource: ["Amp::daily": [snapshot(67)]]))
         let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        encoder.dateEncodingStrategy = .secondsSince1970
         let body = try encoder.encode(query)
         let header = Self.authorization(
-            method: "POST", path: "/v1/observations/query", body: body, credential: credential)
-        try await RashunSyncServer(repository: repo).application().test(.router) { client in
+            method: "POST", path: "/v1/history/reconcile", body: body, credential: credential)
+        try await RashunSyncServer(repository: repo, history: history.access).application().test(
+            .router
+        ) { client in
             try await client.execute(
-                uri: "/v1/observations/query", method: .post,
+                uri: "/v1/history/reconcile", method: .post,
                 headers: [.authorization: header, .contentType: "application/json"],
                 body: .init(data: body)
             ) { response in
                 XCTAssertEqual(response.status, .ok)
                 let decoder = JSONDecoder()
                 decoder.dateDecodingStrategy = .secondsSince1970
-                let page = try decoder.decode(
-                    ObservationPage.self, from: Data(buffer: response.body))
-                XCTAssertEqual(page.observations.first?.id, observation.id)
-                XCTAssertNoThrow(
-                    try SyncRepository(
-                        path: FileManager.default.temporaryDirectory.appendingPathComponent(
-                            UUID().uuidString
-                        )
-                        .path
-                    ).ingest(page.observations))
+                let value = try decoder.decode(
+                    HistoryReconcileResponse.self, from: Data(buffer: response.body))
+                XCTAssertEqual(value.acknowledgedRevision, 2)
+                XCTAssertEqual(
+                    value.changes.historyBySource["Codex::weekly"]?.last?.usage.remaining, 42)
             }
         }
     }
@@ -450,9 +430,40 @@ final class ServerTests: XCTestCase {
         return
             "Rashun \(signed.credentialID.uuidString):\(Int(signed.timestamp.timeIntervalSince1970)):\(signed.nonce):\(signed.signature.base64EncodedString())"
     }
+    private func snapshot(_ remaining: Double, reset: Date? = nil) -> UsageSnapshot {
+        UsageSnapshot(
+            timestamp: Date(timeIntervalSince1970: remaining),
+            usage: .init(remaining: remaining, limit: 100, resetDate: reset))
+    }
 }
 private actor CredentialBox {
     private var value: PeerCredential?
     func set(_ value: PeerCredential?) { self.value = value }
     func get() -> PeerCredential? { value }
+}
+
+private actor TestHistory {
+    private var history: [String: [UsageSnapshot]]
+    private var revision: UInt64 = 1
+    init(_ history: [String: [UsageSnapshot]]) { self.history = history }
+    nonisolated var access: HistorySyncAccess {
+        HistorySyncAccess(
+            revision: { [self] in await currentRevision() },
+            snapshot: { [self] since in await snapshot(since) },
+            merge: { [self] value in await merge(value) })
+    }
+    private func currentRevision() -> UInt64 { revision }
+    private func snapshot(_ since: UInt64?) -> HistorySyncSnapshot {
+        .init(
+            revision: revision, baseRevision: since ?? 0, isComplete: since == nil,
+            historyBySource: since == revision ? [:] : history)
+    }
+    private func merge(_ value: HistorySyncSnapshot) -> Bool {
+        guard !value.historyBySource.isEmpty else { return false }
+        for (key, incoming) in value.historyBySource {
+            history[key] = UsageHistoryStore.compressed((history[key] ?? []) + incoming)
+        }
+        revision += 1
+        return true
+    }
 }

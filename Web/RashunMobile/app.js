@@ -357,6 +357,15 @@ async function configureNotifications() {
   toggle.disabled = false;
   toggle.checked =
     enabled && Notification.permission === "granted" && !!subscription;
+  if (toggle.checked) {
+    try {
+      await syncPushSubscription(subscription);
+      await remove("settings", "pushSubscriptionNeedsSync");
+    } catch {
+      note.textContent =
+        "Notifications need to reconnect. Keep Rashun open and try again shortly.";
+    }
+  }
   note.textContent =
     Notification.permission === "denied"
       ? "Notifications are blocked in this device’s system settings."
@@ -397,6 +406,7 @@ async function toggleNotifications(event) {
     if (!keyResponse.ok)
       throw new Error("Rashun could not prepare notifications.");
     const { publicKey } = await keyResponse.json();
+    await put("settings", "pushApplicationServerKey", publicKey);
     active =
       subscription ||
       (await registration.pushManager.subscribe({

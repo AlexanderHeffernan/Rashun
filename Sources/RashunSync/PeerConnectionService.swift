@@ -54,12 +54,15 @@ public enum PeerConnectionService {
             displayName: response.host.displayName)
         try repository.saveAddress(
             credentialID: response.credential.id, url: endpoint, kind: .manual)
-        try repository.beginPeerSync(credentialID: response.credential.id)
+        let attemptStartedAt = Date()
+        try repository.beginPeerSync(
+            credentialID: response.credential.id, at: attemptStartedAt)
         do {
             let sync = try await SyncCoordinator(
                 repository: repository, requiredAppVersion: appVersion, trackedUsage: trackedUsage
             ).reconcile(
-                with: HTTPPeerTransport(baseURL: endpoint, credential: response.credential))
+                with: HTTPPeerTransport(baseURL: endpoint, credential: response.credential),
+                credentialID: response.credential.id)
             try repository.recordAddressResult(
                 credentialID: response.credential.id, url: endpoint, succeeded: true)
             try repository.finishPeerSync(
@@ -69,9 +72,9 @@ public enum PeerConnectionService {
         } catch {
             try? repository.recordAddressResult(
                 credentialID: response.credential.id, url: endpoint, succeeded: false)
-            try? repository.finishPeerSync(
-                credentialID: response.credential.id, imported: 0,
-                error: String(describing: error))
+            try? repository.failPeerSync(
+                credentialID: response.credential.id, error: String(describing: error),
+                attemptStartedAt: attemptStartedAt)
             throw error
         }
     }

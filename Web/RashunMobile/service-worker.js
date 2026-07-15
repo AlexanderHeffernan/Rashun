@@ -74,6 +74,20 @@ self.addEventListener("push", (event) => {
     }),
   );
 });
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    readSetting("pushApplicationServerKey")
+      .then((publicKey) => {
+        if (!publicKey) throw new Error("Missing application server key");
+        return self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: fromBase64URL(publicKey),
+        });
+      })
+      .then(() => writeSetting("pushSubscriptionNeedsSync", true))
+      .catch(() => writeSetting("pushSubscriptionNeedsSync", true)),
+  );
+});
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
@@ -86,3 +100,41 @@ self.addEventListener("notificationclick", (event) => {
       ),
   );
 });
+
+function openSettingsDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("rashun-mobile-v2", 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("settings")) db.createObjectStore("settings");
+      if (!db.objectStoreNames.contains("current")) db.createObjectStore("current");
+      if (!db.objectStoreNames.contains("keys")) db.createObjectStore("keys");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function readSetting(key) {
+  const db = await openSettingsDB();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction("settings").objectStore("settings").get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function writeSetting(key, value) {
+  const db = await openSettingsDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction("settings", "readwrite");
+    transaction.objectStore("settings").put(value, key);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+  });
+}
+function fromBase64URL(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(
+    Math.ceil(value.length / 4) * 4,
+    "=",
+  );
+  return Uint8Array.from(atob(normalized), (character) => character.charCodeAt(0));
+}

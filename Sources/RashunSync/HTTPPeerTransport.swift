@@ -16,16 +16,12 @@ public struct HTTPPeerTransport: SyncPeerTransport, Sendable {
         self.credential = credential
     }
     public func hello() async throws -> HelloDTO { try await get("/v1/hello", as: HelloDTO.self) }
-    public func origins() async throws -> [OriginSummary] {
-        try await get("/v1/origins", as: [OriginSummary].self)
-    }
-    public func query(_ request: ObservationQuery) async throws -> ObservationPage {
+    public func reconcileHistory(_ request: HistoryReconcileRequest) async throws
+        -> HistoryReconcileResponse
+    {
         try await sendExact(
-            "POST", path: "/v1/observations/query", value: request, as: ObservationPage.self)
-    }
-    public func ingest(_ observations: [UsageObservation]) async throws -> IngestAcknowledgement {
-        try await sendExact(
-            "POST", path: "/v1/observations", value: observations, as: IngestAcknowledgement.self)
+            "POST", path: "/v1/history/reconcile", value: request,
+            as: HistoryReconcileResponse.self)
     }
     public func trackedUsage() async throws -> TrackedUsageSyncSnapshot {
         try await get("/v1/tracked-usage", as: TrackedUsageSyncSnapshot.self)

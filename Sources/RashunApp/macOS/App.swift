@@ -1797,7 +1797,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if SettingsStore.shared.syncServerEnabled {
                     do {
                         try SyncEnvironment.shared.record(
-                            providerID: source.name, metricID: metric.id, usage: current)
+                            sourceName: scopedName, usage: current)
                     } catch {
                         NSLog(
                             "Rashun canonical observation write failed: %@",

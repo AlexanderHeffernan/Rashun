@@ -17,17 +17,28 @@ final class SyncPreferencesViewModel: ObservableObject {
         }
         var isOnline: Bool {
             guard let lastActivityAt else { return false }
+            if !isMobile && !isWidget { return peer.lastSyncError == nil }
             return Date().timeIntervalSince(lastActivityAt) < (isMobile || isWidget ? 90 : 35)
         }
         var presenceText: String {
-            guard !isOnline else { return "Connected just now" }
             guard let lastActivityAt else { return "Never online" }
             let elapsed = max(0, Date().timeIntervalSince(lastActivityAt))
-            if elapsed < 60 { return "Last online less than a minute ago" }
-            if elapsed < 3_600 { return "Last online \(Int(elapsed / 60))m ago" }
-            if elapsed < 86_400 { return "Last online \(Int(elapsed / 3_600))h ago" }
-            if elapsed < 604_800 { return "Last online \(Int(elapsed / 86_400))d ago" }
-            return "Last online \(lastActivityAt.formatted(date: .abbreviated, time: .shortened))"
+            let prefix = isOnline ? "Connected" : "Last online"
+            if elapsed < 10 { return "\(prefix) just now" }
+            if elapsed < 60 { return "\(prefix) less than a minute ago" }
+            if elapsed < 3_600 {
+                let minutes = Int(elapsed / 60)
+                return "\(prefix) \(minutes) minute\(minutes == 1 ? "" : "s") ago"
+            }
+            if elapsed < 86_400 {
+                let hours = Int(elapsed / 3_600)
+                return "\(prefix) \(hours) hour\(hours == 1 ? "" : "s") ago"
+            }
+            if elapsed < 604_800 {
+                let days = Int(elapsed / 86_400)
+                return "\(prefix) \(days) day\(days == 1 ? "" : "s") ago"
+            }
+            return "\(prefix) \(lastActivityAt.formatted(date: .abbreviated, time: .shortened))"
         }
         var secondaryStatus: String {
             if isMobile {
@@ -67,6 +78,7 @@ final class SyncPreferencesViewModel: ObservableObject {
     @Published var tailscaleServeState: TailscaleServeState?
     @Published var isConfiguringTailscale = false
     @Published var retryingPeerID: UUID?
+    @Published var testingNotificationPeerID: UUID?
     @Published var syncMinutesText = ""
     private var repository: SyncRepository? { SyncEnvironment.shared.repository }
 
@@ -248,6 +260,19 @@ final class SyncPreferencesViewModel: ObservableObject {
         status = "Mobile link copied."
     }
 
+    func copyConnectionValue(_ value: String, label: String) {
+        guard !value.hasPrefix("Preparing") else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+        status = "\(label) copied."
+    }
+
+    func pasteConnectionValue(into value: inout String, label: String) {
+        guard let pasted = NSPasteboard.general.string(forType: .string) else { return }
+        value = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+        status = "\(label) pasted."
+    }
+
     func joinDesktop() {
         guard !isJoining else { return }
         isJoining = true
@@ -268,7 +293,8 @@ final class SyncPreferencesViewModel: ObservableObject {
                 joinAddress = ""
                 joinPassword = ""
                 refresh()
-                status = "Connected to \(result.peer.displayName). Usage and tracked sessions are up to date."
+                status =
+                    "Connected to \(result.peer.displayName). Usage and tracked sessions are up to date."
             } catch PeerConnectionError.versionMismatch {
                 status =
                     "Both devices must be running the same Rashun version. Update Rashun on both devices, then try again."
@@ -297,6 +323,23 @@ final class SyncPreferencesViewModel: ObservableObject {
                 attempts.first(where: { $0.credentialID == id })?.result != nil
                 ? "Usage and tracked sessions are up to date."
                 : "Sync failed. Check that Rashun is running and both devices are on the same version."
+        }
+    }
+
+    func sendTestNotification(to row: PeerRow) {
+        guard let repository, testingNotificationPeerID == nil else { return }
+        testingNotificationPeerID = row.id
+        status = "Sending test notification…"
+        Task {
+            defer { testingNotificationPeerID = nil }
+            do {
+                try await WebPushSender.sendTest(
+                    credentialID: row.peer.credentialID, repository: repository)
+                status = "Test notification sent to \(row.peer.displayName)."
+            } catch {
+                status = error.localizedDescription
+                await refreshPeers()
+            }
         }
     }
 
@@ -385,7 +428,8 @@ struct SyncTabView: View {
                         HStack(spacing: 14) {
                             BrandIconTile(
                                 systemName: row.isWidget
-                                    ? "rectangle.on.rectangle" : (row.isMobile ? "iphone" : "desktopcomputer"))
+                                    ? "rectangle.on.rectangle"
+                                    : (row.isMobile ? "iphone" : "desktopcomputer"))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.peer.displayName).fontWeight(.semibold)
                                 HStack(spacing: 6) {
@@ -407,10 +451,28 @@ struct SyncTabView: View {
                                 }.font(.caption).foregroundStyle(BrandPalette.textSecondary)
                             }
                             Spacer()
+                            if row.isMobile && !row.isWidget {
+                                Button {
+                                    model.sendTestNotification(to: row)
+                                } label: {
+                                    Image(systemName: "bell.badge")
+                                        .foregroundStyle(BrandPalette.primary)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(
+                                    !row.peer.hasPushSubscription
+                                        || model.testingNotificationPeerID != nil
+                                )
+                                .help(
+                                    row.peer.hasPushSubscription
+                                        ? "Send test notification"
+                                        : "Notifications are not enabled on this device")
+                            }
                             Menu {
                                 if !row.isMobile && !row.isWidget {
-                                    Button(model.retryingPeerID == row.id ? "Retrying…" : "Retry sync")
-                                    {
+                                    Button(
+                                        model.retryingPeerID == row.id ? "Retrying…" : "Retry sync"
+                                    ) {
                                         model.retry(row.id)
                                     }
                                     .disabled(model.retryingPeerID != nil)
@@ -632,10 +694,14 @@ struct SyncTabView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         connectionValue(
                             label: "Address",
-                            value: model.baseURL?.absoluteString ?? "Preparing address…")
+                            value: model.baseURL?.absoluteString ?? "Preparing address…",
+                            onCopy: { value in model.copyConnectionValue(value, label: "Address") })
                         connectionValue(
                             label: "Pairing code",
-                            value: model.desktopAccess?.password ?? "Preparing code…")
+                            value: model.desktopAccess?.password ?? "Preparing code…",
+                            onCopy: { value in
+                                model.copyConnectionValue(value, label: "Pairing code")
+                            })
                         if let expiry = model.desktopAccess?.expiresAt {
                             Text(
                                 "Code expires at \(expiry.formatted(date: .omitted, time: .shortened))"
@@ -652,9 +718,17 @@ struct SyncTabView: View {
                     VStack(spacing: 10) {
                         styledField(
                             icon: "network", placeholder: "IP address or URL",
-                            text: $model.joinAddress)
+                            text: $model.joinAddress,
+                            onPaste: {
+                                model.pasteConnectionValue(
+                                    into: &model.joinAddress, label: "Address")
+                            })
                         styledSecureField(
-                            icon: "key", placeholder: "Pairing code", text: $model.joinPassword)
+                            icon: "key", placeholder: "Pairing code", text: $model.joinPassword,
+                            onPaste: {
+                                model.pasteConnectionValue(
+                                    into: &model.joinPassword, label: "Pairing code")
+                            })
                         Button(model.isJoining ? "Connecting…" : "Connect desktops") {
                             model.joinDesktop()
                         }
@@ -696,27 +770,44 @@ struct SyncTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 11).stroke(BrandPalette.primary.opacity(0.18)))
     }
 
-    private func connectionValue(label: String, value: String) -> some View {
+    private func connectionValue(
+        label: String, value: String, onCopy: @escaping (String) -> Void
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(
                 BrandPalette.textSecondary)
-            Text(value).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .padding(.horizontal, 11).frame(
-                    maxWidth: .infinity, minHeight: 34, alignment: .leading
-                )
-                .background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
+            HStack(spacing: 6) {
+                Text(value).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 4)
+                Button {
+                    onCopy(value)
+                } label: {
+                    Image(systemName: "doc.on.doc").frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(BrandPalette.primary)
+                .disabled(value.hasPrefix("Preparing"))
+                .help("Copy \(label.lowercased())")
+                .accessibilityLabel("Copy \(label.lowercased())")
+            }
+            .padding(.leading, 11).padding(.trailing, 5).frame(
+                maxWidth: .infinity, minHeight: 34, alignment: .leading
+            )
+            .background(BrandPalette.card, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
         }
     }
 
-    private func styledField(icon: String, placeholder: String, text: Binding<String>) -> some View
-    {
+    private func styledField(
+        icon: String, placeholder: String, text: Binding<String>, onPaste: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 9) {
             Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary)
             TextField(placeholder, text: text).textFieldStyle(.plain)
+                .contextMenu { Button("Paste", action: onPaste) }
+            pasteButton(action: onPaste, label: placeholder)
         }
         .padding(.horizontal, 11).frame(minHeight: 36).background(
             BrandPalette.card, in: RoundedRectangle(cornerRadius: 8)
@@ -724,17 +815,29 @@ struct SyncTabView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
     }
 
-    private func styledSecureField(icon: String, placeholder: String, text: Binding<String>)
-        -> some View
-    {
+    private func styledSecureField(
+        icon: String, placeholder: String, text: Binding<String>, onPaste: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 9) {
             Image(systemName: icon).foregroundStyle(BrandPalette.textSecondary)
             SecureField(placeholder, text: text).textFieldStyle(.plain)
+                .contextMenu { Button("Paste", action: onPaste) }
+            pasteButton(action: onPaste, label: placeholder)
         }
         .padding(.horizontal, 11).frame(minHeight: 36).background(
             BrandPalette.card, in: RoundedRectangle(cornerRadius: 8)
         )
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(BrandPalette.primary.opacity(0.25)))
+    }
+
+    private func pasteButton(action: @escaping () -> Void, label: String) -> some View {
+        Button(action: action) {
+            Image(systemName: "doc.on.clipboard").frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(BrandPalette.primary)
+        .help("Paste \(label.lowercased())")
+        .accessibilityLabel("Paste \(label.lowercased())")
     }
 }
 

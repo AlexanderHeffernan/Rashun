@@ -35,10 +35,14 @@ public struct CurrentUsageDTO: Codable, Sendable {
 }
 
 public struct WidgetSnapshotDTO: Codable, Sendable {
-    public struct Device: Codable, Sendable { public let id: UUID; public let name: String }
+    public struct Device: Codable, Sendable {
+        public let id: UUID
+        public let name: String
+    }
     public struct Appearance: Codable, Sendable {
         public struct Metric: Codable, Sendable {
-            public let providerID: String; public let metricID: String
+            public let providerID: String
+            public let metricID: String
         }
         public let colorMode: String
         public let centerContentMode: String
@@ -62,7 +66,10 @@ public struct WidgetSnapshotDTO: Codable, Sendable {
     public let items: [CurrentUsageDTO.Item]
 }
 
-private struct WidgetSetupDTO: Codable { let password: String; let expiresAt: Date }
+private struct WidgetSetupDTO: Codable {
+    let password: String
+    let expiresAt: Date
+}
 
 private struct WebPushKeyDTO: Codable { let publicKey: String }
 private struct WebPushSubscriptionDTO: Codable {
@@ -90,13 +97,14 @@ public struct RashunSyncServer: Sendable {
     public let allowedBrowserOrigin: String?
     public let tlsFiles: TLSFiles?
     public let historyChanged: (@Sendable () async -> Void)?
+    public let history: HistorySyncAccess
     public let trackedUsage: TrackedUsageSyncAccess?
     public let appVersion: String?
     public init(
         repository: SyncRepository, host: String = "127.0.0.1", port: Int = 8787,
         webRoot: String? = nil, allowedBrowserOrigin: String? = nil, tlsFiles: TLSFiles? = nil,
         historyChanged: (@Sendable () async -> Void)? = nil, appVersion: String? = nil,
-        trackedUsage: TrackedUsageSyncAccess? = .live
+        history: HistorySyncAccess = .live, trackedUsage: TrackedUsageSyncAccess? = .live
     ) {
         self.repository = repository
         self.host = host
@@ -106,12 +114,14 @@ public struct RashunSyncServer: Sendable {
         self.tlsFiles = tlsFiles
         self.historyChanged = historyChanged
         self.appVersion = appVersion
+        self.history = history
         self.trackedUsage = trackedUsage
     }
 
     public func application() throws -> Application<RouterResponder<BasicRequestContext>> {
         let repository = repository
         let trackedUsage = trackedUsage
+        let history = history
         let router = Router()
         if let allowedBrowserOrigin {
             router.addMiddleware {
@@ -124,26 +134,6 @@ public struct RashunSyncServer: Sendable {
         }
         if let webRoot {
             router.addMiddleware { FileMiddleware(webRoot, searchForIndexHtml: true) }
-        }
-        router.post("/v1/pairing/exchange") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 16_384)
-            let body = Data(buffer.readableBytesView)
-            let exchange = try decodeJSON(PairingExchangeRequest.self, from: body)
-            guard
-                try repository.exchangePairingSession(
-                    id: exchange.sessionID, secret: exchange.secret, requester: exchange.requester)
-            else { throw HTTPError(.unauthorized) }
-            return try json(PairingStatusDTO(pendingApproval: true))
-        }
-        router.post("/v1/pairing/complete") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 4_096)
-            let body = Data(buffer.readableBytesView)
-            let complete = try decodeJSON(PairingCompleteRequest.self, from: body)
-            guard
-                let credential = try repository.completePairingSession(
-                    id: complete.sessionID, secret: complete.secret)
-            else { throw HTTPError(.accepted) }
-            return try json(PairingStatusDTO(pendingApproval: false, credential: credential))
         }
         router.post("/v1/pairing/connect") { request, _ in
             let buffer = try await request.body.collect(upTo: 4_096)
@@ -164,8 +154,10 @@ public struct RashunSyncServer: Sendable {
             {
                 try repository.saveAddress(credentialID: credential.id, url: address, kind: .manual)
                 Task {
+                    let attemptStartedAt = Date()
                     do {
-                        try repository.beginPeerSync(credentialID: credential.id)
+                        try repository.beginPeerSync(
+                            credentialID: credential.id, at: attemptStartedAt)
                         let result = try await SyncCoordinator(
                             repository: repository, requiredAppVersion: appVersion,
                             trackedUsage: trackedUsage
@@ -179,9 +171,9 @@ public struct RashunSyncServer: Sendable {
                     } catch {
                         try? repository.recordAddressResult(
                             credentialID: credential.id, url: address, succeeded: false)
-                        try? repository.finishPeerSync(
-                            credentialID: credential.id, imported: 0,
-                            error: String(describing: error))
+                        try? repository.failPeerSync(
+                            credentialID: credential.id, error: String(describing: error),
+                            attemptStartedAt: attemptStartedAt)
                     }
                 }
             }
@@ -206,19 +198,12 @@ public struct RashunSyncServer: Sendable {
                     protocolMinimum: 1, protocolMaximum: 1, serverTime: Date(), maximumBatch: 500,
                     appVersion: appVersion))
         }
-        router.get("/v1/origins") { request, _ -> String in
-            _ = try authenticate(
-                request: request, body: Data(), repository: repository, required: .desktopSync)
-            return try json(repository.originSummaries())
-        }
         router.get("/v1/current") { request, _ in
             let credential = try authenticate(
                 request: request, body: Data(), repository: repository, required: .mobileRead,
                 allowDesktop: true)
-            let values = HistoryProjector.current(try repository.allObservations()).values.sorted {
-                $0.series.description < $1.series.description
-            }
             let presentation = await MobileUsagePresentationStore.shared.snapshot()
+            let values = currentValues(await history.snapshot(nil), presentation: presentation)
             let selected =
                 presentation.map { configured in
                     configured.compactMap { item in
@@ -258,23 +243,26 @@ public struct RashunSyncServer: Sendable {
                                 badgeColorHex: display.badgeColorHex,
                                 menuBarBadgeText: display.menuBarBadgeText,
                                 hasWarning: display.hasWarning,
-                                remaining: value.remaining,
-                                limit: value.limit, resetAt: value.resetAt,
-                                cycleStartedAt: value.cycleStartedAt,
-                                observedAt: value.observedAt, originDeviceID: value.origin.deviceID,
-                                originEpoch: value.origin.epoch)
+                                remaining: value.snapshot.usage.remaining,
+                                limit: value.snapshot.usage.limit,
+                                resetAt: value.snapshot.usage.resetDate,
+                                cycleStartedAt: value.snapshot.usage.cycleStartDate,
+                                observedAt: value.snapshot.timestamp,
+                                originDeviceID: repository.identity.deviceID,
+                                originEpoch: repository.identity.epoch)
                         }, generatedAt: Date())))
         }
         router.post("/v1/widget/setup") { request, _ -> String in
             _ = try authenticate(
                 request: request, body: Data(), repository: repository, required: .mobileRead)
-            let access = try PairingCoordinator.simpleAccess(repository: repository, scope: .widgetRead)
+            let access = try PairingCoordinator.simpleAccess(
+                repository: repository, scope: .widgetRead)
             return try json(WidgetSetupDTO(password: access.password, expiresAt: access.expiresAt))
         }
         router.get("/v1/widget/snapshot") { request, _ -> String in
             _ = try authenticate(
                 request: request, body: Data(), repository: repository, required: .widgetRead)
-            let items = try await currentItems(repository: repository)
+            let items = await currentItems(repository: repository, history: history)
             let configured = await MobileUsagePresentationStore.shared.appearanceSnapshot()
             let appearance = WidgetSnapshotDTO.Appearance(
                 colorMode: configured?.colorMode ?? "sourceSolid",
@@ -291,10 +279,12 @@ public struct RashunSyncServer: Sendable {
                 primaryBrandColorHex: configured?.primaryBrandColorHex ?? "#935AFD",
                 accentBrandColorHex: configured?.accentBrandColorHex ?? "#0DE4D1",
                 ringTrackColorHex: configured?.ringTrackColorHex ?? "#5C596A")
-            return try json(WidgetSnapshotDTO(
-                schemaVersion: 1, assetVersion: appVersion, generatedAt: Date(),
-                device: .init(id: repository.identity.deviceID, name: repository.identity.displayName),
-                appearance: appearance, items: items))
+            return try json(
+                WidgetSnapshotDTO(
+                    schemaVersion: 1, assetVersion: appVersion, generatedAt: Date(),
+                    device: .init(
+                        id: repository.identity.deviceID, name: repository.identity.displayName),
+                    appearance: appearance, items: items))
         }
         router.post("/v1/mobile/disconnect") { request, _ -> Response in
             let credential = try authenticate(
@@ -336,44 +326,24 @@ public struct RashunSyncServer: Sendable {
             try repository.removeWebPushSubscription(credentialID: credential.id)
             return Response(status: .noContent)
         }
-        router.post("/v1/observations/query") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 1_048_576)
-            let body = Data(buffer.readableBytesView)
-            _ = try authenticate(
-                request: request, body: body, repository: repository, required: .desktopSync)
-            let query = try decodeExactJSON(ObservationQuery.self, from: body)
-            guard query.protocolVersion == 1, query.limit > 0, query.limit <= 500,
-                query.requests.count == 1
-            else { throw HTTPError(.badRequest) }
-            let item = query.requests[0]
-            let after = query.pageToken.flatMap(UInt64.init) ?? (item.range.from - 1)
-            guard after < item.range.through else { throw HTTPError(.badRequest) }
-            let effective = SequenceRange(
-                from: max(item.range.from, after + 1), through: item.range.through)
-            let observations = try repository.observations(
-                origin: item.origin, range: effective, limit: query.limit)
-            let next = observations.last.flatMap {
-                $0.originSequence < item.range.through && observations.count == query.limit
-                    ? String($0.originSequence) : nil
-            }
-            return try exactJSON(ObservationPage(observations: observations, nextPageToken: next))
-        }
-        router.post("/v1/observations") { request, _ -> String in
-            let buffer = try await request.body.collect(upTo: 1_048_576)
+        router.post("/v1/history/reconcile") { request, _ -> String in
+            let buffer = try await request.body.collect(upTo: 16_777_216)
             let body = Data(buffer.readableBytesView)
             let credential = try authenticate(
                 request: request, body: body, repository: repository, required: .desktopSync)
-            let values = try decodeExactJSON([UsageObservation].self, from: body)
-            let before = Set(try repository.allObservations().map(\.id))
-            _ = try repository.ingest(values)
-            let accepted = values.filter { !before.contains($0.id) }.map(\.id)
-            let duplicates = values.filter { before.contains($0.id) }.map(\.id)
-            try? repository.finishPeerSync(credentialID: credential.id, imported: accepted.count)
-            if !accepted.isEmpty { await historyChanged?() }
-            return try json(
-                IngestAcknowledgement(
-                    accepted: accepted, duplicates: duplicates, rejected: [],
-                    origins: try repository.originSummaries()))
+            let value = try decodeExactJSON(HistoryReconcileRequest.self, from: body)
+            let changed = await history.merge(value.changes)
+            let outgoing = await history.snapshot(value.knownRemoteRevision)
+            try repository.saveHistoryRevisions(
+                credentialID: credential.id, remote: value.changes.revision,
+                localAcknowledged: value.knownRemoteRevision ?? 0)
+            try? repository.finishPeerSync(
+                credentialID: credential.id,
+                imported: changed ? value.changes.historyBySource.count : 0)
+            if changed { await historyChanged?() }
+            return try exactJSON(
+                HistoryReconcileResponse(
+                    acknowledgedRevision: value.changes.revision, changes: outgoing))
         }
         router.get("/v1/tracked-usage") { request, _ -> String in
             _ = try authenticate(
@@ -463,23 +433,52 @@ private func authenticate(
     return credential
 }
 
-private func currentItems(repository: SyncRepository) async throws -> [CurrentUsageDTO.Item] {
-    let values = HistoryProjector.current(try repository.allObservations()).values.sorted {
-        $0.series.description < $1.series.description
-    }
-    let presentation = await MobileUsagePresentationStore.shared.snapshot()
-    let selected = presentation.map { configured in
-        configured.compactMap { item in
-            values.first(where: {
-                $0.series.providerID == item.providerID && $0.series.metricID == item.metricID
-            }).map { ($0, item) }
+private struct CurrentHistoryValue {
+    let series: UsageSeriesID
+    let snapshot: UsageSnapshot
+}
+
+private func currentValues(
+    _ history: HistorySyncSnapshot, presentation: [MobileMetricPresentation]? = nil
+) -> [CurrentHistoryValue] {
+    history.historyBySource.compactMap { key, snapshots in
+        let parts = key.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: true)
+        guard let snapshot = snapshots.last else { return nil }
+        let series: UsageSeriesID
+        if parts.count == 2 {
+            series = .init(providerID: String(parts[0]), metricID: String(parts[1]))
+        } else if let configured = presentation?.first(where: { $0.providerID == key }) {
+            series = .init(providerID: configured.providerID, metricID: configured.metricID)
+        } else {
+            return nil
         }
-    } ?? values.map { value in
-        (value, MobileMetricPresentation(
-            providerID: value.series.providerID, metricID: value.series.metricID,
-            sourceName: value.series.providerID, metricTitle: value.series.metricID,
-            headerDetail: nil, detailText: nil, iconName: nil, colorHex: "#935AFD"))
-    }
+        return CurrentHistoryValue(
+            series: series, snapshot: snapshot)
+    }.sorted { $0.series.description < $1.series.description }
+}
+
+private func currentItems(
+    repository: SyncRepository, history: HistorySyncAccess
+) async -> [CurrentUsageDTO.Item] {
+    let presentation = await MobileUsagePresentationStore.shared.snapshot()
+    let values = currentValues(await history.snapshot(nil), presentation: presentation)
+    let selected =
+        presentation.map { configured in
+            configured.compactMap { item in
+                values.first(where: {
+                    $0.series.providerID == item.providerID && $0.series.metricID == item.metricID
+                }).map { ($0, item) }
+            }
+        }
+        ?? values.map { value in
+            (
+                value,
+                MobileMetricPresentation(
+                    providerID: value.series.providerID, metricID: value.series.metricID,
+                    sourceName: value.series.providerID, metricTitle: value.series.metricID,
+                    headerDetail: nil, detailText: nil, iconName: nil, colorHex: "#935AFD")
+            )
+        }
     return selected.map { value, display in
         .init(
             providerID: value.series.providerID, metricID: value.series.metricID,
@@ -492,9 +491,12 @@ private func currentItems(repository: SyncRepository) async throws -> [CurrentUs
             badgeColorHex: display.badgeColorHex,
             menuBarBadgeText: display.menuBarBadgeText,
             hasWarning: display.hasWarning,
-            remaining: value.remaining, limit: value.limit, resetAt: value.resetAt,
-            cycleStartedAt: value.cycleStartedAt, observedAt: value.observedAt,
-            originDeviceID: value.origin.deviceID, originEpoch: value.origin.epoch)
+            remaining: value.snapshot.usage.remaining, limit: value.snapshot.usage.limit,
+            resetAt: value.snapshot.usage.resetDate,
+            cycleStartedAt: value.snapshot.usage.cycleStartDate,
+            observedAt: value.snapshot.timestamp,
+            originDeviceID: repository.identity.deviceID,
+            originEpoch: repository.identity.epoch)
     }
 }
 private func cookieValue(for credential: PeerCredential) -> String {

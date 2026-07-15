@@ -37,6 +37,23 @@ enum WebPushSender {
         }
     }
 
+    static func sendTest(credentialID: UUID, repository: SyncRepository) async throws {
+        guard let record = try repository.webPushSubscriptions(credentialID: credentialID).first
+        else { throw WebPushTestError.subscriptionMissing }
+        let signingKey = try P256.Signing.PrivateKey(
+            rawRepresentation: repository.webPushSigningPrivateKey())
+        let payload = try JSONEncoder().encode(
+            MobileNotificationPayload(
+                title: "Rashun notifications are working",
+                body: "This is a test notification sent from your Mac.", url: "./"))
+        do {
+            try await deliver(payload, to: record.subscription, signingKey: signingKey)
+        } catch let error as DeliveryError where error.shouldRemoveSubscription {
+            try? repository.removeWebPushSubscription(credentialID: credentialID)
+            throw WebPushTestError.subscriptionExpired
+        }
+    }
+
     private static func deliver(
         _ payload: Data, to subscription: WebPushSubscription, signingKey: P256.Signing.PrivateKey
     ) async throws {
@@ -125,5 +142,17 @@ enum WebPushSender {
     private struct DeliveryError: Error {
         let status: Int
         var shouldRemoveSubscription: Bool { status == 404 || status == 410 }
+    }
+}
+
+enum WebPushTestError: LocalizedError {
+    case subscriptionMissing
+    case subscriptionExpired
+    var errorDescription: String? {
+        switch self {
+        case .subscriptionMissing: "Notifications are not enabled on this device."
+        case .subscriptionExpired:
+            "The notification subscription expired. Re-enable notifications on this phone."
+        }
     }
 }
