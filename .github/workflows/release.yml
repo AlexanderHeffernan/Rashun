@@ -77,7 +77,9 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          sed -i '' "s|<string>1.0.0</string>|<string>${RASHUN_RELEASE_VERSION}</string>|" Info.plist
+          /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleShortVersionString ${RASHUN_RELEASE_VERSION}" \
+            Info.plist
 
       - name: Stamp version into GeneratedVersion.swift
         shell: bash
