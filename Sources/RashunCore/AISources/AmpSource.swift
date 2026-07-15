@@ -162,42 +162,35 @@ public struct AmpSource: AISource {
     }
 
     /// Amp reports only "today" and does not expose a reset timestamp.
-    /// Per Amp Discord, Amp Free resets daily at 5:00 PM Pacific Time
-    /// (`America/Los_Angeles`, observing PST/PDT).
-    private static let pacificTimeZone = TimeZone(identifier: "America/Los_Angeles")
-    private static let dailyResetHourPacific = 17
+    /// Amp Free resets daily at midnight GMT (UTC).
+    private static let gmtTimeZone = TimeZone(identifier: "GMT") ?? TimeZone(secondsFromGMT: 0)!
 
-    /// Internal for tests — cycle start is the previous 5pm Pacific reset.
+    /// Internal for tests — cycle start is the previous midnight GMT reset.
     func dailyCycleStartDate(reference: Date = Date()) -> Date? {
-        // Use calendar day arithmetic (not a fixed 24h) so spring/fall DST
-        // transitions keep the window anchored to consecutive 5pm Pacific resets.
-        guard let resetDate = dailyResetDate(reference: reference),
-              let pacific = Self.pacificTimeZone else { return nil }
+        guard let resetDate = dailyResetDate(reference: reference) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = pacific
+        calendar.timeZone = Self.gmtTimeZone
         return calendar.date(byAdding: .day, value: -1, to: resetDate)
     }
 
-    /// Internal for tests — next Amp Free reset at 5:00 PM Pacific.
+    /// Internal for tests — next Amp Free reset at midnight GMT.
     func dailyResetDate(reference: Date = Date()) -> Date? {
-        guard let pacific = Self.pacificTimeZone else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = pacific
+        calendar.timeZone = Self.gmtTimeZone
 
         var components = calendar.dateComponents([.year, .month, .day], from: reference)
-        components.hour = Self.dailyResetHourPacific
+        components.hour = 0
         components.minute = 0
         components.second = 0
-        components.timeZone = pacific
+        components.timeZone = Self.gmtTimeZone
 
-        guard let todaysReset = calendar.date(from: components) else { return nil }
+        guard let todaysMidnight = calendar.date(from: components) else { return nil }
 
-        // At or after today's 5pm Pacific, the next window opens tomorrow at 5pm.
-        // Calendar day math (not +24h) preserves wall-clock 5pm across DST.
-        if reference < todaysReset {
-            return todaysReset
+        // At or after today's midnight GMT, the next window opens tomorrow at midnight GMT.
+        if reference < todaysMidnight {
+            return todaysMidnight
         }
-        return calendar.date(byAdding: .day, value: 1, to: todaysReset)
+        return calendar.date(byAdding: .day, value: 1, to: todaysMidnight)
     }
 }
 
