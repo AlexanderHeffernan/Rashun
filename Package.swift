@@ -41,15 +41,22 @@ var targets: [Target] = [
         dependencies: ["RashunCLI"],
         path: "Tests/RashunCLITests"
     ),
-    .testTarget(
-        name: "RashunSyncTests",
-        dependencies: [
-            "RashunSync", "RashunSyncServer",
-            .product(name: "HummingbirdTesting", package: "hummingbird"),
-        ],
-        path: "Tests/RashunSyncTests"
-    ),
 ]
+
+#if !os(Windows)
+    // HummingbirdTesting currently pulls in CNIOExtrasZlib, whose generated
+    // configuration includes the POSIX-only unistd.h on Windows.
+    targets.append(
+        .testTarget(
+            name: "RashunSyncTests",
+            dependencies: [
+                "RashunSync", "RashunSyncServer",
+                .product(name: "HummingbirdTesting", package: "hummingbird"),
+            ],
+            path: "Tests/RashunSyncTests"
+        )
+    )
+#endif
 
 #if os(macOS)
     targets.append(
