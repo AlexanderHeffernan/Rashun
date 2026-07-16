@@ -90,6 +90,11 @@ var targets: [Target] = [
             .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
             .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
             .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+            // Temporary Windows compatibility override until swift-nio-extras#294 is released.
+            .package(
+                url: "https://github.com/apple/swift-nio-extras.git",
+                revision: "076c9b493c6fe365ba42663fc16c4239d17dfb92"
+            ),
         ],
         targets: targets
     )
@@ -100,6 +105,11 @@ var targets: [Target] = [
             .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
             .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
             .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
+            // Temporary Windows compatibility override until swift-nio-extras#294 is released.
+            .package(
+                url: "https://github.com/apple/swift-nio-extras.git",
+                revision: "076c9b493c6fe365ba42663fc16c4239d17dfb92"
+            ),
         ],
         targets: targets
     )
