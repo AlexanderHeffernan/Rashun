@@ -61,7 +61,9 @@ jobs:
             artifact_name: rashun-cli-linux-aarch64
             artifact_path: rashun-cli-linux-aarch64.tar.gz
             cli_package_name: rashun-cli-linux-aarch64.tar.gz
-          - os: windows-latest
+          # Swift 6.2 ships Clang 19, which cannot compile against the newer
+          # MSVC STL on windows-latest (it requires Clang 20 or newer).
+          - os: windows-2022
             artifact_name: rashun-cli-windows
             artifact_path: rashun-cli-windows.zip
 
