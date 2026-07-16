@@ -1,6 +1,16 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
+var syncServerDependencies: [Target.Dependency] = [
+    "RashunSync",
+    .product(name: "Crypto", package: "swift-crypto"),
+    .product(name: "Hummingbird", package: "hummingbird"),
+]
+
+#if !os(Windows)
+    syncServerDependencies.append(.product(name: "HummingbirdTLS", package: "hummingbird"))
+#endif
+
 var targets: [Target] = [
     .target(
         name: "RashunCore",
@@ -16,11 +26,7 @@ var targets: [Target] = [
     ),
     .target(
         name: "RashunSyncServer",
-        dependencies: [
-            "RashunSync", .product(name: "Crypto", package: "swift-crypto"),
-            .product(name: "Hummingbird", package: "hummingbird"),
-            .product(name: "HummingbirdTLS", package: "hummingbird"),
-        ],
+        dependencies: syncServerDependencies,
         path: "Sources/RashunSyncServer"
     ),
     .executableTarget(

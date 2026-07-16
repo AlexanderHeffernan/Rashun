@@ -1,7 +1,9 @@
 import Crypto
 import Foundation
 import Hummingbird
+#if !os(Windows)
 import HummingbirdTLS
+#endif
 import RashunCore
 import RashunSync
 
@@ -82,6 +84,10 @@ private struct WebPushSubscriptionDTO: Codable {
 }
 
 public struct RashunSyncServer: Sendable {
+    public enum ConfigurationError: Swift.Error {
+        case tlsUnsupportedOnWindows
+    }
+
     public struct TLSFiles: Sendable {
         public let certificateChain: String
         public let privateKey: String
@@ -359,16 +365,22 @@ public struct RashunSyncServer: Sendable {
                 request, upTo: 64, repository: repository, required: .desktopSync)
             return try json(try repository.rotatePeer(credentialID: credential.id))
         }
-        if let tlsFiles {
-            let certificates = try NIOSSLCertificate.fromPEMFile(tlsFiles.certificateChain)
-            let key = try NIOSSLPrivateKey(file: tlsFiles.privateKey, format: .pem)
-            let configuration = TLSConfiguration.makeServerConfiguration(
-                certificateChain: certificates.map { .certificate($0) },
-                privateKey: .privateKey(key))
-            return Application(
-                router: router, server: try .tls(tlsConfiguration: configuration),
-                configuration: .init(address: .hostname(host, port: port)))
-        }
+        #if !os(Windows)
+            if let tlsFiles {
+                let certificates = try NIOSSLCertificate.fromPEMFile(tlsFiles.certificateChain)
+                let key = try NIOSSLPrivateKey(file: tlsFiles.privateKey, format: .pem)
+                let configuration = TLSConfiguration.makeServerConfiguration(
+                    certificateChain: certificates.map { .certificate($0) },
+                    privateKey: .privateKey(key))
+                return Application(
+                    router: router, server: try .tls(tlsConfiguration: configuration),
+                    configuration: .init(address: .hostname(host, port: port)))
+            }
+        #else
+            if tlsFiles != nil {
+                throw ConfigurationError.tlsUnsupportedOnWindows
+            }
+        #endif
         return Application(
             router: router, configuration: .init(address: .hostname(host, port: port)))
     }
