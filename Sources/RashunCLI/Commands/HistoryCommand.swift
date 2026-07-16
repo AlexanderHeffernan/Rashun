@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import RashunCore
+import RashunSync
 
 struct HistoryCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -11,7 +12,7 @@ struct HistoryCommand: AsyncParsableCommand {
             HistoryStatsCommand.self,
             HistoryClearCommand.self,
             HistoryExportCommand.self,
-            HistoryImportCommand.self
+            HistoryImportCommand.self,
         ],
         defaultSubcommand: HistoryShowCommand.self
     )
@@ -56,18 +57,21 @@ struct HistoryShowCommand: AsyncParsableCommand {
             try emitErrorAndExit(
                 code: "unknown_source",
                 short: "Unknown source",
-                detail: "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
+                detail:
+                    "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
                 exitCode: 2
             )
             return
         }
 
         if let metric,
-           !source.metrics.contains(where: { $0.id == metric }) {
+            !source.metrics.contains(where: { $0.id == metric })
+        {
             try emitErrorAndExit(
                 code: "unknown_metric",
                 short: "Unknown metric",
-                detail: "Source '\(source.name)' does not provide metric '\(metric)'. Available metrics: \(source.metrics.map(\.id).joined(separator: ", ")).",
+                detail:
+                    "Source '\(source.name)' does not provide metric '\(metric)'. Available metrics: \(source.metrics.map(\.id).joined(separator: ", ")).",
                 exitCode: 2
             )
             return
@@ -83,7 +87,8 @@ struct HistoryShowCommand: AsyncParsableCommand {
         for selectedMetric in selectedMetrics {
             let scopedName = scopedSourceName(source: source, metric: selectedMetric)
             let raw = UsageHistoryStore.shared.history(for: scopedName)
-            let filtered = raw
+            let filtered =
+                raw
                 .filter { snapshot in
                     if let start, snapshot.timestamp < start { return false }
                     if let end, snapshot.timestamp > end { return false }
@@ -91,37 +96,41 @@ struct HistoryShowCommand: AsyncParsableCommand {
                 }
                 .sorted(by: { $0.timestamp > $1.timestamp })
 
-            metricHistories.append(MetricHistory(metric: selectedMetric, snapshots: Array(filtered.prefix(limit))))
+            metricHistories.append(
+                MetricHistory(metric: selectedMetric, snapshots: Array(filtered.prefix(limit))))
         }
 
         if global.json {
-            try JSONOutput.print(HistoryResponse(
-                source: source.name,
-                range: range.rawValue,
-                limit: limit,
-                metrics: metricHistories.map { history in
-                    HistoryMetricResponse(
-                        id: history.metric.id,
-                        title: history.metric.title,
-                        snapshotCount: history.snapshots.count,
-                        snapshots: history.snapshots.map { snapshot in
-                            HistorySnapshotResponse(
-                                timestamp: snapshot.timestamp,
-                                percentRemaining: snapshot.usage.percentRemaining,
-                                remaining: snapshot.usage.remaining,
-                                limit: snapshot.usage.limit,
-                                resetDate: snapshot.usage.resetDate,
-                                cycleStartDate: snapshot.usage.cycleStartDate
-                            )
-                        }
-                    )
-                }
-            ))
+            try JSONOutput.print(
+                HistoryResponse(
+                    source: source.name,
+                    range: range.rawValue,
+                    limit: limit,
+                    metrics: metricHistories.map { history in
+                        HistoryMetricResponse(
+                            id: history.metric.id,
+                            title: history.metric.title,
+                            snapshotCount: history.snapshots.count,
+                            snapshots: history.snapshots.map { snapshot in
+                                HistorySnapshotResponse(
+                                    timestamp: snapshot.timestamp,
+                                    percentRemaining: snapshot.usage.percentRemaining,
+                                    remaining: snapshot.usage.remaining,
+                                    limit: snapshot.usage.limit,
+                                    resetDate: snapshot.usage.resetDate,
+                                    cycleStartDate: snapshot.usage.cycleStartDate
+                                )
+                            }
+                        )
+                    }
+                ))
             return
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("📜", fallback: "*")) \(formatter.colorize("\(source.displayName) Usage History", as: .bold))")
+        print(
+            "\(formatter.emoji("📜", fallback: "*")) \(formatter.colorize("\(source.displayName) Usage History", as: .bold))"
+        )
         print("")
 
         let dateFormatter = DateFormatter()
@@ -138,8 +147,11 @@ struct HistoryShowCommand: AsyncParsableCommand {
                 for snapshot in history.snapshots {
                     let stamp = dateFormatter.string(from: snapshot.timestamp)
                     let percent = String(format: "%5.1f%%", snapshot.usage.percentRemaining)
-                    let amounts = String(format: "(%.2f/%.2f)", snapshot.usage.remaining, snapshot.usage.limit)
-                    print("  \(stamp.padding(toLength: 18, withPad: " ", startingAt: 0)) \(percent) remaining  \(amounts)")
+                    let amounts = String(
+                        format: "(%.2f/%.2f)", snapshot.usage.remaining, snapshot.usage.limit)
+                    print(
+                        "  \(stamp.padding(toLength: 18, withPad: " ", startingAt: 0)) \(percent) remaining  \(amounts)"
+                    )
                 }
             }
 
@@ -151,12 +163,17 @@ struct HistoryShowCommand: AsyncParsableCommand {
         source.metrics.count > 1 ? "\(source.name)::\(metric.id)" : source.name
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)
@@ -235,18 +252,21 @@ struct HistoryStatsCommand: AsyncParsableCommand {
         let stats = UsageHistoryStore.shared.stats()
 
         if global.json {
-            try JSONOutput.print(HistoryStatsResponse(
-                sourceCount: stats.sourceCount,
-                snapshotCount: stats.snapshotCount,
-                oldestSnapshot: stats.oldestSnapshot,
-                newestSnapshot: stats.newestSnapshot,
-                estimatedBytes: stats.estimatedBytes
-            ))
+            try JSONOutput.print(
+                HistoryStatsResponse(
+                    sourceCount: stats.sourceCount,
+                    snapshotCount: stats.snapshotCount,
+                    oldestSnapshot: stats.oldestSnapshot,
+                    newestSnapshot: stats.newestSnapshot,
+                    estimatedBytes: stats.estimatedBytes
+                ))
             return
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("📊", fallback: "*")) \(formatter.colorize("History Storage Stats", as: .bold))")
+        print(
+            "\(formatter.emoji("📊", fallback: "*")) \(formatter.colorize("History Storage Stats", as: .bold))"
+        )
         print("")
 
         let dateFormatter = DateFormatter()
@@ -264,7 +284,9 @@ struct HistoryStatsCommand: AsyncParsableCommand {
         } else {
             print("Newest snapshot: n/a")
         }
-        print("Storage size: ~\(ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file))")
+        print(
+            "Storage size: ~\(ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file))"
+        )
     }
 }
 
@@ -325,7 +347,8 @@ struct HistoryClearCommand: AsyncParsableCommand {
             let confirmed = askForConfirmation(plan: deletionPlan)
             guard confirmed else {
                 let formatter = OutputFormatter(noColor: global.noColor)
-                print("\(formatter.emoji("⚠️", fallback: "!")) Cancelled. No snapshots were deleted.")
+                print(
+                    "\(formatter.emoji("⚠️", fallback: "!")) Cancelled. No snapshots were deleted.")
                 throw ExitCode(4)
             }
         }
@@ -333,19 +356,24 @@ struct HistoryClearCommand: AsyncParsableCommand {
         let deleted = performDeletion(plan: deletionPlan)
 
         if global.json {
-            try JSONOutput.print(HistoryClearResponse(
-                source: source?.name,
-                olderThanDays: olderThan,
-                deletedSnapshots: deleted
-            ))
+            try JSONOutput.print(
+                HistoryClearResponse(
+                    source: source?.name,
+                    olderThanDays: olderThan,
+                    deletedSnapshots: deleted
+                ))
             return
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
         if let source {
-            print("\(formatter.emoji("✅", fallback: "[ok]")) Cleared \(deleted) snapshots for \(source.name).")
+            print(
+                "\(formatter.emoji("✅", fallback: "[ok]")) Cleared \(deleted) snapshots for \(source.name)."
+            )
         } else {
-            print("\(formatter.emoji("✅", fallback: "[ok]")) Cleared \(deleted) snapshots across all sources.")
+            print(
+                "\(formatter.emoji("✅", fallback: "[ok]")) Cleared \(deleted) snapshots across all sources."
+            )
         }
     }
 
@@ -356,7 +384,8 @@ struct HistoryClearCommand: AsyncParsableCommand {
             try emitErrorAndExit(
                 code: "unknown_source",
                 short: "Unknown source",
-                detail: "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
+                detail:
+                    "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
                 exitCode: 2
             )
             return nil
@@ -381,7 +410,8 @@ struct HistoryClearCommand: AsyncParsableCommand {
             let count: Int
             if let keys {
                 count = keys.reduce(0) { total, key in
-                    total + UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff, sourceName: key)
+                    total
+                        + UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff, sourceName: key)
                 }
             } else {
                 count = UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff)
@@ -403,19 +433,28 @@ struct HistoryClearCommand: AsyncParsableCommand {
     private func askForConfirmation(plan: DeletionPlan) -> Bool {
         if let source = plan.source {
             if let days = olderThan {
-                print("⚠️  This will delete \(plan.targetCount) snapshots older than \(days) days for \(source.name). Continue? [y/N]")
+                print(
+                    "⚠️  This will delete \(plan.targetCount) snapshots older than \(days) days for \(source.name). Continue? [y/N]"
+                )
             } else {
-                print("⚠️  This will delete all \(plan.targetCount) snapshots for \(source.name). Continue? [y/N]")
+                print(
+                    "⚠️  This will delete all \(plan.targetCount) snapshots for \(source.name). Continue? [y/N]"
+                )
             }
         } else {
             if let days = olderThan {
-                print("⚠️  This will delete \(plan.targetCount) snapshots older than \(days) days across all sources. Continue? [y/N]")
+                print(
+                    "⚠️  This will delete \(plan.targetCount) snapshots older than \(days) days across all sources. Continue? [y/N]"
+                )
             } else {
-                print("⚠️  This will delete all \(plan.targetCount) snapshots across all sources. Continue? [y/N]")
+                print(
+                    "⚠️  This will delete all \(plan.targetCount) snapshots across all sources. Continue? [y/N]"
+                )
             }
         }
 
-        guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+        guard let input = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        else {
             return false
         }
         return input == "y" || input == "yes"
@@ -426,7 +465,8 @@ struct HistoryClearCommand: AsyncParsableCommand {
         if let cutoff = plan.cutoff {
             if let keys = plan.keys {
                 return keys.reduce(0) { total, key in
-                    total + UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff, sourceName: key)
+                    total
+                        + UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff, sourceName: key)
                 }
             }
             return UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff)
@@ -447,12 +487,17 @@ struct HistoryClearCommand: AsyncParsableCommand {
         return removed
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)
@@ -490,22 +535,24 @@ struct HistoryExportCommand: AsyncParsableCommand {
         do {
             let data = try UsageHistoryTransferService.makeExportData(
                 historyBySource: UsageHistoryStore.shared.allHistory(),
-                appVersion: Versioning.versionString()
-            )
+                appVersion: Versioning.versionString())
             try data.write(to: url, options: .atomic)
 
             let stats = UsageHistoryStore.shared.stats()
             if global.json {
-                try JSONOutput.print(HistoryExportResponse(
-                    path: url.path,
-                    snapshotCount: stats.snapshotCount,
-                    sourceCount: stats.sourceCount
-                ))
+                try JSONOutput.print(
+                    HistoryExportResponse(
+                        path: url.path,
+                        snapshotCount: stats.snapshotCount,
+                        sourceCount: stats.sourceCount
+                    ))
                 return
             }
 
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("✅", fallback: "[ok]")) Exported \(stats.snapshotCount) snapshots to \(url.path)")
+            print(
+                "\(formatter.emoji("✅", fallback: "[ok]")) Exported \(stats.snapshotCount) snapshots to \(url.path)"
+            )
         } catch {
             try emitErrorAndExit(
                 code: "export_failed",
@@ -516,12 +563,17 @@ struct HistoryExportCommand: AsyncParsableCommand {
         }
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)
@@ -580,7 +632,8 @@ struct HistoryImportCommand: AsyncParsableCommand {
         if replace {
             mergedOrReplaced = imported
         } else {
-            mergedOrReplaced = merge(current: UsageHistoryStore.shared.allHistory(), incoming: imported)
+            mergedOrReplaced = merge(
+                current: UsageHistoryStore.shared.allHistory(), incoming: imported)
         }
 
         if global.json {
@@ -596,8 +649,11 @@ struct HistoryImportCommand: AsyncParsableCommand {
         } else if !yes {
             let incomingCount = imported.values.reduce(0) { $0 + $1.count }
             let mode = replace ? "replace" : "merge"
-            print("⚠️  This will \(mode) your local history with \(incomingCount) imported snapshots. Continue? [y/N]")
-            let answer = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+            print(
+                "⚠️  This will \(mode) your local history with \(incomingCount) imported snapshots. Continue? [y/N]"
+            )
+            let answer =
+                readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
             guard answer == "y" || answer == "yes" else {
                 throw ExitCode(4)
             }
@@ -616,17 +672,20 @@ struct HistoryImportCommand: AsyncParsableCommand {
 
         let stats = UsageHistoryStore.shared.stats()
         if global.json {
-            try JSONOutput.print(HistoryImportResponse(
-                path: url.path,
-                replace: replace,
-                snapshotCount: stats.snapshotCount,
-                sourceCount: stats.sourceCount
-            ))
+            try JSONOutput.print(
+                HistoryImportResponse(
+                    path: url.path,
+                    replace: replace,
+                    snapshotCount: stats.snapshotCount,
+                    sourceCount: stats.sourceCount
+                ))
             return
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("✅", fallback: "[ok]")) Imported \(stats.snapshotCount) snapshots from \(url.path)")
+        print(
+            "\(formatter.emoji("✅", fallback: "[ok]")) Imported \(stats.snapshotCount) snapshots from \(url.path)"
+        )
     }
 
     private func merge(
@@ -644,28 +703,34 @@ struct HistoryImportCommand: AsyncParsableCommand {
             deduped.reserveCapacity(all.count)
             for snapshot in all {
                 if let last = deduped.last,
-                   last.timestamp == snapshot.timestamp,
-                   last.usage.remaining == snapshot.usage.remaining,
-                   last.usage.limit == snapshot.usage.limit,
-                   last.usage.resetDate == snapshot.usage.resetDate,
-                   last.usage.cycleStartDate == snapshot.usage.cycleStartDate {
+                    last.timestamp == snapshot.timestamp,
+                    last.usage.remaining == snapshot.usage.remaining,
+                    last.usage.limit == snapshot.usage.limit,
+                    last.usage.resetDate == snapshot.usage.resetDate,
+                    last.usage.cycleStartDate == snapshot.usage.cycleStartDate
+                {
                     continue
                 }
                 deduped.append(snapshot)
             }
 
-            merged[source] = Array(deduped.suffix(10_000))
+            merged[source] = UsageHistoryStore.compressed(deduped)
         }
 
         return merged
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)

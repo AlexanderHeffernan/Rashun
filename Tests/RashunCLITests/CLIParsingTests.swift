@@ -1,11 +1,17 @@
 import ArgumentParser
 import XCTest
+
 @testable import RashunCLI
 
 final class CLIParsingTests: XCTestCase {
     func testRootConfigurationIncludesExpectedSubcommands() {
         let names = Set(RashunCLI.configuration.subcommands.map { $0.configuration.commandName })
-        XCTAssertEqual(names, ["check", "forecast", "history", "setup", "status", "sources", "update", "version"])
+        XCTAssertEqual(
+            names,
+            [
+                "check", "forecast", "history", "setup", "status", "sources", "sync", "update",
+                "version",
+            ])
     }
 
     func testRootParseAcceptsGlobalFlags() throws {
@@ -24,8 +30,29 @@ final class CLIParsingTests: XCTestCase {
         XCTAssertEqual(command.metric, "requests")
     }
 
+    func testSyncCommandExposesSimpleDeviceWorkflow() {
+        let names = Set(SyncCommand.configuration.subcommands.map { $0.configuration.commandName })
+        XCTAssertEqual(names, ["connect", "devices", "pair", "remove", "serve", "sync-now"])
+    }
+
+    func testSyncConnectParsesPrintedCommand() throws {
+        let command = try SyncCommand.Connect.parse(
+            ["http://192.168.1.20:8787", "ABCD-2345"])
+        XCTAssertEqual(command.address, "http://192.168.1.20:8787")
+        XCTAssertEqual(command.code, "ABCD-2345")
+        XCTAssertEqual(command.port, 8787)
+    }
+
+    func testSyncServeDefaultsToCrossPlatformLANEndpoint() throws {
+        let command = try SyncCommand.Serve.parse([])
+        XCTAssertEqual(command.host, "0.0.0.0")
+        XCTAssertEqual(command.port, 8787)
+        XCTAssertFalse(command.noPairingCode)
+    }
+
     func testHistoryCommandDefaultsToShowSubcommand() {
-        XCTAssertEqual(HistoryCommand.configuration.defaultSubcommand?.configuration.commandName, "show")
+        XCTAssertEqual(
+            HistoryCommand.configuration.defaultSubcommand?.configuration.commandName, "show")
     }
 
     func testSourceResolverIsCaseInsensitiveForKnownSource() {

@@ -9,7 +9,10 @@ public struct NotificationInputSpec {
     public let max: Double
     public let step: Double
 
-    public init(id: String, label: String, unit: String?, defaultValue: Double, min: Double, max: Double, step: Double) {
+    public init(
+        id: String, label: String, unit: String?, defaultValue: Double, min: Double, max: Double,
+        step: Double
+    ) {
         self.id = id
         self.label = label
         self.unit = unit
@@ -27,7 +30,10 @@ public struct NotificationDefinition {
     public let inputs: [NotificationInputSpec]
     public let evaluate: (NotificationContext) -> NotificationEvent?
 
-    public init(id: String, title: String, detail: String, inputs: [NotificationInputSpec], evaluate: @escaping (NotificationContext) -> NotificationEvent?) {
+    public init(
+        id: String, title: String, detail: String, inputs: [NotificationInputSpec],
+        evaluate: @escaping (NotificationContext) -> NotificationEvent?
+    ) {
         self.id = id
         self.title = title
         self.detail = detail
@@ -50,7 +56,7 @@ public struct NotificationEvent {
     }
 }
 
-public struct UsageSnapshot: Codable {
+public struct UsageSnapshot: Codable, Equatable, Hashable, Sendable {
     public let timestamp: Date
     public let usage: UsageResult
 
@@ -61,6 +67,7 @@ public struct UsageSnapshot: Codable {
 }
 
 public struct NotificationContext {
+    public let now: Date
     public let sourceName: String
     public let metricId: String?
     public let metricTitle: String?
@@ -69,7 +76,12 @@ public struct NotificationContext {
     public let history: [UsageSnapshot]
     public let inputValue: (String, Double) -> Double
 
-    public init(sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult, previous: UsageSnapshot?, history: [UsageSnapshot], inputValue: @escaping (String, Double) -> Double) {
+    public init(
+        sourceName: String, metricId: String?, metricTitle: String?, current: UsageResult,
+        previous: UsageSnapshot?, history: [UsageSnapshot], now: Date = Date(),
+        inputValue: @escaping (String, Double) -> Double
+    ) {
+        self.now = now
         self.sourceName = sourceName
         self.metricId = metricId
         self.metricTitle = metricTitle
@@ -85,7 +97,7 @@ public struct NotificationContext {
 
     public func snapshot(minutesAgo: Double) -> UsageSnapshot? {
         guard minutesAgo > 0 else { return nil }
-        let target = Date().addingTimeInterval(-minutesAgo * 60)
+        let target = now.addingTimeInterval(-minutesAgo * 60)
         return history.last(where: { $0.timestamp <= target })
     }
 }

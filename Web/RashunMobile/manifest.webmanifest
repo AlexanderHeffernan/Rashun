@@ -1,0 +1,18 @@
+{
+  "name": "Rashun Usage",
+  "short_name": "Rashun",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e0c22",
+  "theme_color": "#0e0c22",
+  "icons": [
+    {
+      "src": "assets/rashun-icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

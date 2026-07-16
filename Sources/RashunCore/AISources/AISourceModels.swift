@@ -10,7 +10,7 @@ public struct SourceFetchErrorPresentation: Codable {
     }
 }
 
-public struct UsageResult: Codable, Sendable {
+public struct UsageResult: Codable, Sendable, Equatable, Hashable {
     public let remaining: Double
     public let limit: Double
     public let resetDate: Date?

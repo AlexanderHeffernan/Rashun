@@ -1,7 +1,8 @@
 import AppKit
 import Foundation
-import UniformTypeIdentifiers
 import RashunCore
+import RashunSync
+import UniformTypeIdentifiers
 
 @MainActor
 final class DataTabViewModel: ObservableObject {
@@ -19,7 +20,8 @@ final class DataTabViewModel: ObservableObject {
     @Published var deleteScope: DeleteScope = .allSources
     @Published var selectedSourceName = ""
     @Published var deleteMode: DeleteMode = .keepLastDays
-    @Published var olderThanDate: Date = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+    @Published var olderThanDate: Date =
+        Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
     @Published var keepLastDaysText = "90"
 
     @Published private(set) var availableSourceNames: [String] = []
@@ -42,7 +44,8 @@ final class DataTabViewModel: ObservableObject {
 
     func configure(sources: [AISource]) {
         configuredSourceNames = Set(sources.map(\.name))
-        buildDeleteTargets(sources: sources, historyNames: UsageHistoryStore.shared.sourceNamesWithHistory())
+        buildDeleteTargets(
+            sources: sources, historyNames: UsageHistoryStore.shared.sourceNamesWithHistory())
         updateAvailableSources()
         stats = UsageHistoryStore.shared.stats()
     }
@@ -67,15 +70,18 @@ final class DataTabViewModel: ObservableObject {
     }
 
     var statsSubtitle: String {
-        let bytes = ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file)
-        return "\(stats.snapshotCount.formatted()) snapshots across \(stats.sourceCount.formatted()) sources (\(bytes))."
+        let bytes = ByteCountFormatter.string(
+            fromByteCount: Int64(stats.estimatedBytes), countStyle: .file)
+        return
+            "\(stats.snapshotCount.formatted()) snapshots across \(stats.sourceCount.formatted()) sources (\(bytes))."
     }
 
     var statsDateRangeText: String {
         guard let oldest = stats.oldestSnapshot, let newest = stats.newestSnapshot else {
             return "No usage history stored yet."
         }
-        return "\(Self.displayFormatter.string(from: oldest)) to \(Self.displayFormatter.string(from: newest))."
+        return
+            "\(Self.displayFormatter.string(from: oldest)) to \(Self.displayFormatter.string(from: newest))."
     }
 
     func exportHistory() {
@@ -94,9 +100,7 @@ final class DataTabViewModel: ObservableObject {
         do {
             let appVersion = Versioning.versionString(bundle: .main)
             let data = try UsageHistoryTransferService.makeExportData(
-                historyBySource: UsageHistoryStore.shared.allHistory(),
-                appVersion: appVersion
-            )
+                historyBySource: UsageHistoryStore.shared.allHistory(), appVersion: appVersion)
             try data.write(to: url, options: .atomic)
             setTransferStatus("Exported usage history to \(url.lastPathComponent).")
             refreshStats()
@@ -127,14 +131,14 @@ final class DataTabViewModel: ObservableObject {
             let currentStats = UsageHistoryStore.shared.stats()
             let incomingStats = stats(for: imported)
             pendingImportMessage = """
-            This will replace your current usage history with data from \(url.lastPathComponent). This cannot be undone.
+                This will merge immutable observations from \(url.lastPathComponent) into your canonical history.
 
-            Current:
-            \(summaryText(for: currentStats))
+                Current:
+                \(summaryText(for: currentStats))
 
-            Import:
-            \(summaryText(for: incomingStats))
-            """
+                Import:
+                \(summaryText(for: incomingStats))
+                """
             showImportConfirmation = true
         } catch {
             setTransferStatus("Import failed: \(error.localizedDescription)", isError: true)
@@ -149,12 +153,14 @@ final class DataTabViewModel: ObservableObject {
 
         let didReplace = UsageHistoryStore.shared.replaceAllHistory(imported, force: true)
         guard didReplace else {
-            setTransferStatus("Import was blocked to protect existing history. Please try again.", isError: true)
+            setTransferStatus(
+                "Import was blocked to protect existing history. Please try again.", isError: true)
             return
         }
         refreshStats()
         notifyDataChanged()
-        setTransferStatus("Imported \(stats.snapshotCount.formatted()) snapshots from \(url.lastPathComponent).")
+        setTransferStatus(
+            "Imported \(stats.snapshotCount.formatted()) snapshots from \(url.lastPathComponent).")
     }
 
     func cancelImport() {
@@ -168,7 +174,8 @@ final class DataTabViewModel: ObservableObject {
             setDeleteStatus("Nothing to delete with the selected criteria.", isError: true)
             return
         }
-        pendingDeleteMessage = "This will permanently delete \(deleteCount.formatted()) snapshots from \(selectedSourceDisplayName)."
+        pendingDeleteMessage =
+            "This will permanently delete \(deleteCount.formatted()) snapshots from \(selectedSourceDisplayName)."
         showDeleteConfirmation = true
     }
 
@@ -196,7 +203,8 @@ final class DataTabViewModel: ObservableObject {
             }
             if deleteScope == .singleSource {
                 removed = selectedSourceTargetKeys().reduce(0) { partial, key in
-                    partial + UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff, sourceName: key)
+                    partial
+                        + UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff, sourceName: key)
                 }
             } else {
                 removed = UsageHistoryStore.shared.deleteSnapshotsOlderThan(cutoff, sourceName: nil)
@@ -205,7 +213,8 @@ final class DataTabViewModel: ObservableObject {
 
         refreshStats()
         notifyDataChanged()
-        setDeleteStatus("Deleted \(removed.formatted()) snapshots from \(selectedSourceDisplayName).")
+        setDeleteStatus(
+            "Deleted \(removed.formatted()) snapshots from \(selectedSourceDisplayName).")
     }
 
     private func pendingDeleteCount() -> Int? {
@@ -221,7 +230,8 @@ final class DataTabViewModel: ObservableObject {
             guard let cutoff = cutoffDate() else { return nil }
             if deleteScope == .singleSource {
                 return selectedSourceTargetKeys().reduce(0) { partial, key in
-                    partial + UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff, sourceName: key)
+                    partial
+                        + UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff, sourceName: key)
                 }
             }
             return UsageHistoryStore.shared.countSnapshotsOlderThan(cutoff, sourceName: nil)
@@ -274,15 +284,18 @@ final class DataTabViewModel: ObservableObject {
     }
 
     private func summaryText(for stats: HistoryStorageStats) -> String {
-        let byteText = ByteCountFormatter.string(fromByteCount: Int64(stats.estimatedBytes), countStyle: .file)
-        return "- \(stats.snapshotCount.formatted()) snapshots across \(stats.sourceCount.formatted()) sources (\(byteText))\n- \(dateRangeText(for: stats))"
+        let byteText = ByteCountFormatter.string(
+            fromByteCount: Int64(stats.estimatedBytes), countStyle: .file)
+        return
+            "- \(stats.snapshotCount.formatted()) snapshots across \(stats.sourceCount.formatted()) sources (\(byteText))\n- \(dateRangeText(for: stats))"
     }
 
     private func dateRangeText(for stats: HistoryStorageStats) -> String {
         guard let oldest = stats.oldestSnapshot, let newest = stats.newestSnapshot else {
             return "No snapshots."
         }
-        return "\(Self.displayFormatter.string(from: oldest)) to \(Self.displayFormatter.string(from: newest))"
+        return
+            "\(Self.displayFormatter.string(from: oldest)) to \(Self.displayFormatter.string(from: newest))"
     }
 
     private func updateAvailableSources() {

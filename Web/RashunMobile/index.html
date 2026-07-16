@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0e0c22" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="app.css" />
+    <title>Rashun</title>
+  </head>
+  <body>
+    <main>
+      <section id="setup" class="setup panel" hidden>
+        <div class="brand">
+          <img src="assets/rashun-icon.jpg" alt="" />
+          <div>
+            <h1>Rashun</h1>
+            <p>Connect to your Mac</p>
+          </div>
+        </div>
+        <p class="setup-copy">
+          Enter the temporary password shown in Rashun Preferences → Sync.
+        </p>
+        <form id="pairing-form">
+          <label for="pairing-password">Pairing password</label>
+          <input
+            id="pairing-password"
+            name="password"
+            type="text"
+            inputmode="text"
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            spellcheck="false"
+            placeholder="ABCD-EFGH"
+            maxlength="9"
+            required
+          />
+          <button id="pairing-submit" class="primary" type="submit">
+            Connect
+          </button>
+        </form>
+        <p id="pairing-status" class="muted" role="status"></p>
+        <button id="manual-pairing" class="text-button" type="button" hidden>
+          Enter password instead
+        </button>
+      </section>
+
+      <section id="usage" hidden>
+        <header class="app-header">
+          <div class="brand">
+            <img src="assets/rashun-icon.jpg" alt="" />
+            <div>
+              <h1>Rashun</h1>
+              <p>
+                <i id="status-dot"></i
+                ><span id="reachability">Connecting…</span>
+              </p>
+            </div>
+          </div>
+          <div class="header-actions">
+            <button
+              id="refresh"
+              class="icon-button"
+              type="button"
+              aria-label="Refresh usage"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.7-2.6L20 9M4 15l2.2 2.6A7 7 0 0 0 17.9 15"
+                />
+              </svg>
+            </button>
+            <button
+              id="settings"
+              class="icon-button"
+              type="button"
+              aria-label="Open settings"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+                <path
+                  d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.15.38.37.72.66 1 .3.29.68.43 1.1.43H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"
+                />
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="page-heading">
+          <div>
+            <h2>Usage</h2>
+            <p>
+              Shows the same metrics as Rashun’s menu on your Mac. Change them
+              from Preferences → Sources.
+            </p>
+          </div>
+          <span id="updated">Updating…</span>
+        </div>
+        <div id="usage-list" class="usage-list" aria-live="polite"></div>
+      </section>
+      <section id="widget-setup" class="widget-setup" hidden>
+        <header class="setup-header">
+          <button id="widget-back" class="icon-button small" aria-label="Back">‹</button>
+          <div><span class="eyebrow">One-time setup</span><h1>iOS Widget</h1></div>
+        </header>
+        <div class="setup-hero">
+          <img src="assets/rashun-icon.jpg" alt="" />
+          <div><h2>Rashun at a glance</h2><p>Your widget follows the rings and colours selected on your Mac automatically.</p></div>
+        </div>
+        <ol class="setup-steps">
+          <li><span>1</span><div><h3>Install Scriptable</h3><p>Scriptable securely hosts the widget on iOS.</p><a class="action secondary" href="https://apps.apple.com/app/scriptable/id1405459188">Open App Store</a></div></li>
+          <li><span>2</span><div><h3>Add the Rashun script</h3><p>Download the script, then share or open it with Scriptable. You can also copy it and create a script named “Rashun Widget”.</p><div class="action-row"><a class="action primary" href="RashunWidget.js" download>Download script</a><button id="copy-script" class="action secondary">Copy script</button></div></div></li>
+          <li><span>3</span><div><h3>Copy your secure setup code</h3><p>This short-lived code pairs Scriptable with this Mac. It contains no AI-provider credentials.</p><button id="copy-widget-code" class="action primary">Create & copy setup code</button><p id="widget-code-status" class="setting-note" role="status"></p></div></li>
+          <li><span>4</span><div><h3>Run once in Scriptable</h3><p>Open “Rashun Widget”, tap Run, then choose <strong>Set up from clipboard</strong>. Rashun will test the connection and save it securely.</p></div></li>
+          <li><span>5</span><div><h3>Add it to your Home or Lock Screen</h3><p>Long-press the Home or Lock Screen → Add Widget → Scriptable, then select “Rashun Widget”. Small widgets mirror your selected menu-bar rings.</p><p>To choose a specific ring, set its widget parameter to <code>Source:metric-id</code>, for example <code>Codex:codex-pro-weekly</code>. Leave it blank to use your first selected menu-bar ring. For multiple Lock Screen rings, add the circular Scriptable widget more than once and give each copy a different parameter.</p></div></li>
+        </ol>
+        <p class="setup-footnote">Rashun requests a refresh every 15 minutes, but iOS chooses the actual time based on battery, usage, and other system conditions. The displayed timestamp is the newest reading received from your Mac.</p>
+      </section>
+    </main>
+
+    <dialog id="settings-dialog">
+      <div class="dialog-header">
+        <div>
+          <span class="eyebrow">Rashun Mobile</span>
+          <h2>Settings</h2>
+        </div>
+        <button
+          id="close-settings"
+          class="icon-button small"
+          aria-label="Close settings"
+        >
+          ×
+        </button>
+      </div>
+      <section class="setting-row">
+        <div>
+          <h3>Notifications</h3>
+          <p>
+            Receive the same alerts enabled on your Mac. Notification rules are
+            managed from Preferences → Sources on the connected desktop.
+          </p>
+          <p id="notification-note" class="setting-note"></p>
+        </div>
+        <label class="switch"
+          ><input id="notifications-toggle" type="checkbox" /><span></span
+        ></label>
+      </section>
+      <button id="open-widget-setup" class="settings-link" type="button"><span>◉</span><span><strong>Widget Setup</strong><small>Add Rashun to your iPhone Home Screen</small></span><b>›</b></button>
+      <button id="disconnect" class="danger-button" type="button">
+        <span>↗</span> Disconnect this device
+      </button>
+    </dialog>
+    <script src="app.js"></script>
+  </body>
+</html>

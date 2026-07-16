@@ -1,6 +1,6 @@
 import Cocoa
-import SwiftUI
 import RashunCore
+import SwiftUI
 
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
@@ -29,6 +29,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     func showWindowAndBringToFront() {
         window?.center()
+        bringToFront()
+    }
+
+    func bringToFront() {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

@@ -13,7 +13,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Swift 6.2 ships Clang 19, which is incompatible with the newer MSVC
+        # STL currently installed on windows-latest (it requires Clang 20).
+        os: [ubuntu-latest, windows-2022, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +65,9 @@ jobs:
         run: |
           set -euo pipefail
           swift run RashunCLI --help
+          swift run RashunCLI sync --help
+          swift run RashunCLI sync connect --help
+          swift run RashunCLI sync serve --help
           swift run RashunCLI
 
       - name: CLI smoke test (Windows)
@@ -70,6 +75,9 @@ jobs:
         shell: pwsh
         run: |
           swift run RashunCLI --help
+          swift run RashunCLI sync --help
+          swift run RashunCLI sync connect --help
+          swift run RashunCLI sync serve --help
           swift run RashunCLI
 
   macos-app:

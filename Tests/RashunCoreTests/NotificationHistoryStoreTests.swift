@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import RashunCore
 
 final class NotificationHistoryStoreTests: XCTestCase {
@@ -46,12 +47,14 @@ final class NotificationHistoryStoreTests: XCTestCase {
         MainActor.assumeIsolated {
             let store = Self.makeStore()
             store.append(sourceName: Self.source, usage: base)
-            store.append(sourceName: Self.source, usage: UsageResult(
-                remaining: base.remaining - 1,
-                limit: base.limit,
-                resetDate: base.resetDate,
-                cycleStartDate: base.cycleStartDate
-            ))
+            store.append(
+                sourceName: Self.source,
+                usage: UsageResult(
+                    remaining: base.remaining - 1,
+                    limit: base.limit,
+                    resetDate: base.resetDate,
+                    cycleStartDate: base.cycleStartDate
+                ))
 
             XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
@@ -62,12 +65,14 @@ final class NotificationHistoryStoreTests: XCTestCase {
         MainActor.assumeIsolated {
             let store = Self.makeStore()
             store.append(sourceName: Self.source, usage: base)
-            store.append(sourceName: Self.source, usage: UsageResult(
-                remaining: base.remaining,
-                limit: base.limit + 1,
-                resetDate: base.resetDate,
-                cycleStartDate: base.cycleStartDate
-            ))
+            store.append(
+                sourceName: Self.source,
+                usage: UsageResult(
+                    remaining: base.remaining,
+                    limit: base.limit + 1,
+                    resetDate: base.resetDate,
+                    cycleStartDate: base.cycleStartDate
+                ))
 
             XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
@@ -78,12 +83,14 @@ final class NotificationHistoryStoreTests: XCTestCase {
         MainActor.assumeIsolated {
             let store = Self.makeStore()
             store.append(sourceName: Self.source, usage: base)
-            store.append(sourceName: Self.source, usage: UsageResult(
-                remaining: base.remaining,
-                limit: base.limit,
-                resetDate: base.resetDate?.addingTimeInterval(60),
-                cycleStartDate: base.cycleStartDate
-            ))
+            store.append(
+                sourceName: Self.source,
+                usage: UsageResult(
+                    remaining: base.remaining,
+                    limit: base.limit,
+                    resetDate: base.resetDate?.addingTimeInterval(60),
+                    cycleStartDate: base.cycleStartDate
+                ))
 
             XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
@@ -94,12 +101,14 @@ final class NotificationHistoryStoreTests: XCTestCase {
         MainActor.assumeIsolated {
             let store = Self.makeStore()
             store.append(sourceName: Self.source, usage: base)
-            store.append(sourceName: Self.source, usage: UsageResult(
-                remaining: base.remaining,
-                limit: base.limit,
-                resetDate: base.resetDate,
-                cycleStartDate: base.cycleStartDate?.addingTimeInterval(60)
-            ))
+            store.append(
+                sourceName: Self.source,
+                usage: UsageResult(
+                    remaining: base.remaining,
+                    limit: base.limit,
+                    resetDate: base.resetDate,
+                    cycleStartDate: base.cycleStartDate?.addingTimeInterval(60)
+                ))
 
             XCTAssertEqual(store.history(for: Self.source).count, 2)
         }
@@ -111,15 +120,55 @@ final class NotificationHistoryStoreTests: XCTestCase {
             let store = Self.makeStore()
             store.replaceAllHistory([
                 Self.source: [
-                    UsageSnapshot(timestamp: now.addingTimeInterval(-3600), usage: Self.baseUsage()),
-                    UsageSnapshot(timestamp: now.addingTimeInterval(-60), usage: Self.baseUsage())
+                    UsageSnapshot(
+                        timestamp: now.addingTimeInterval(-3600), usage: Self.baseUsage()),
+                    UsageSnapshot(timestamp: now.addingTimeInterval(-60), usage: Self.baseUsage()),
                 ]
             ])
 
-            let removed = store.deleteSnapshotsOlderThan(now.addingTimeInterval(-300), sourceName: Self.source)
+            let removed = store.deleteSnapshotsOlderThan(
+                now.addingTimeInterval(-300), sourceName: Self.source)
 
             XCTAssertEqual(removed, 1)
             XCTAssertEqual(store.history(for: Self.source).count, 1)
+        }
+    }
+
+    func testHistoryHasNoAutomaticSnapshotCap() {
+        let snapshots = (0...10_000).map { index in
+            UsageSnapshot(
+                timestamp: Date(timeIntervalSince1970: Double(index)),
+                usage: UsageResult(remaining: Double(index), limit: 20_000))
+        }
+        MainActor.assumeIsolated {
+            let store = Self.makeStore()
+            XCTAssertTrue(store.replaceAllHistory([Self.source: snapshots], force: true))
+            XCTAssertEqual(store.history(for: Self.source).count, 10_001)
+        }
+    }
+
+    func testSyncSnapshotReturnsOnlySeriesChangedSinceRevision() {
+        MainActor.assumeIsolated {
+            let store = Self.makeStore()
+            store.append(sourceName: "Codex::weekly", usage: Self.baseUsage())
+            let first = store.syncSnapshot(since: nil)
+            store.append(
+                sourceName: "Amp::daily", usage: UsageResult(remaining: 20, limit: 100))
+            let delta = store.syncSnapshot(since: first.revision)
+            XCTAssertFalse(delta.isComplete)
+            XCTAssertEqual(Set(delta.historyBySource.keys), ["Amp::daily"])
+        }
+    }
+
+    func testDeletedSeriesIsIncludedInIncrementalAndFullSyncSnapshots() {
+        MainActor.assumeIsolated {
+            let store = Self.makeStore()
+            store.append(sourceName: "Codex::weekly", usage: Self.baseUsage())
+            let beforeDelete = store.currentSyncRevision
+            store.clearHistory(for: "Codex::weekly")
+            XCTAssertEqual(
+                store.syncSnapshot(since: beforeDelete).deletedSources, ["Codex::weekly"])
+            XCTAssertEqual(store.syncSnapshot(since: nil).deletedSources, ["Codex::weekly"])
         }
     }
 

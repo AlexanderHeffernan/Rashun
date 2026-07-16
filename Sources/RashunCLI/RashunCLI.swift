@@ -17,9 +17,10 @@ struct RashunCLI: AsyncParsableCommand {
             HistoryCommand.self,
             SetupCommand.self,
             StatusCommand.self,
+            SyncCommand.self,
             SourcesCommand.self,
             UpdateCommand.self,
-            VersionCommand.self
+            VersionCommand.self,
         ]
     )
 
@@ -31,23 +32,26 @@ struct RashunCLI: AsyncParsableCommand {
                 let sources: [String]
             }
 
-            try JSONOutput.print(RootInfo(
-                version: Versioning.versionString(),
-                quickStart: [
-                    "rashun sources",
-                    "rashun check <source>",
-                    "rashun status <source>",
-                    "rashun status",
-                    "rashun --help"
-                ],
-                sources: allSources.map(\.displayName)
-            ))
+            try JSONOutput.print(
+                RootInfo(
+                    version: Versioning.versionString(),
+                    quickStart: [
+                        "rashun sources",
+                        "rashun check <source>",
+                        "rashun status <source>",
+                        "rashun status",
+                        "rashun --help",
+                    ],
+                    sources: allSources.map(\.displayName)
+                ))
             return
         }
 
         let formatter = OutputFormatter(noColor: global.noColor)
         let sparkle = formatter.emoji("🔮", fallback: "*")
-        print("\(sparkle) \(formatter.colorize("Rashun v\(Versioning.versionString())", as: .bold)) -- AI Usage Monitor")
+        print(
+            "\(sparkle) \(formatter.colorize("Rashun v\(Versioning.versionString())", as: .bold)) -- AI Usage Monitor"
+        )
         print("")
         print(formatter.colorize("Quick start:", as: .cyan))
         print("  rashun sources          See available AI sources and setup status")
