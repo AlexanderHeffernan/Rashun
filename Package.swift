@@ -1,14 +1,13 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-var syncServerDependencies: [Target.Dependency] = [
-    "RashunSync",
-    .product(name: "Crypto", package: "swift-crypto"),
-    .product(name: "Hummingbird", package: "hummingbird"),
+var cliDependencies: [Target.Dependency] = [
+    "RashunCore", "RashunSync",
+    .product(name: "ArgumentParser", package: "swift-argument-parser"),
 ]
 
 #if !os(Windows)
-    syncServerDependencies.append(.product(name: "HummingbirdTLS", package: "hummingbird"))
+    cliDependencies.append("RashunSyncServer")
 #endif
 
 var targets: [Target] = [
@@ -24,17 +23,9 @@ var targets: [Target] = [
         ],
         path: "Sources/RashunSync"
     ),
-    .target(
-        name: "RashunSyncServer",
-        dependencies: syncServerDependencies,
-        path: "Sources/RashunSyncServer"
-    ),
     .executableTarget(
         name: "RashunCLI",
-        dependencies: [
-            "RashunCore", "RashunSync", "RashunSyncServer",
-            .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        ],
+        dependencies: cliDependencies,
         path: "Sources/RashunCLI"
     ),
     .testTarget(
@@ -50,6 +41,20 @@ var targets: [Target] = [
 ]
 
 #if !os(Windows)
+    // Hummingbird does not support Windows. Keep the client-side sync commands
+    // available there, but only compile the server on supported platforms.
+    targets.append(
+        .target(
+            name: "RashunSyncServer",
+            dependencies: [
+                "RashunSync",
+                .product(name: "Crypto", package: "swift-crypto"),
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "HummingbirdTLS", package: "hummingbird"),
+            ],
+            path: "Sources/RashunSyncServer"
+        )
+    )
     // HummingbirdTesting currently pulls in CNIOExtrasZlib, whose generated
     // configuration includes the POSIX-only unistd.h on Windows.
     targets.append(

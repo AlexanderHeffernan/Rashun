@@ -2,7 +2,9 @@ import ArgumentParser
 import Foundation
 import RashunCore
 import RashunSync
+#if !os(Windows)
 import RashunSyncServer
+#endif
 
 struct SyncCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -34,6 +36,11 @@ struct SyncCommand: AsyncParsableCommand {
 
         @MainActor
         func run() async throws {
+#if os(Windows)
+            throw ValidationError(
+                "The sync server is not available on Windows. Run `rashun sync serve` on a macOS or Linux device."
+            )
+#else
             guard (1...65_535).contains(port) else {
                 throw ValidationError("Port must be between 1 and 65535.")
             }
@@ -92,6 +99,7 @@ struct SyncCommand: AsyncParsableCommand {
                 webRoot: FileManager.default.fileExists(atPath: root) ? root : nil,
                 tlsFiles: tls, appVersion: Versioning.versionString()
             ).run()
+#endif
         }
     }
 
