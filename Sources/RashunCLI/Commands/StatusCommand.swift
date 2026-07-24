@@ -191,10 +191,14 @@ struct StatusCommand: AsyncParsableCommand {
 
         for metric in source.metrics {
             do {
-                let usage = try await source.fetchUsage(for: metric.id)
+                let fetchedUsage = try await source.fetchUsage(for: metric.id)
+                let scope =
+                    source.metrics.count > 1 ? "\(source.name)::\(metric.id)" : source.name
+                let history = UsageHistoryStore.shared.history(for: scope)
+                let usage = source.resolvedUsage(
+                    for: metric.id, current: fetchedUsage, history: history, now: Date())
                 try SyncEnvironment.shared.record(
-                    sourceName: source.metrics.count > 1 ? "\(source.name)::\(metric.id)" : source.name,
-                    usage: usage)
+                    sourceName: scope, usage: usage)
                 if source.metrics.count > 1 {
                     SourceHealthStore.shared.recordSuccess(
                         sourceName: source.name, metricId: metric.id, usage: usage)

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+swift_version="6.2.4"
+swiftly_home="${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}"
+swiftly_env="$swiftly_home/env.sh"
+
+echo "==> Preparing Rashun orb"
+
+if [ ! -x "$swiftly_home/bin/swiftly" ]; then
+    echo "==> Installing swiftly"
+    temp_dir="$(mktemp -d)"
+    trap 'rm -rf "$temp_dir"' EXIT
+    curl -fsSL "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz" \
+        -o "$temp_dir/swiftly.tar.gz"
+    tar -xzf "$temp_dir/swiftly.tar.gz" -C "$temp_dir"
+    "$temp_dir/swiftly" init \
+        --assume-yes \
+        --no-modify-profile \
+        --skip-install \
+        --quiet-shell-followup
+fi
+
+# shellcheck disable=SC1090
+. "$swiftly_env"
+
+echo "==> Installing Swift $swift_version"
+post_install_file="$(mktemp)"
+swiftly install \
+    --assume-yes \
+    --post-install-file "$post_install_file" \
+    "$swift_version"
+if [ -s "$post_install_file" ]; then
+    sudo env DEBIAN_FRONTEND=noninteractive bash "$post_install_file"
+fi
+rm -f "$post_install_file"
+swiftly use --assume-yes --global-default "$swift_version"
+
+profile_marker="# Rashun Swiftly toolchain"
+touch "$HOME/.bash_profile"
+if grep -Fqx "$profile_marker" "$HOME/.bash_profile"; then
+    sed -i "/^${profile_marker}$/,+3d" "$HOME/.bash_profile"
+fi
+printf -v quoted_swiftly_env '%q' "$swiftly_env"
+cat >> "$HOME/.bash_profile" <<EOF
+
+# Rashun Swiftly toolchain
+if [ -f $quoted_swiftly_env ]; then
+    . $quoted_swiftly_env
+fi
+EOF
+
+echo "==> Resolving Swift package dependencies"
+cd "$repo_root"
+swift package resolve
+
+echo "==> Rashun orb setup complete"
+swift --version

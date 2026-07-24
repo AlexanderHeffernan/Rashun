@@ -20,7 +20,8 @@ struct CheckCommand: AsyncParsableCommand {
             try emitErrorAndExit(
                 code: "unknown_source",
                 short: "Unknown source",
-                detail: "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
+                detail:
+                    "No source named '\(sourceName)' is available. Run `rashun sources` to see supported sources.",
                 exitCode: 2
             )
             return
@@ -31,9 +32,15 @@ struct CheckCommand: AsyncParsableCommand {
 
         for metric in source.metrics {
             do {
-                let usage = try await source.fetchUsage(for: metric.id)
+                let fetchedUsage = try await source.fetchUsage(for: metric.id)
+                let scope =
+                    source.metrics.count > 1 ? "\(source.name)::\(metric.id)" : source.name
+                let history = UsageHistoryStore.shared.history(for: scope)
+                let usage = source.resolvedUsage(
+                    for: metric.id, current: fetchedUsage, history: history, now: Date())
                 if source.metrics.count > 1 {
-                    SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+                    SourceHealthStore.shared.recordSuccess(
+                        sourceName: source.name, metricId: metric.id, usage: usage)
                 } else {
                     SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
                 }
@@ -41,9 +48,11 @@ struct CheckCommand: AsyncParsableCommand {
             } catch {
                 let presentation = source.mapFetchError(for: metric.id, error)
                 if source.metrics.count > 1 {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, metricId: metric.id, presentation: presentation)
                 } else {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, presentation: presentation)
                 }
                 let errorCode = classificationCode(error)
                 if errorCode == "source_not_configured" {
@@ -54,12 +63,13 @@ struct CheckCommand: AsyncParsableCommand {
         }
 
         if global.json {
-            try JSONOutput.print(CheckResponse(
-                source: source.name,
-                requirements: source.requirements,
-                healthy: checks.allSatisfy { $0.isSuccess },
-                checks: checks
-            ))
+            try JSONOutput.print(
+                CheckResponse(
+                    source: source.name,
+                    requirements: source.requirements,
+                    healthy: checks.allSatisfy { $0.isSuccess },
+                    checks: checks
+                ))
         } else {
             try printHuman(source: source, checks: checks)
         }
@@ -75,11 +85,14 @@ struct CheckCommand: AsyncParsableCommand {
             return "source_not_configured"
         case CopilotFetchError.ghNotInstalled, CopilotFetchError.ghNoToken:
             return "source_not_configured"
-        case CodexFetchError.sessionsDirectoryMissing, CodexFetchError.sessionsDirectoryUnreadable, CodexFetchError.noSessionFiles:
+        case CodexFetchError.sessionsDirectoryMissing, CodexFetchError.sessionsDirectoryUnreadable,
+            CodexFetchError.noSessionFiles:
             return "source_not_configured"
-        case GeminiFetchError.credentialsMissing, GeminiFetchError.accessTokenExpiredNoRefresh, GeminiFetchError.oauthClientUnavailable, GeminiFetchError.projectResolutionFailed:
+        case GeminiFetchError.credentialsMissing, GeminiFetchError.accessTokenExpiredNoRefresh,
+            GeminiFetchError.oauthClientUnavailable, GeminiFetchError.projectResolutionFailed:
             return "source_not_configured"
-        case CursorFetchError.stateDatabaseMissing, CursorFetchError.sqlite3NotFound, CursorFetchError.accessTokenMissing:
+        case CursorFetchError.stateDatabaseMissing, CursorFetchError.sqlite3NotFound,
+            CursorFetchError.accessTokenMissing:
             return "source_not_configured"
         default:
             return "fetch_failed"
@@ -88,25 +101,31 @@ struct CheckCommand: AsyncParsableCommand {
 
     private func printHuman(source: AISource, checks: [MetricCheckResult]) throws {
         let formatter = OutputFormatter(noColor: global.noColor)
-        print("\(formatter.emoji("🔍", fallback: "*")) Checking \(formatter.colorize(source.displayName, as: .bold))...")
+        print(
+            "\(formatter.emoji("🔍", fallback: "*")) Checking \(formatter.colorize(source.displayName, as: .bold))..."
+        )
         print("")
         print("Requirements: \(source.requirements)")
         print("")
 
         if checks.allSatisfy(\.isSuccess) {
-            print("\(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize("\(source.displayName) is healthy", as: .cyan))")
+            print(
+                "\(formatter.emoji("✅", fallback: "[ok]")) \(formatter.colorize("\(source.displayName) is healthy", as: .cyan))"
+            )
         } else {
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize("\(source.displayName) check failed", as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize("\(source.displayName) check failed", as: .yellow))"
+            )
         }
 
         for check in checks {
             switch check {
-            case let .success(metric, usage):
+            case .success(let metric, let usage):
                 let label = source.metrics.count > 1 ? metric.title : source.displayName
                 let percent = String(format: "%.1f%%", usage.percentRemaining)
                 let amounts = String(format: "(%.2f/%.2f)", usage.remaining, usage.limit)
                 print("   \(label): \(percent) remaining \(amounts)")
-            case let .failure(metric, _, presentation):
+            case .failure(let metric, _, let presentation):
                 let label = source.metrics.count > 1 ? metric.title : source.displayName
                 print("   \(label): \(presentation.shortMessage)")
                 print("   \(presentation.detailedMessage)")
@@ -114,12 +133,17 @@ struct CheckCommand: AsyncParsableCommand {
         }
     }
 
-    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32) throws {
+    private func emitErrorAndExit(code: String, short: String, detail: String, exitCode: Int32)
+        throws
+    {
         if global.json {
-            try JSONOutput.print(JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
+            try JSONOutput.print(
+                JSONErrorEnvelope(error: ErrorStatus(code: code, short: short, detail: detail)))
         } else {
             let formatter = OutputFormatter(noColor: global.noColor)
-            print("\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))")
+            print(
+                "\(formatter.emoji("❌", fallback: "[x]")) \(formatter.colorize(short, as: .yellow))"
+            )
             print(detail)
         }
         throw ExitCode(exitCode)
@@ -159,7 +183,7 @@ private enum MetricCheckResult: Encodable {
 
     func encode(to encoder: Encoder) throws {
         switch self {
-        case let .success(metric, usage):
+        case .success(let metric, let usage):
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(metric.id, forKey: .metricId)
             try container.encode(metric.title, forKey: .title)
@@ -169,7 +193,7 @@ private enum MetricCheckResult: Encodable {
             try container.encode(usage.limit, forKey: .limit)
             try container.encodeIfPresent(usage.resetDate, forKey: .resetDate)
             try container.encodeIfPresent(usage.cycleStartDate, forKey: .cycleStartDate)
-        case let .failure(metric, code, presentation):
+        case .failure(let metric, let code, let presentation):
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(metric.id, forKey: .metricId)
             try container.encode(metric.title, forKey: .title)

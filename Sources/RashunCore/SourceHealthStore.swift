@@ -31,6 +31,7 @@ public final class SourceHealthStore {
 
     private let userDefaultsKey = "ai.sourceHealth.v1"
     private let migrationKey = "ai.sourceHealth.migrated.v1"
+    private let ampFreeScopeMigrationKey = "ai.sourceHealth.ampFreeScope.migrated.v1"
     private let backend: PersistenceBackend
     private let legacyBackends: [PersistenceBackend]
     private var recordsBySource: [String: SourceHealthRecord] = [:]
@@ -50,7 +51,8 @@ public final class SourceHealthStore {
     }
 
     public func recordSuccess(sourceName: String, metricId: String, usage: UsageResult) {
-        recordSuccess(sourceName: scopedName(sourceName: sourceName, metricId: metricId), usage: usage)
+        recordSuccess(
+            sourceName: scopedName(sourceName: sourceName, metricId: metricId), usage: usage)
     }
 
     public func recordSuccess(sourceName: String, usage: UsageResult) {
@@ -64,8 +66,12 @@ public final class SourceHealthStore {
         persistAndNotify()
     }
 
-    public func recordFailure(sourceName: String, metricId: String, presentation: SourceFetchErrorPresentation) {
-        recordFailure(sourceName: scopedName(sourceName: sourceName, metricId: metricId), presentation: presentation)
+    public func recordFailure(
+        sourceName: String, metricId: String, presentation: SourceFetchErrorPresentation
+    ) {
+        recordFailure(
+            sourceName: scopedName(sourceName: sourceName, metricId: metricId),
+            presentation: presentation)
     }
 
     public func recordFailure(sourceName: String, presentation: SourceFetchErrorPresentation) {
@@ -98,6 +104,7 @@ public final class SourceHealthStore {
 
         if hasMigrated {
             recordsBySource = sharedRecords
+            migrateLegacyAmpFreeScopeIfNeeded()
             return
         }
 
@@ -128,11 +135,26 @@ public final class SourceHealthStore {
             backend.set(encoded, forKey: userDefaultsKey)
         }
         backend.set(Data([1]), forKey: migrationKey)
+        migrateLegacyAmpFreeScopeIfNeeded()
+    }
+
+    private func migrateLegacyAmpFreeScopeIfNeeded() {
+        guard backend.data(forKey: ampFreeScopeMigrationKey) == nil else { return }
+        defer { backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
+
+        guard recordsBySource["AMP::amp-free"] == nil,
+            let legacy = recordsBySource["AMP"]
+        else { return }
+        recordsBySource["AMP::amp-free"] = legacy
+        if let encoded = try? JSONEncoder().encode(recordsBySource) {
+            backend.set(encoded, forKey: userDefaultsKey)
+        }
     }
 
     private func decodeRecords(from data: Data?) -> [String: SourceHealthRecord] {
         guard let data,
-              let decoded = try? JSONDecoder().decode([String: SourceHealthRecord].self, from: data) else {
+            let decoded = try? JSONDecoder().decode([String: SourceHealthRecord].self, from: data)
+        else {
             return [:]
         }
         return decoded
@@ -143,25 +165,29 @@ public final class SourceHealthStore {
             backend.set(data, forKey: userDefaultsKey)
         }
         #if canImport(AppKit) || canImport(UIKit)
-        NotificationCenter.default.post(name: .aiSourceHealthChanged, object: nil)
+            NotificationCenter.default.post(name: .aiSourceHealthChanged, object: nil)
         #endif
     }
 
     private func writeMigrationBackup(named suffix: String, records: [String: SourceHealthRecord]) {
         guard !records.isEmpty else { return }
         #if os(macOS)
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        let backupDir = appSupport
-            .appendingPathComponent("Rashun", isDirectory: true)
-            .appendingPathComponent("Backups", isDirectory: true)
-        try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
-        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let fileURL = backupDir.appendingPathComponent("health-\(suffix)-\(stamp).json")
-        if let data = try? JSONEncoder().encode(records) {
-            try? data.write(to: fileURL, options: .atomic)
-        }
+            let fm = FileManager.default
+            let appSupport =
+                fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? fm.homeDirectoryForCurrentUser.appendingPathComponent(
+                    "Library/Application Support", isDirectory: true)
+            let backupDir =
+                appSupport
+                .appendingPathComponent("Rashun", isDirectory: true)
+                .appendingPathComponent("Backups", isDirectory: true)
+            try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(
+                of: ":", with: "-")
+            let fileURL = backupDir.appendingPathComponent("health-\(suffix)-\(stamp).json")
+            if let data = try? JSONEncoder().encode(records) {
+                try? data.write(to: fileURL, options: .atomic)
+            }
         #endif
     }
 }

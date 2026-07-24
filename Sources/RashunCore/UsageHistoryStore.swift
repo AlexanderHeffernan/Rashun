@@ -55,6 +55,7 @@ public final class UsageHistoryStore {
 
     private let userDefaultsKey = "ai.notificationHistory.v1"
     private let migrationKey = "ai.notificationHistory.migrated.v1"
+    private let ampFreeScopeMigrationKey = "ai.notificationHistory.ampFreeScope.migrated.v1"
     private let syncMetadataKey = "ai.notificationHistory.sync.v1"
     private let backend: PersistenceBackend
     private let legacyBackends: [PersistenceBackend]
@@ -89,7 +90,7 @@ public final class UsageHistoryStore {
     }
 
     public func sourceNamesWithHistory() -> [String] {
-        historyBySource
+        Self.historyForAggregateOperations(historyBySource)
             .filter { !$0.value.isEmpty }
             .map(\.key)
             .sorted()
@@ -103,7 +104,7 @@ public final class UsageHistoryStore {
     public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]], force: Bool = false)
         -> Bool
     {
-        let normalized = Self.normalizedHistory(newHistory)
+        let normalized = Self.canonicalizedAmpFreeHistory(Self.normalizedHistory(newHistory))
         let currentCount = Self.snapshotCount(in: historyBySource)
         let incomingCount = Self.snapshotCount(in: normalized)
 
@@ -126,7 +127,7 @@ public final class UsageHistoryStore {
         if let sourceName {
             return historyBySource[sourceName]?.count ?? 0
         }
-        return historyBySource.values.reduce(0) { $0 + $1.count }
+        return Self.snapshotCount(in: historyBySource)
     }
 
     public func countSnapshotsOlderThan(_ cutoff: Date, sourceName: String? = nil) -> Int {
@@ -139,12 +140,13 @@ public final class UsageHistoryStore {
     }
 
     public func stats() -> HistoryStorageStats {
-        let snapshots = historyBySource.values.flatMap { $0 }
+        let aggregateHistory = Self.historyForAggregateOperations(historyBySource)
+        let snapshots = aggregateHistory.values.flatMap { $0 }
         let oldest = snapshots.min(by: { $0.timestamp < $1.timestamp })?.timestamp
         let newest = snapshots.max(by: { $0.timestamp < $1.timestamp })?.timestamp
         let estimatedBytes = (try? JSONEncoder().encode(historyBySource).count) ?? 0
         return HistoryStorageStats(
-            sourceCount: historyBySource.keys.count,
+            sourceCount: aggregateHistory.keys.count,
             snapshotCount: snapshots.count,
             oldestSnapshot: oldest,
             newestSnapshot: newest,
@@ -180,10 +182,11 @@ public final class UsageHistoryStore {
         defer { reconcileSyncMetadataWithHistory() }
 
         let sharedHistory = decodeHistory(from: backend.data(forKey: userDefaultsKey))
-        let sharedCount = Self.snapshotCount(in: sharedHistory)
+        let sharedCount = Self.rawSnapshotCount(in: sharedHistory)
 
         if hasMigrated {
             historyBySource = sharedHistory
+            migrateLegacyAmpFreeScopeIfNeeded()
             return
         }
 
@@ -197,7 +200,7 @@ public final class UsageHistoryStore {
             let decoded = decodeHistory(from: legacyData)
             guard !decoded.isEmpty else { continue }
 
-            let count = Self.snapshotCount(in: decoded)
+            let count = Self.rawSnapshotCount(in: decoded)
             if count > bestLegacyCount {
                 bestLegacyHistory = decoded
                 bestLegacyCount = count
@@ -215,6 +218,18 @@ public final class UsageHistoryStore {
             backend.set(encoded, forKey: userDefaultsKey)
         }
         backend.set(Data([1]), forKey: migrationKey)
+        migrateLegacyAmpFreeScopeIfNeeded()
+    }
+
+    private func migrateLegacyAmpFreeScopeIfNeeded() {
+        guard backend.data(forKey: ampFreeScopeMigrationKey) == nil else { return }
+        defer { backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
+
+        guard let legacy = historyBySource["AMP"], !legacy.isEmpty else { return }
+        let canonical = Self.compressed((historyBySource["AMP::amp-free"] ?? []) + legacy)
+        guard canonical != historyBySource["AMP::amp-free"] else { return }
+        historyBySource["AMP::amp-free"] = canonical
+        save()
     }
 
     private func decodeHistory(from data: Data?) -> [String: [UsageSnapshot]] {
@@ -227,7 +242,20 @@ public final class UsageHistoryStore {
     }
 
     private static func snapshotCount(in history: [String: [UsageSnapshot]]) -> Int {
+        rawSnapshotCount(in: historyForAggregateOperations(history))
+    }
+
+    private static func rawSnapshotCount(in history: [String: [UsageSnapshot]]) -> Int {
         history.values.reduce(0) { $0 + $1.count }
+    }
+
+    private static func historyForAggregateOperations(
+        _ history: [String: [UsageSnapshot]]
+    ) -> [String: [UsageSnapshot]] {
+        guard history["AMP::amp-free"]?.isEmpty == false else { return history }
+        var result = history
+        result.removeValue(forKey: "AMP")
+        return result
     }
 
     private func save() {
@@ -294,6 +322,14 @@ public final class UsageHistoryStore {
                 historyBySource[source] = merged
                 sourceDeletionRevisions.removeValue(forKey: source)
                 changed.insert(source)
+            }
+        }
+        if let legacy = historyBySource["AMP"], !legacy.isEmpty {
+            let canonical = Self.compressed((historyBySource["AMP::amp-free"] ?? []) + legacy)
+            if canonical != historyBySource["AMP::amp-free"] {
+                historyBySource["AMP::amp-free"] = canonical
+                sourceDeletionRevisions.removeValue(forKey: "AMP::amp-free")
+                changed.insert("AMP::amp-free")
             }
         }
         guard !changed.isEmpty else { return false }
@@ -418,19 +454,18 @@ public final class UsageHistoryStore {
         if let sourceName {
             return historyBySource[sourceName]?.filter(predicate).count ?? 0
         }
-        return historyBySource.values.reduce(0) { partial, snapshots in
+        return Self.historyForAggregateOperations(historyBySource).values.reduce(0) {
+            partial, snapshots in
             partial + snapshots.filter(predicate).count
         }
     }
 
     @discardableResult
     private func deleteMatching(sourceName: String?, predicate: (UsageSnapshot) -> Bool) -> Int {
-        var removed = 0
-
         if let sourceName {
             let existing = historyBySource[sourceName] ?? []
             let filtered = existing.filter { !predicate($0) }
-            removed = existing.count - filtered.count
+            let removed = existing.count - filtered.count
             if filtered.isEmpty {
                 historyBySource.removeValue(forKey: sourceName)
             } else {
@@ -440,9 +475,9 @@ public final class UsageHistoryStore {
             return removed
         }
 
+        let removed = countMatching(sourceName: nil, predicate: predicate)
         for (name, snapshots) in historyBySource {
             let filtered = snapshots.filter { !predicate($0) }
-            removed += snapshots.count - filtered.count
             if filtered.isEmpty {
                 historyBySource.removeValue(forKey: name)
             } else {
@@ -462,6 +497,15 @@ public final class UsageHistoryStore {
             normalized[source] = compressed(sorted)
         }
         return normalized
+    }
+
+    private static func canonicalizedAmpFreeHistory(
+        _ history: [String: [UsageSnapshot]]
+    ) -> [String: [UsageSnapshot]] {
+        guard let legacy = history["AMP"], !legacy.isEmpty else { return history }
+        var result = history
+        result["AMP::amp-free"] = compressed((result["AMP::amp-free"] ?? []) + legacy)
+        return result
     }
 
     private func hasSameUsageState(lhs: UsageResult, rhs: UsageResult) -> Bool {

@@ -10,6 +10,7 @@ final class SettingsStore {
     private let sourceMetricSettingsKey = "ai.sourceMetricSettings.v1"
     private let notificationDefaultsKey = "ai.notificationSettings.v1"
     private let notificationStateKey = "ai.notificationState.v1"
+    private let ampFreeScopeMigrationKey = "ai.ampFreeNotificationScope.migrated.v1"
     private let pollIntervalKey = "ai.pollIntervalSeconds.v1"
     private let syncIntervalKey = "ai.syncIntervalSeconds.v1"
     private let autoUpdateCheckKey = "ai.autoUpdateCheck.v1"
@@ -58,6 +59,7 @@ final class SettingsStore {
             notificationState = decodedState
         }
 
+        let ampFreeScopeMigrated = migrateLegacyAmpFreeScopeIfNeeded()
         let migrated = migrateLegacyCopilotPacingRuleIfNeeded()
 
         let poll = UserDefaults.standard.double(forKey: pollIntervalKey)
@@ -97,8 +99,11 @@ final class SettingsStore {
             )
         }
 
-        if migrated {
+        if migrated || ampFreeScopeMigrated {
             save()
+        }
+        if ampFreeScopeMigrated {
+            UserDefaults.standard.set(true, forKey: ampFreeScopeMigrationKey)
         }
     }
 
@@ -280,7 +285,10 @@ final class SettingsStore {
         let scopedSourceName = scopeName ?? source.name
 
         var current = notificationSettings[scopedSourceName] ?? []
-        if current.isEmpty, scopedSourceName != source.name {
+        if current.isEmpty,
+            scopedSourceName != source.name,
+            metricId == source.metrics.first?.id
+        {
             current = notificationSettings[source.name] ?? []
         }
         var map: [String: NotificationRuleSetting] = [:]
@@ -348,6 +356,33 @@ final class SettingsStore {
     func setRuleState(_ state: NotificationRuleState, sourceName: String, ruleId: String) {
         notificationState[ruleStateKey(sourceName: sourceName, ruleId: ruleId)] = state
         save()
+    }
+
+    @discardableResult
+    private func migrateLegacyAmpFreeScopeIfNeeded() -> Bool {
+        guard UserDefaults.standard.object(forKey: ampFreeScopeMigrationKey) == nil else {
+            return false
+        }
+
+        let legacyScope = "AMP"
+        let freeScope = "AMP::amp-free"
+        if notificationSettings[freeScope] == nil,
+            let legacyRules = notificationSettings[legacyScope]
+        {
+            notificationSettings[freeScope] = legacyRules
+        }
+
+        let legacyPrefix = "\(legacyScope):"
+        let freePrefix = "\(freeScope):"
+        for (key, state) in notificationState
+        where key.hasPrefix(legacyPrefix) && !key.hasPrefix("\(legacyScope)::") {
+            let suffix = key.dropFirst(legacyPrefix.count)
+            let migratedKey = freePrefix + suffix
+            if notificationState[migratedKey] == nil {
+                notificationState[migratedKey] = state
+            }
+        }
+        return true
     }
 
     @discardableResult

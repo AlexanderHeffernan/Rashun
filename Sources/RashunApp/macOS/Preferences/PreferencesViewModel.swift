@@ -1,6 +1,6 @@
-import SwiftUI
-import ServiceManagement
 import RashunCore
+import ServiceManagement
+import SwiftUI
 
 @MainActor
 final class PreferencesViewModel: ObservableObject {
@@ -70,7 +70,9 @@ final class PreferencesViewModel: ObservableObject {
             }
             if !settings.isEnabled(sourceName: source.name) {
                 let metricScopePrefix = "\(source.name)::"
-                expandedSources = expandedSources.filter { $0 != source.name && !$0.hasPrefix(metricScopePrefix) }
+                expandedSources = expandedSources.filter {
+                    $0 != source.name && !$0.hasPrefix(metricScopePrefix)
+                }
             }
             seedRuleInputDrafts(for: source)
         }
@@ -83,12 +85,19 @@ final class PreferencesViewModel: ObservableObject {
         refreshUpdateStatus()
     }
 
-    func isSourceEnabled(_ sourceName: String) -> Bool { settings.isEnabled(sourceName: sourceName) }
+    func isSourceEnabled(_ sourceName: String) -> Bool {
+        settings.isEnabled(sourceName: sourceName)
+    }
 
     func sourceToggleChanged(_ source: AISource, enabled: Bool) {
-        guard !enabled else { pendingEnableSource = source; return }
+        guard !enabled else {
+            pendingEnableSource = source
+            return
+        }
         let metricScopePrefix = "\(source.name)::"
-        expandedSources = expandedSources.filter { $0 != source.name && !$0.hasPrefix(metricScopePrefix) }
+        expandedSources = expandedSources.filter {
+            $0 != source.name && !$0.hasPrefix(metricScopePrefix)
+        }
         settings.setEnabled(false, for: source.name)
     }
 
@@ -100,8 +109,14 @@ final class PreferencesViewModel: ObservableObject {
         settings.setMetricEnabled(enabled, sourceName: sourceName, metricId: metricId)
     }
 
-    func setTrackingEnabled(_ enabled: Bool) { settings.setTrackingEnabled(enabled); trackingEnabled = enabled }
-    func setShowTrackingSessionInMenuBar(_ show: Bool) { settings.setShowTrackingSessionInMenuBar(show); showTrackingSessionInMenuBar = show }
+    func setTrackingEnabled(_ enabled: Bool) {
+        settings.setTrackingEnabled(enabled)
+        trackingEnabled = enabled
+    }
+    func setShowTrackingSessionInMenuBar(_ show: Bool) {
+        settings.setShowTrackingSessionInMenuBar(show)
+        showTrackingSessionInMenuBar = show
+    }
 
     func confirmEnableSource() {
         guard let source = pendingEnableSource else { return }
@@ -126,7 +141,8 @@ final class PreferencesViewModel: ObservableObject {
             return sourceHasWarning(source.name)
         }
         return source.metrics.contains { metric in
-            metricWarningSummary(sourceName: source.name, metricId: metric.id) != nil
+            settings.isMetricEnabled(sourceName: source.name, metricId: metric.id)
+                && metricWarningSummary(sourceName: source.name, metricId: metric.id) != nil
         }
     }
 
@@ -139,11 +155,19 @@ final class PreferencesViewModel: ObservableObject {
     }
 
     func metricWarningSummary(sourceName: String, metricId: String) -> String? {
-        SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.shortErrorMessage
+        guard settings.isMetricEnabled(sourceName: sourceName, metricId: metricId) else {
+            return nil
+        }
+        return SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?
+            .shortErrorMessage
     }
 
     func metricWarningDetail(sourceName: String, metricId: String) -> String? {
-        SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?.detailedErrorMessage
+        guard settings.isMetricEnabled(sourceName: sourceName, metricId: metricId) else {
+            return nil
+        }
+        return SourceHealthStore.shared.health(for: sourceName, metricId: metricId)?
+            .detailedErrorMessage
     }
 
     func toggleNotificationsSection(_ sourceName: String) {
@@ -155,11 +179,13 @@ final class PreferencesViewModel: ObservableObject {
     }
 
     func toggleMetricNotificationsSection(sourceName: String, metricId: String) {
-        toggleNotificationsSection(notificationScopeName(sourceName: sourceName, metricId: metricId))
+        toggleNotificationsSection(
+            notificationScopeName(sourceName: sourceName, metricId: metricId))
     }
 
     func isRuleEnabled(sourceName: String, ruleId: String) -> Bool {
-        settings.ruleSettings(for: sourceName).first(where: { $0.ruleId == ruleId })?.isEnabled ?? false
+        settings.ruleSettings(for: sourceName).first(where: { $0.ruleId == ruleId })?.isEnabled
+            ?? false
     }
 
     func setRuleEnabled(sourceName: String, ruleId: String, enabled: Bool) {
@@ -169,12 +195,13 @@ final class PreferencesViewModel: ObservableObject {
     func ruleInputText(sourceName: String, ruleId: String, input: NotificationInputSpec) -> String {
         let key = inputKey(sourceName: sourceName, ruleId: ruleId, inputId: input.id)
         if let draft = ruleInputDrafts[key] { return draft }
-        return formattedNumber(settings.ruleInputValue(
-            sourceName: sourceName,
-            ruleId: ruleId,
-            inputId: input.id,
-            defaultValue: input.defaultValue
-        ))
+        return formattedNumber(
+            settings.ruleInputValue(
+                sourceName: sourceName,
+                ruleId: ruleId,
+                inputId: input.id,
+                defaultValue: input.defaultValue
+            ))
     }
 
     func setRuleInputDraft(sourceName: String, ruleId: String, inputId: String, text: String) {
@@ -183,7 +210,9 @@ final class PreferencesViewModel: ObservableObject {
 
     func commitRuleInput(sourceName: String, ruleId: String, input: NotificationInputSpec) {
         let key = inputKey(sourceName: sourceName, ruleId: ruleId, inputId: input.id)
-        let current = settings.ruleInputValue(sourceName: sourceName, ruleId: ruleId, inputId: input.id, defaultValue: input.defaultValue)
+        let current = settings.ruleInputValue(
+            sourceName: sourceName, ruleId: ruleId, inputId: input.id,
+            defaultValue: input.defaultValue)
         guard let parsed = Double(ruleInputDrafts[key] ?? "") else {
             ruleInputDrafts[key] = formattedNumber(current)
             return
@@ -199,7 +228,8 @@ final class PreferencesViewModel: ObservableObject {
             for section in notificationSections(for: source) {
                 for definition in section.definitions {
                     for input in definition.inputs {
-                        commitRuleInput(sourceName: section.sourceName, ruleId: definition.id, input: input)
+                        commitRuleInput(
+                            sourceName: section.sourceName, ruleId: definition.id, input: input)
                     }
                 }
             }
@@ -221,10 +251,15 @@ final class PreferencesViewModel: ObservableObject {
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
         launchAtLoginErrorMessage = nil
         do {
-            if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
             refreshLaunchAtLoginUI()
         } catch {
-            launchAtLoginErrorMessage = "Could not update Launch at Login. \(error.localizedDescription)"
+            launchAtLoginErrorMessage =
+                "Could not update Launch at Login. \(error.localizedDescription)"
             objectWillChange.send()
         }
     }
@@ -260,13 +295,13 @@ final class PreferencesViewModel: ObservableObject {
             source.metrics
                 .filter { settings.isMetricEnabled(sourceName: source.name, metricId: $0.id) }
                 .map { metric in
-                MenuBarMetricOption(
-                    sourceName: source.name,
-                    sourceTitle: source.displayName,
-                    metricId: metric.id,
-                    metricTitle: metric.title
-                )
-            }
+                    MenuBarMetricOption(
+                        sourceName: source.name,
+                        sourceTitle: source.displayName,
+                        metricId: metric.id,
+                        metricTitle: metric.title
+                    )
+                }
         }
     }
 
@@ -278,7 +313,8 @@ final class PreferencesViewModel: ObservableObject {
 
     func setMenuBarMetricSelected(sourceName: String, metricId: String, selected: Bool) {
         guard settings.isEnabled(sourceName: sourceName),
-              settings.isMetricEnabled(sourceName: sourceName, metricId: metricId) else { return }
+            settings.isMetricEnabled(sourceName: sourceName, metricId: metricId)
+        else { return }
         var current = menuBarAppearance.selectedMetrics
         let target = MenuBarMetricSelection(sourceName: sourceName, metricId: metricId)
         if selected {
@@ -321,9 +357,14 @@ final class PreferencesViewModel: ObservableObject {
 
     private func registerObservers() {
         let center = NotificationCenter.default
-        center.addObserver(self, selector: #selector(handleSettingsChanged), name: .aiSettingsChanged, object: nil)
-        center.addObserver(self, selector: #selector(handleUpdateStatusChanged), name: .updateStatusChanged, object: nil)
-        center.addObserver(self, selector: #selector(handleSourceHealthChanged), name: .aiSourceHealthChanged, object: nil)
+        center.addObserver(
+            self, selector: #selector(handleSettingsChanged), name: .aiSettingsChanged, object: nil)
+        center.addObserver(
+            self, selector: #selector(handleUpdateStatusChanged), name: .updateStatusChanged,
+            object: nil)
+        center.addObserver(
+            self, selector: #selector(handleSourceHealthChanged), name: .aiSourceHealthChanged,
+            object: nil)
     }
 
     @objc private func handleSettingsChanged() {
@@ -336,8 +377,10 @@ final class PreferencesViewModel: ObservableObject {
     private func sanitizeMenuBarSelections() {
         let validSelections = settings.menuBarAppearance.selectedMetrics.filter { selection in
             guard settings.isEnabled(sourceName: selection.sourceName),
-                  settings.isMetricEnabled(sourceName: selection.sourceName, metricId: selection.metricId),
-                  let source = sources.first(where: { $0.name == selection.sourceName }) else {
+                settings.isMetricEnabled(
+                    sourceName: selection.sourceName, metricId: selection.metricId),
+                let source = sources.first(where: { $0.name == selection.sourceName })
+            else {
                 return false
             }
             return source.metrics.contains(where: { $0.id == selection.metricId })
@@ -359,23 +402,38 @@ final class PreferencesViewModel: ObservableObject {
         guard !source.metrics.isEmpty else {
             let error = source.unsupportedMetricError("default")
             let presentation = source.mapFetchError(for: "default", error)
-            SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
-            sourceHealthCheckErrorMessage = "Could not enable \(source.displayName).\n\n\(presentation.detailedMessage)"
+            SourceHealthStore.shared.recordFailure(
+                sourceName: source.name, presentation: presentation)
+            sourceHealthCheckErrorMessage =
+                "Could not enable \(source.displayName).\n\n\(presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
+            return
+        }
+
+        let metricsToCheck = source.metrics.filter {
+            settings.isMetricEnabled(sourceName: source.name, metricId: $0.id)
+        }
+        guard !metricsToCheck.isEmpty else {
+            settings.setEnabled(true, for: source.name)
             return
         }
 
         var firstFailure: (metricId: String, presentation: SourceFetchErrorPresentation)?
         var didSucceed = false
 
-        for metric in source.metrics {
+        for metric in metricsToCheck {
             do {
-                let usage = try await source.fetchUsage(for: metric.id)
+                let fetchedUsage = try await source.fetchUsage(for: metric.id)
+                let scope = notificationScopeName(source: source, metricId: metric.id)
+                let history = UsageHistoryStore.shared.history(for: scope)
+                let usage = source.resolvedUsage(
+                    for: metric.id, current: fetchedUsage, history: history, now: Date())
                 didSucceed = true
                 if source.metrics.count <= 1 {
                     SourceHealthStore.shared.recordSuccess(sourceName: source.name, usage: usage)
                 } else {
-                    SourceHealthStore.shared.recordSuccess(sourceName: source.name, metricId: metric.id, usage: usage)
+                    SourceHealthStore.shared.recordSuccess(
+                        sourceName: source.name, metricId: metric.id, usage: usage)
                 }
             } catch {
                 let presentation = source.mapFetchError(for: metric.id, error)
@@ -383,9 +441,11 @@ final class PreferencesViewModel: ObservableObject {
                     firstFailure = (metric.id, presentation)
                 }
                 if source.metrics.count <= 1 {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, presentation: presentation)
                 } else {
-                    SourceHealthStore.shared.recordFailure(sourceName: source.name, metricId: metric.id, presentation: presentation)
+                    SourceHealthStore.shared.recordFailure(
+                        sourceName: source.name, metricId: metric.id, presentation: presentation)
                 }
             }
         }
@@ -393,7 +453,8 @@ final class PreferencesViewModel: ObservableObject {
         if didSucceed {
             settings.setEnabled(true, for: source.name)
         } else if let failure = firstFailure {
-            sourceHealthCheckErrorMessage = "Could not enable \(source.displayName).\n\n\(failure.presentation.detailedMessage)"
+            sourceHealthCheckErrorMessage =
+                "Could not enable \(source.displayName).\n\n\(failure.presentation.detailedMessage)"
             settings.setEnabled(false, for: source.name)
         }
     }
@@ -402,7 +463,8 @@ final class PreferencesViewModel: ObservableObject {
         for section in notificationSections(for: source) {
             for definition in section.definitions {
                 for input in definition.inputs {
-                    let key = inputKey(sourceName: section.sourceName, ruleId: definition.id, inputId: input.id)
+                    let key = inputKey(
+                        sourceName: section.sourceName, ruleId: definition.id, inputId: input.id)
                     if ruleInputDrafts[key] != nil { continue }
                     let value = settings.ruleInputValue(
                         sourceName: section.sourceName,
@@ -444,7 +506,8 @@ final class PreferencesViewModel: ObservableObject {
         notificationSections(for: source).first?.definitions ?? []
     }
 
-    func notificationDefinitions(for source: AISource, metricId: String) -> [NotificationDefinition] {
+    func notificationDefinitions(for source: AISource, metricId: String) -> [NotificationDefinition]
+    {
         source.notificationDefinitions(for: metricId)
     }
 

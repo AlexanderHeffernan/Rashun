@@ -50,8 +50,12 @@ struct ForecastCommand: AsyncParsableCommand {
 
         for selectedMetric in selectedMetrics {
             do {
-                let usage = try await source.fetchUsage(for: selectedMetric.id)
+                let fetchedUsage = try await source.fetchUsage(for: selectedMetric.id)
                 let scoped = scopedSourceName(source: source, metric: selectedMetric)
+                let existingHistory = UsageHistoryStore.shared.history(for: scoped)
+                let usage = source.resolvedUsage(
+                    for: selectedMetric.id, current: fetchedUsage,
+                    history: existingHistory, now: Date())
                 try SyncEnvironment.shared.record(
                     sourceName: scoped, usage: usage)
 
