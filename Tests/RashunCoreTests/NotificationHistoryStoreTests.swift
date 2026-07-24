@@ -208,6 +208,9 @@ final class NotificationHistoryStoreTests: XCTestCase {
             XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
             XCTAssertTrue(store.history(for: "AMP::amp-agent-usage").isEmpty)
             XCTAssertTrue(store.history(for: "AMP::amp-orb-usage").isEmpty)
+            XCTAssertEqual(store.countSnapshots(), legacy.count)
+            XCTAssertEqual(store.stats().snapshotCount, legacy.count)
+            XCTAssertEqual(store.sourceNamesWithHistory(), ["AMP::amp-free"])
 
             XCTAssertTrue(store.replaceAllHistory(["AMP": legacy], force: true))
             XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
