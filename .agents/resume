@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+swiftly_env="${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}/env.sh"
+if [ -f "$swiftly_env" ]; then
+    # shellcheck disable=SC1090
+    . "$swiftly_env"
+fi
+
+if ! command -v swift >/dev/null 2>&1; then
+    echo "Swift is unavailable; rerun .agents/setup" >&2
+    exit 1
+fi
+
+echo "Rashun orb ready ($(swift --version | head -n 1))"
