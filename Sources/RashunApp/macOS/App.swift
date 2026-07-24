@@ -762,14 +762,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         }
                     }
 
-                    for (metricId, incomingUsage) in fetchResult.usages {
+                    for (metricId, fetchedUsage) in fetchResult.usages {
                         let scope = "\(name)::\(metricId)"
+                        let history = UsageHistoryStore.shared.history(for: scope)
+                        let incomingUsage = source.resolvedUsage(
+                            for: metricId,
+                            current: fetchedUsage,
+                            history: history,
+                            now: Date()
+                        )
                         let previousAccepted = stablePreviousUsage(
                             source: source,
                             metricId: metricId,
                             displayedUsage: previousUsages[metricId]
                         )
-                        guard source.pacingBehavior == .resetWindow else {
+                        guard source.pacingBehavior == .resetWindow,
+                            source.requiresUsageSampleStability
+                        else {
                             recordVerifiedUsage(
                                 UsageSampleStabilityGate.VerifiedUsage(
                                     usage: incomingUsage,
@@ -1749,6 +1758,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let ruleId = rule.ruleId
                     guard
                         ruleId != "metricReset"
+                            || !source.requiresUsageSampleStability
                             || confirmedResetMetricIds[source.name]?.contains(metric.id) == true
                     else {
                         continue
@@ -1759,13 +1769,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             defaultValue: defaultValue)
                     }
 
+                    let resolvedCurrent = source.resolvedUsage(
+                        for: metric.id, current: current, history: history, now: Date())
                     let ctx = NotificationContext(
                         sourceName: source.name,
                         metricId: metric.id,
                         metricTitle: metric.title,
                         current: ruleId == "metricReset"
-                            ? resetCurrentOverrides[source.name]?[metric.id] ?? current
-                            : current,
+                            ? resetCurrentOverrides[source.name]?[metric.id] ?? resolvedCurrent
+                            : resolvedCurrent,
                         previous: previous,
                         history: history,
                         inputValue: valueProvider

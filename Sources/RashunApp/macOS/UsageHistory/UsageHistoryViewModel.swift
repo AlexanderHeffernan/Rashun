@@ -93,7 +93,8 @@ final class UsageHistoryViewModel: ObservableObject {
                     source: source, metricId: metricId, history: history, points: points,
                     showForecast: showForecastLines)
                 let paceGuidePoints = paceGuidePoints(
-                    history: history, showGuide: showForecastLines)
+                    source: source, metricId: metricId, history: history,
+                    showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
                 dates.append(contentsOf: paceGuidePoints.map(\.date))
@@ -115,7 +116,8 @@ final class UsageHistoryViewModel: ObservableObject {
                     source: source, metricId: metric.id, history: history, points: points,
                     showForecast: showForecastLines)
                 let paceGuidePoints = paceGuidePoints(
-                    history: history, showGuide: showForecastLines)
+                    source: source, metricId: metric.id, history: history,
+                    showGuide: showForecastLines)
                 dates.append(contentsOf: points.map(\.date))
                 dates.append(contentsOf: forecastPoints.map(\.date))
                 dates.append(contentsOf: paceGuidePoints.map(\.date))
@@ -322,12 +324,16 @@ final class UsageHistoryViewModel: ObservableObject {
         return sourceForecastPoints
     }
 
-    private func paceGuidePoints(history: [UsageSnapshot], showGuide: Bool) -> [ChartPoint] {
-        guard showGuide,
-            let current = history.last?.usage,
-            let resetDate = current.resetDate,
+    private func paceGuidePoints(
+        source: AISource, metricId: String, history: [UsageSnapshot], showGuide: Bool
+    ) -> [ChartPoint] {
+        guard showGuide, let current = history.last?.usage else { return [] }
+        let resolved = source.resolvedUsage(
+            for: metricId, current: current, history: history, now: Date())
+        guard
+            let resetDate = resolved.resetDate,
             let guide = UsageForecastEngine.resetWindowPaceGuide(
-                current: current,
+                current: resolved,
                 history: history,
                 resetDate: resetDate
             )

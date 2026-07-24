@@ -39,15 +39,17 @@ swiftly use --assume-yes --global-default "$swift_version"
 
 profile_marker="# Rashun Swiftly toolchain"
 touch "$HOME/.bash_profile"
-if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile"; then
-    cat >> "$HOME/.bash_profile" <<'EOF'
+if grep -Fqx "$profile_marker" "$HOME/.bash_profile"; then
+    sed -i "/^${profile_marker}$/,+3d" "$HOME/.bash_profile"
+fi
+printf -v quoted_swiftly_env '%q' "$swiftly_env"
+cat >> "$HOME/.bash_profile" <<EOF
 
 # Rashun Swiftly toolchain
-if [ -f "$HOME/.local/share/swiftly/env.sh" ]; then
-    . "$HOME/.local/share/swiftly/env.sh"
+if [ -f $quoted_swiftly_env ]; then
+    . $quoted_swiftly_env
 fi
 EOF
-fi
 
 echo "==> Resolving Swift package dependencies"
 cd "$repo_root"

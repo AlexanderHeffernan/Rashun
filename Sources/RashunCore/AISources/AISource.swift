@@ -14,19 +14,30 @@ public protocol AISource: Sendable {
     func fetchUsage(for metricId: String) async throws -> UsageResult
     /// Optional metric-specific lookback start resolver for pacing checks.
     /// If this returns `nil`, pacing alerts are not exposed for this metric.
-    func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)?
+    func pacingLookbackStart(for metricId: String) -> (
+        (_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?
+    )?
     /// Metric-specific fetch error mapper.
     func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation
     /// Metric-specific notification definitions.
     func notificationDefinitions(for metricId: String) -> [NotificationDefinition]
     /// Metric-specific forecast.
-    func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult?
+    func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot])
+        -> ForecastResult?
     /// Metric-specific history window used for reset-window forecasting and pacing.
     func forecastHistoryWindowHours(for metricId: String) -> Double?
     /// How this source should participate in pacing guidance.
     var pacingBehavior: SourcePacingBehavior { get }
+    /// Whether upward quota changes must be confirmed before ingestion.
+    var requiresUsageSampleStability: Bool { get }
+    /// Adds source-derived cycle boundaries to a fetched usage sample.
+    func resolvedUsage(
+        for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date
+    ) -> UsageResult
     /// Metric-specific pacing assessment.
-    func pacingAssessment(for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date) -> UsagePacingAssessment?
+    func pacingAssessment(
+        for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date
+    ) -> UsagePacingAssessment?
     /// Source-specific brand color used by source-solid menu bar rings.
     var menuBarBrandColorHex: UInt32 { get }
     /// Directory that indicates the agent is installed (e.g. "~/.config/amp").
@@ -52,7 +63,9 @@ extension AISource {
 
     /// Return `nil` to disable pacing for this metric.
     /// Return a closure to enable pacing and provide lookback-start logic.
-    public func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
+    public func pacingLookbackStart(for metricId: String) -> (
+        (_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?
+    )? {
         nil
     }
 
@@ -68,14 +81,17 @@ extension AISource {
         }
 
         let pacingResolver = pacingLookbackStart(for: metricId)
-        let assessmentResolver: ((NotificationContext, Date) -> UsagePacingAssessment?)? = pacingBehavior == .none ? nil : { context, now in
-            pacingAssessment(
-                for: metricId,
-                current: context.current,
-                history: context.history,
-                now: now
-            )
-        }
+        let assessmentResolver: ((NotificationContext, Date) -> UsagePacingAssessment?)? =
+            pacingBehavior == .none
+            ? nil
+            : { context, now in
+                pacingAssessment(
+                    for: metricId,
+                    current: context.current,
+                    history: context.history,
+                    now: now
+                )
+            }
         return NotificationDefinitions.generic(
             sourceName: sourceLabel,
             // Adapt source resolver signature to NotificationContext-based signature.
@@ -90,20 +106,25 @@ extension AISource {
 
     /// Generic error mapping fallback.
     /// Source implementations can override to provide actionable, source-specific messages.
-    public func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation {
-        let raw = (error as NSError).localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+    public func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation
+    {
+        let raw = (error as NSError).localizedDescription.trimmingCharacters(
+            in: .whitespacesAndNewlines)
         let singleLine = raw.replacingOccurrences(of: "\n", with: " ")
         let fallback = singleLine.isEmpty ? "Unknown fetch error." : singleLine
         let short = singleLine.isEmpty ? "Unknown error" : String(singleLine.prefix(60))
         let metricLabel = metrics.first(where: { $0.id == metricId })?.title ?? metricId
         return SourceFetchErrorPresentation(
             shortMessage: short,
-            detailedMessage: "Unable to fetch usage for \(displayName) (\(metricLabel)). \(fallback)"
+            detailedMessage:
+                "Unable to fetch usage for \(displayName) (\(metricLabel)). \(fallback)"
         )
     }
 
     /// Forecasting is optional; default is no forecast for this metric.
-    public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
+    public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot])
+        -> ForecastResult?
+    {
         nil
     }
 
@@ -113,12 +134,24 @@ extension AISource {
 
     public var pacingBehavior: SourcePacingBehavior { .none }
 
-    public func pacingAssessment(for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date) -> UsagePacingAssessment? {
+    public var requiresUsageSampleStability: Bool { true }
+
+    public func resolvedUsage(
+        for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date
+    ) -> UsageResult {
+        current
+    }
+
+    public func pacingAssessment(
+        for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date
+    ) -> UsagePacingAssessment? {
         switch pacingBehavior {
         case .resetWindow:
-            guard let resetDate = current.resetDate else { return nil }
+            let resolved = resolvedUsage(
+                for: metricId, current: current, history: history, now: now)
+            guard let resetDate = resolved.resetDate else { return nil }
             return UsageForecastEngine.resetWindowPacingAssessment(
-                current: current,
+                current: resolved,
                 history: history,
                 resetDate: resetDate,
                 historyWindowHours: forecastHistoryWindowHours(for: metricId) ?? 24,
@@ -152,7 +185,10 @@ extension AISource {
         NSError(
             domain: "AISource.UnsupportedMetric",
             code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "\(displayName) does not provide usage for metric '\(metricId)'."]
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "\(displayName) does not provide usage for metric '\(metricId)'."
+            ]
         )
     }
 }

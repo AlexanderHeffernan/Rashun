@@ -55,6 +55,7 @@ public final class UsageHistoryStore {
 
     private let userDefaultsKey = "ai.notificationHistory.v1"
     private let migrationKey = "ai.notificationHistory.migrated.v1"
+    private let ampFreeScopeMigrationKey = "ai.notificationHistory.ampFreeScope.migrated.v1"
     private let syncMetadataKey = "ai.notificationHistory.sync.v1"
     private let backend: PersistenceBackend
     private let legacyBackends: [PersistenceBackend]
@@ -103,7 +104,7 @@ public final class UsageHistoryStore {
     public func replaceAllHistory(_ newHistory: [String: [UsageSnapshot]], force: Bool = false)
         -> Bool
     {
-        let normalized = Self.normalizedHistory(newHistory)
+        let normalized = Self.canonicalizedAmpFreeHistory(Self.normalizedHistory(newHistory))
         let currentCount = Self.snapshotCount(in: historyBySource)
         let incomingCount = Self.snapshotCount(in: normalized)
 
@@ -184,6 +185,7 @@ public final class UsageHistoryStore {
 
         if hasMigrated {
             historyBySource = sharedHistory
+            migrateLegacyAmpFreeScopeIfNeeded()
             return
         }
 
@@ -215,6 +217,18 @@ public final class UsageHistoryStore {
             backend.set(encoded, forKey: userDefaultsKey)
         }
         backend.set(Data([1]), forKey: migrationKey)
+        migrateLegacyAmpFreeScopeIfNeeded()
+    }
+
+    private func migrateLegacyAmpFreeScopeIfNeeded() {
+        guard backend.data(forKey: ampFreeScopeMigrationKey) == nil else { return }
+        defer { backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
+
+        guard let legacy = historyBySource["AMP"], !legacy.isEmpty else { return }
+        let canonical = Self.compressed((historyBySource["AMP::amp-free"] ?? []) + legacy)
+        guard canonical != historyBySource["AMP::amp-free"] else { return }
+        historyBySource["AMP::amp-free"] = canonical
+        save()
     }
 
     private func decodeHistory(from data: Data?) -> [String: [UsageSnapshot]] {
@@ -294,6 +308,14 @@ public final class UsageHistoryStore {
                 historyBySource[source] = merged
                 sourceDeletionRevisions.removeValue(forKey: source)
                 changed.insert(source)
+            }
+        }
+        if let legacy = historyBySource["AMP"], !legacy.isEmpty {
+            let canonical = Self.compressed((historyBySource["AMP::amp-free"] ?? []) + legacy)
+            if canonical != historyBySource["AMP::amp-free"] {
+                historyBySource["AMP::amp-free"] = canonical
+                sourceDeletionRevisions.removeValue(forKey: "AMP::amp-free")
+                changed.insert("AMP::amp-free")
             }
         }
         guard !changed.isEmpty else { return false }
@@ -462,6 +484,15 @@ public final class UsageHistoryStore {
             normalized[source] = compressed(sorted)
         }
         return normalized
+    }
+
+    private static func canonicalizedAmpFreeHistory(
+        _ history: [String: [UsageSnapshot]]
+    ) -> [String: [UsageSnapshot]] {
+        guard let legacy = history["AMP"], !legacy.isEmpty else { return history }
+        var result = history
+        result["AMP::amp-free"] = compressed((result["AMP::amp-free"] ?? []) + legacy)
+        return result
     }
 
     private func hasSameUsageState(lhs: UsageResult, rhs: UsageResult) -> Bool {

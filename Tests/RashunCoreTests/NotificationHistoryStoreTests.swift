@@ -172,6 +172,112 @@ final class NotificationHistoryStoreTests: XCTestCase {
         }
     }
 
+    func testLegacyAmpHistoryIsCopiedOnlyToFreeMetricAndMigrationIsIdempotent() {
+        let legacy = [
+            UsageSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                usage: UsageResult(remaining: 42, limit: 100))
+        ]
+        let backend = InMemoryPersistenceBackend(initialStorage: [
+            "ai.notificationHistory.v1": try! JSONEncoder().encode(["AMP": legacy]),
+            "ai.notificationHistory.migrated.v1": Data([1]),
+        ])
+
+        MainActor.assumeIsolated {
+            let migrated = UsageHistoryStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(migrated.history(for: "AMP::amp-free"), legacy)
+            XCTAssertTrue(migrated.history(for: "AMP::amp-agent-usage").isEmpty)
+            XCTAssertTrue(migrated.history(for: "AMP::amp-orb-usage").isEmpty)
+
+            let reloaded = UsageHistoryStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(reloaded.history(for: "AMP::amp-free"), legacy)
+            XCTAssertEqual(reloaded.history(for: "AMP"), legacy)
+        }
+    }
+
+    func testLegacyAmpHistoryImportedAfterStartupIsCanonicalizedIdempotently() {
+        let legacy = [
+            UsageSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                usage: UsageResult(remaining: 42, limit: 100))
+        ]
+
+        MainActor.assumeIsolated {
+            let store = Self.makeStore()
+            XCTAssertTrue(store.replaceAllHistory(["AMP": legacy], force: true))
+            XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
+            XCTAssertTrue(store.history(for: "AMP::amp-agent-usage").isEmpty)
+            XCTAssertTrue(store.history(for: "AMP::amp-orb-usage").isEmpty)
+
+            XCTAssertTrue(store.replaceAllHistory(["AMP": legacy], force: true))
+            XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
+        }
+    }
+
+    func testLegacyAmpHistorySyncedAfterStartupIsCanonicalizedIdempotently() {
+        let legacy = [
+            UsageSnapshot(
+                timestamp: Date(timeIntervalSince1970: 1_700_000_000),
+                usage: UsageResult(remaining: 42, limit: 100))
+        ]
+        let snapshot = HistorySyncSnapshot(
+            revision: 1,
+            baseRevision: 0,
+            isComplete: false,
+            historyBySource: ["AMP": legacy]
+        )
+
+        MainActor.assumeIsolated {
+            let store = Self.makeStore()
+            XCTAssertTrue(store.mergeSyncSnapshot(snapshot))
+            XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
+            XCTAssertTrue(store.history(for: "AMP::amp-agent-usage").isEmpty)
+            XCTAssertTrue(store.history(for: "AMP::amp-orb-usage").isEmpty)
+
+            XCTAssertFalse(store.mergeSyncSnapshot(snapshot))
+            XCTAssertEqual(store.history(for: "AMP::amp-free"), legacy)
+        }
+    }
+
+    func testLegacyAmpHealthIsCopiedOnlyToFreeMetricWithoutOverwritingCanonicalHealth() {
+        let legacy = SourceHealthRecord(consecutiveFailures: 2, shortErrorMessage: "legacy")
+        let canonical = SourceHealthRecord(consecutiveFailures: 0, shortErrorMessage: "canonical")
+        let backend = InMemoryPersistenceBackend(initialStorage: [
+            "ai.sourceHealth.v1": try! JSONEncoder().encode([
+                "AMP": legacy,
+                "AMP::amp-free": canonical,
+            ]),
+            "ai.sourceHealth.migrated.v1": Data([1]),
+        ])
+
+        MainActor.assumeIsolated {
+            let store = SourceHealthStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(
+                store.health(for: "AMP", metricId: "amp-free")?.shortErrorMessage, "canonical")
+            XCTAssertNil(store.health(for: "AMP", metricId: "amp-agent-usage"))
+            XCTAssertNil(store.health(for: "AMP", metricId: "amp-orb-usage"))
+        }
+    }
+
+    func testLegacyAmpHealthIsCopiedToFreeMetricWhenCanonicalHealthIsMissing() {
+        let legacy = SourceHealthRecord(consecutiveFailures: 2, shortErrorMessage: "legacy")
+        let backend = InMemoryPersistenceBackend(initialStorage: [
+            "ai.sourceHealth.v1": try! JSONEncoder().encode(["AMP": legacy]),
+            "ai.sourceHealth.migrated.v1": Data([1]),
+        ])
+
+        MainActor.assumeIsolated {
+            let store = SourceHealthStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(
+                store.health(for: "AMP", metricId: "amp-free")?.shortErrorMessage, "legacy")
+
+            let reloaded = SourceHealthStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(
+                reloaded.health(for: "AMP", metricId: "amp-free")?.shortErrorMessage,
+                "legacy")
+        }
+    }
+
     @MainActor private static func makeStore() -> UsageHistoryStore {
         UsageHistoryStore(backend: InMemoryPersistenceBackend(), legacyBackends: [])
     }
