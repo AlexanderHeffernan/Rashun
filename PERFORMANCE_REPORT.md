@@ -113,3 +113,22 @@ This aggregate includes polling, sync retries, networking, and any UI/background
 ## Recommended next step
 
 Review and commit this baseline independently. Then implement **A only**, rerun the same command and settings, and verify zero Codex session-log scan exposure while Free Weekly remains disabled. Proceed in attributable increments B, C, E, then I, preserving this fixture and adding output-equivalence checks where behavior could change.
+
+## Implemented comparison
+
+The attributable A, B, C, E, and I commits were measured with the same optimized fixture bundle. Raw results are in `benchmarks/issue-8/after-optimized-xctest.log`.
+
+| Candidate | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| A: fetched Codex metric IDs when only weekly is selected | 3 | 1 | Disabled metrics no longer fetched |
+| A: Free Weekly session scan exposure | 56,258,396 bytes | 0 bytes | -100% |
+| B: history transactions / two-metric refresh | 2 | 1 | -50% |
+| B: history bytes passed to backend | 3,094,367 | 1,547,242 | -50.0% |
+| B: fixture persistence elapsed | 421 ms | 66 ms | -84.3% |
+| C: three forecast consumers, median | 83 ms | 68 ms | -18.1% |
+| E: steady failed-sync retry with 1,200s setting | 120s | 1,200s | 90% fewer steady attempts |
+| I: tracking animation timer fires/hour | 30,000 | 0 | -100% |
+
+All existing forecast equivalence tests pass. C computes each point's cumulative active-time offset once for OLS, Theil–Sen, and weighted interval rates, and the app caches a metric's pacing status within the current minute/refresh. B also reuses the already-encoded sorted history bytes for its checksum instead of encoding the entire history a second time.
+
+The candidate app was not installed over the user's running 1.1.1 app, so no candidate whole-process live window was captured. That preserves the no-real-data-mutation constraint and means the 7.6352%-of-one-core live baseline must be repeated manually after installing a review build before making an end-to-end energy claim.

@@ -1,0 +1,48 @@
+Test Suite 'Selected tests' started at 2026-07-27 23:46:27.852.
+Test Suite 'RashunPackageTests.xctest' started at 2026-07-27 23:46:27.862.
+Test Suite 'BatteryOptimizationTests' started at 2026-07-27 23:46:27.862.
+Test Case '-[RashunAppTests.BatteryOptimizationTests testMetricFetchDoesNoWorkWhenNoMetricsAreSelected]' started.
+Test Case '-[RashunAppTests.BatteryOptimizationTests testMetricFetchDoesNoWorkWhenNoMetricsAreSelected]' passed (0.004 seconds).
+Test Case '-[RashunAppTests.BatteryOptimizationTests testMetricFetchOnlyRequestsSelectedMetrics]' started.
+Test Case '-[RashunAppTests.BatteryOptimizationTests testMetricFetchOnlyRequestsSelectedMetrics]' passed (0.001 seconds).
+Test Suite 'BatteryOptimizationTests' passed at 2026-07-27 23:46:27.867.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.005 (0.005) seconds
+Test Suite 'BatteryPerformanceBaselineTests' started at 2026-07-27 23:46:27.867.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testForecastConsumerBaseline]' started.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testForecastConsumerBaseline]' passed (0.353 seconds).
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testHistoryPersistenceBaseline]' started.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testHistoryPersistenceBaseline]' passed (0.315 seconds).
+Test Suite 'BatteryPerformanceBaselineTests' passed at 2026-07-27 23:46:28.536.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 0.668 (0.669) seconds
+Test Suite 'PeerSyncServiceTests' started at 2026-07-27 23:46:28.536.
+Test Case '-[RashunSyncTests.PeerSyncServiceTests testFailureRetriesReturnToConfiguredIntervalAfterInitialBackoff]' started.
+Test Case '-[RashunSyncTests.PeerSyncServiceTests testFailureRetriesReturnToConfiguredIntervalAfterInitialBackoff]' passed (0.000 seconds).
+Test Suite 'PeerSyncServiceTests' passed at 2026-07-27 23:46:28.536.
+	 Executed 1 test, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'UsageForecastEngineTests' started at 2026-07-27 23:46:28.536.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testAmpDailySourceExposesPacingAssessment]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testAmpDailySourceExposesPacingAssessment]' passed (0.000 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testEarlyCycleBurstDoesNotImmediatelyConserveHard]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testEarlyCycleBurstDoesNotImmediatelyConserveHard]' passed (0.000 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testOvernightResetDoesNotConserveWhenActiveTimeIsShort]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testOvernightResetDoesNotConserveWhenActiveTimeIsShort]' passed (0.000 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testPacingAssessmentClampsDisplayedScore]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testPacingAssessmentClampsDisplayedScore]' passed (0.000 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testResetWindowPaceGuideRunsFromFullToEmptyAtReset]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testResetWindowPaceGuideRunsFromFullToEmptyAtReset]' passed (0.001 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSeverelyBehindCycleNeverLabelsNegativeScoreOnPaceWithSparseHistory]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSeverelyBehindCycleNeverLabelsNegativeScoreOnPaceWithSparseHistory]' passed (0.000 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSmartForecastLearnsDifferentHourlyBurnRates]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSmartForecastLearnsDifferentHourlyBurnRates]' passed (0.001 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSmartForecastLearnsDifferentWeekdayHourlyBurnRates]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSmartForecastLearnsDifferentWeekdayHourlyBurnRates]' passed (0.002 seconds).
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSustainedDepletionWithEvidenceConserves]' started.
+Test Case '-[RashunCoreTests.UsageForecastEngineTests testSustainedDepletionWithEvidenceConserves]' passed (0.000 seconds).
+Test Suite 'UsageForecastEngineTests' passed at 2026-07-27 23:46:28.542.
+	 Executed 9 tests, with 0 failures (0 unexpected) in 0.006 (0.006) seconds
+Test Suite 'RashunPackageTests.xctest' passed at 2026-07-27 23:46:28.542.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.679 (0.680) seconds
+Test Suite 'Selected tests' passed at 2026-07-27 23:46:28.542.
+	 Executed 14 tests, with 0 failures (0 unexpected) in 0.679 (0.690) seconds
+BATTERY_BASELINE forecast_consumers fixture_points=1500 consumers_per_sample=3 samples=5 sample_ms=79,68,68,67,68 median_ms=68
+BATTERY_BASELINE history_persistence fixture_snapshots=24630 fixture_bytes=1547057 enabled_metrics=2 history_writes=1 history_bytes_written=1547242 metadata_writes=1 metadata_bytes_written=180 elapsed_ms=66
