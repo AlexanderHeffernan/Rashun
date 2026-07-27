@@ -67,8 +67,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let trackedUsageStore = TrackedUsageStore.shared
     private var isStoppingTrackingSession = false
     private var trackingCompletionSummary: String?
-    private var trackingIndicatorPulseTimer: Timer?
-    private var trackingIndicatorPulsePhase = 0.0
     private var syncServerTask: Task<Void, Never>?
     private var peerSyncTask: Task<Void, Never>?
     private let codexResetAlertStateKey = "ai.codexResetAlertState.v1"
@@ -1315,8 +1313,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let session = activeTrackingSession(),
             let label = trackingLabels().first(where: { $0.id == session.labelID })
         else {
-            trackingIndicatorPulseTimer?.invalidate()
-            trackingIndicatorPulseTimer = nil
             button.title = ""
             button.imagePosition = .imageOnly
             return
@@ -1324,23 +1320,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyTrackingSessionTitle(
             session: session, color: NSColor(hexString: label.colorHex) ?? .systemPurple, alpha: 1,
             button: button)
-        if trackingIndicatorPulseTimer == nil {
-            trackingIndicatorPulseTimer = Timer.scheduledTimer(
-                timeInterval: 0.12, target: self, selector: #selector(pulseTrackingIndicator),
-                userInfo: nil, repeats: true)
-        }
-    }
-
-    @objc private func pulseTrackingIndicator() {
-        guard let button = statusItem?.button,
-            let active = activeTrackingSession(),
-            SettingsStore.shared.showTrackingSessionInMenuBar,
-            let current = trackingLabels().first(where: { $0.id == active.labelID })
-        else { return }
-        trackingIndicatorPulsePhase += 0.28
-        applyTrackingSessionTitle(
-            session: active, color: NSColor(hexString: current.colorHex) ?? .systemPurple,
-            alpha: 0.56 + 0.44 * ((sin(trackingIndicatorPulsePhase) + 1) / 2), button: button)
     }
 
     private func applyTrackingSessionTitle(
