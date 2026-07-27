@@ -105,11 +105,23 @@ public actor PeerSyncService {
         var failureCount = 0
         while !Task.isCancelled {
             let results = await syncAllOnce()
+            if results.isEmpty {
+                failureCount = 0
+                try? await Task.sleep(for: interval)
+                continue
+            }
             let succeeded = results.contains { $0.result != nil }
             failureCount = succeeded ? 0 : min(failureCount + 1, 4)
-            let seconds = [5, 15, 30, 60, 120][failureCount]
-            try? await Task.sleep(for: succeeded ? interval : .seconds(seconds))
+            try? await Task.sleep(
+                for: succeeded
+                    ? interval
+                    : Self.failureRetryDelay(failureCount: failureCount, interval: interval))
         }
+    }
+
+    static func failureRetryDelay(failureCount: Int, interval: Duration) -> Duration {
+        guard failureCount < 4 else { return interval }
+        return .seconds([5, 15, 30, 60][max(0, failureCount)])
     }
     private static func message(for error: Error, appVersion: String?) -> String {
         if case DesktopSyncCompatibilityError.versionMismatch = error {
