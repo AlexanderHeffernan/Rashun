@@ -52,6 +52,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var sourceHeaderDetails: [String: String] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
+    private var paceStatusCache: [String: PaceStatus] = [:]
     private var usageSampleStabilityGate = UsageSampleStabilityGate()
     private let statusRingSize: CGFloat = 20
     private let statusRingSpacing: CGFloat = 3
@@ -567,11 +568,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult)
         -> PaceStatus?
     {
+        let now = Date()
+        let key = [
+            source.name, metric.id, String(usage.remaining.bitPattern),
+            String(usage.limit.bitPattern),
+            usage.resetDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
+            usage.cycleStartDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
+            String(Int(now.timeIntervalSince1970 / 60)),
+        ].joined(separator: ":")
+        if let cached = paceStatusCache[key] {
+            return cached
+        }
+        let status = calculatePaceStatus(source: source, metric: metric, usage: usage, now: now)
+        if let status {
+            paceStatusCache[key] = status
+        }
+        return status
+    }
+
+    private func calculatePaceStatus(
+        source: AISource, metric: AISourceMetric, usage: UsageResult, now: Date
+    ) -> PaceStatus? {
         let percent = min(max(usage.percentRemaining, 0), 100)
         let history = UsageHistoryStore.shared.history(
             for: notificationScopeName(source: source, metric: metric))
         if let assessment = source.pacingAssessment(
-            for: metric.id, current: usage, history: history, now: Date())
+            for: metric.id, current: usage, history: history, now: now)
         {
             if assessment.recommendation == .limitReached {
                 return PaceStatus(
@@ -594,7 +616,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let forecast = source.forecast(for: metric.id, current: usage, history: history),
             let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date
         {
-            let hoursToFull = fullDate.timeIntervalSince(Date()) / 3600
+            let hoursToFull = fullDate.timeIntervalSince(now) / 3600
             if hoursToFull <= 6 {
                 let urgency = 30 + ((6 - max(hoursToFull, 0)) / 6) * 50
                 return PaceStatus(score: urgency)
@@ -791,6 +813,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         origin: TrackedUsageObservationOrigin = .poll, trackingSessionID: UUID? = nil
     ) async throws -> Bool {
         guard loadingSources.isEmpty else { return false }
+        paceStatusCache.removeAll(keepingCapacity: true)
         let enabled = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
         let currentTrackingSession = try trackingSessionForAppRefresh(
             store: trackedUsageStore, trackingEnabled: SettingsStore.shared.trackingEnabled)
