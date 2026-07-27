@@ -23,7 +23,7 @@ func stopTrackingSessionAfterBoundary(
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private struct MetricFetchResult {
+    struct MetricFetchResult {
         let usages: [String: UsageResult]
         let errorsByMetric: [String: Error]
     }
@@ -797,7 +797,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let targetTrackingSessionID = trackingSessionID ?? currentTrackingSession?.id
         let trackingSession =
             currentTrackingSession?.id == targetTrackingSessionID ? currentTrackingSession : nil
-        for source in enabled { loadingSources.insert(source.name) }
+        let fetches = enabled.compactMap { source -> (AISource, [AISourceMetric])? in
+            let metrics = enabledMetrics(for: source)
+            return metrics.isEmpty ? nil : (source, metrics)
+        }
+        for (source, _) in fetches { loadingSources.insert(source.name) }
         updateMenu()
 
         var percentValues: [Double] = []
@@ -808,10 +812,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var trackedObservations: [TrackedUsageObservation] = []
 
         await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
-            for source in enabled {
+            for (source, metrics) in fetches {
                 group.addTask {
                     do {
-                        let fetchResult = try await self.fetchUsageByMetric(for: source)
+                        let fetchResult = try await self.fetchUsageByMetric(
+                            for: source, metrics: metrics)
                         return (source.name, .success(fetchResult))
                     } catch {
                         return (source.name, .failure(error))
@@ -2030,11 +2035,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func fetchUsageByMetric(for source: AISource) async throws -> MetricFetchResult {
+    func fetchUsageByMetric(for source: AISource, metrics: [AISourceMetric]) async throws
+        -> MetricFetchResult
+    {
         var usages: [String: UsageResult] = [:]
         var errorsByMetric: [String: Error] = [:]
         var firstError: (metricId: String, error: Error)?
-        for metric in source.metrics {
+        for metric in metrics {
             do {
                 usages[metric.id] = try await source.fetchUsage(for: metric.id)
             } catch {
