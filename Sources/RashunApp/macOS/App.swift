@@ -811,6 +811,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var confirmedResetMetricIds: [String: Set<String>] = [:]
         var trackedObservations: [TrackedUsageObservation] = []
 
+        SourceHealthStore.shared.beginBatch()
         await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
             for (source, metrics) in fetches {
                 group.addTask {
@@ -974,6 +975,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 updateStatusIcon()
             }
         }
+        SourceHealthStore.shared.endBatch()
 
         if let targetTrackingSessionID {
             _ = try trackedUsageStore.append(
@@ -1830,6 +1832,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         confirmedResetMetricIds: [String: Set<String>] = [:]
     ) async -> [ResetCelebration] {
         var celebrations: [ResetCelebration] = []
+        var historyUpdates: [String: UsageResult] = [:]
         for source in sources {
             let metricUsages = results[source.name] ?? [:]
             for metric in enabledMetrics(for: source) {
@@ -1915,10 +1918,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             String(describing: error))
                     }
                 } else {
-                    UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
+                    historyUpdates[scopedName] = current
                 }
             }
         }
+        UsageHistoryStore.shared.append(contentsOf: historyUpdates)
         return celebrations
     }
 

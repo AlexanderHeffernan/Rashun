@@ -16,27 +16,23 @@ final class BatteryPerformanceBaselineTests: XCTestCase {
             backend.resetMeasurements()
 
             let started = DispatchTime.now().uptimeNanoseconds
-            store.append(
-                sourceName: "AMP::amp-free",
-                usage: UsageResult(remaining: 81, limit: 100)
-            )
-            store.append(
-                sourceName: "Codex::codex-pro-weekly",
-                usage: UsageResult(
+            store.append(contentsOf: [
+                "AMP::amp-free": UsageResult(remaining: 81, limit: 100),
+                "Codex::codex-pro-weekly": UsageResult(
                     remaining: 72,
                     limit: 100,
                     resetDate: Date(timeIntervalSince1970: 1_706_400_000),
                     cycleStartDate: Date(timeIntervalSince1970: 1_705_795_200)
-                )
-            )
+                ),
+            ])
             let elapsed = DispatchTime.now().uptimeNanoseconds - started
 
             let historyWrites = backend.measurements(forKey: "ai.notificationHistory.v1")
             let metadataWrites = backend.measurements(
                 forKey: "ai.notificationHistory.sync.v1")
-            XCTAssertEqual(historyWrites.count, 2)
-            XCTAssertEqual(metadataWrites.count, 2)
-            XCTAssertEqual(store.currentSyncRevision, 3)
+            XCTAssertEqual(historyWrites.count, 1)
+            XCTAssertEqual(metadataWrites.count, 1)
+            XCTAssertEqual(store.currentSyncRevision, 2)
             print(
                 "BATTERY_BASELINE history_persistence"
                     + " fixture_snapshots=24630"

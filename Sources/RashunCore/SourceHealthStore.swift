@@ -35,6 +35,8 @@ public final class SourceHealthStore {
     private let backend: PersistenceBackend
     private let legacyBackends: [PersistenceBackend]
     private var recordsBySource: [String: SourceHealthRecord] = [:]
+    private var batchDepth = 0
+    private var hasPendingPersistence = false
 
     public init(
         backend: PersistenceBackend,
@@ -94,6 +96,25 @@ public final class SourceHealthStore {
 
     public func resetMigrationStateForTesting() {
         try? backend.set(nil, forKey: migrationKey)
+    }
+
+    public func performBatch(_ updates: () -> Void) {
+        beginBatch()
+        updates()
+        endBatch()
+    }
+
+    public func beginBatch() {
+        batchDepth += 1
+    }
+
+    public func endBatch() {
+        precondition(batchDepth > 0)
+        batchDepth -= 1
+        if batchDepth == 0, hasPendingPersistence {
+            hasPendingPersistence = false
+            persistImmediatelyAndNotify()
+        }
     }
 
     private func load() {
@@ -161,6 +182,14 @@ public final class SourceHealthStore {
     }
 
     private func persistAndNotify() {
+        guard batchDepth == 0 else {
+            hasPendingPersistence = true
+            return
+        }
+        persistImmediatelyAndNotify()
+    }
+
+    private func persistImmediatelyAndNotify() {
         if let data = try? JSONEncoder().encode(recordsBySource) {
             try? backend.set(data, forKey: userDefaultsKey)
         }
