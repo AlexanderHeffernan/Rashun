@@ -86,7 +86,7 @@ public final class UsageHistoryStore {
     }
 
     public func resetMigrationStateForTesting() {
-        backend.set(nil, forKey: migrationKey)
+        try? backend.set(nil, forKey: migrationKey)
     }
 
     public func sourceNamesWithHistory() -> [String] {
@@ -177,11 +177,11 @@ public final class UsageHistoryStore {
     }
 
     private func load() {
-        let hasMigrated = backend.data(forKey: migrationKey) != nil
+        let hasMigrated = (try? backend.data(forKey: migrationKey)) != nil
         loadSyncMetadata()
         defer { reconcileSyncMetadataWithHistory() }
 
-        let sharedHistory = decodeHistory(from: backend.data(forKey: userDefaultsKey))
+        let sharedHistory = decodeHistory(from: try? backend.data(forKey: userDefaultsKey))
         let sharedCount = Self.rawSnapshotCount(in: sharedHistory)
 
         if hasMigrated {
@@ -194,7 +194,7 @@ public final class UsageHistoryStore {
         var bestLegacyCount = 0
 
         for legacy in legacyBackends {
-            guard let legacyData = legacy.data(forKey: userDefaultsKey) else {
+            guard let legacyData = try? legacy.data(forKey: userDefaultsKey) else {
                 continue
             }
             let decoded = decodeHistory(from: legacyData)
@@ -215,15 +215,15 @@ public final class UsageHistoryStore {
         let chosen = bestLegacyCount > sharedCount ? bestLegacyHistory : sharedHistory
         historyBySource = chosen
         if let encoded = try? JSONEncoder().encode(chosen) {
-            backend.set(encoded, forKey: userDefaultsKey)
+            try? backend.set(encoded, forKey: userDefaultsKey)
         }
-        backend.set(Data([1]), forKey: migrationKey)
+        try? backend.set(Data([1]), forKey: migrationKey)
         migrateLegacyAmpFreeScopeIfNeeded()
     }
 
     private func migrateLegacyAmpFreeScopeIfNeeded() {
-        guard backend.data(forKey: ampFreeScopeMigrationKey) == nil else { return }
-        defer { backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
+        guard (try? backend.data(forKey: ampFreeScopeMigrationKey)) == nil else { return }
+        defer { try? backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
 
         guard let legacy = historyBySource["AMP"], !legacy.isEmpty else { return }
         let canonical = Self.compressed((historyBySource["AMP::amp-free"] ?? []) + legacy)
@@ -260,7 +260,7 @@ public final class UsageHistoryStore {
 
     private func save() {
         if let data = try? JSONEncoder().encode(historyBySource) {
-            backend.set(data, forKey: userDefaultsKey)
+            try? backend.set(data, forKey: userDefaultsKey)
         }
     }
 
@@ -379,7 +379,7 @@ public final class UsageHistoryStore {
     }
 
     private func loadSyncMetadata() {
-        guard let data = backend.data(forKey: syncMetadataKey),
+        guard let data = try? backend.data(forKey: syncMetadataKey),
             let value = try? JSONDecoder().decode(SyncMetadata.self, from: data)
         else { return }
         syncRevision = value.revision
@@ -393,7 +393,7 @@ public final class UsageHistoryStore {
             revision: syncRevision, changes: changedSourcesByRevision,
             historyChecksum: historyChecksum(), deletionRevisions: sourceDeletionRevisions)
         if let data = try? JSONEncoder().encode(value) {
-            backend.set(data, forKey: syncMetadataKey)
+            try? backend.set(data, forKey: syncMetadataKey)
         }
     }
 

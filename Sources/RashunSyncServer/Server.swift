@@ -1,11 +1,12 @@
 import Crypto
 import Foundation
 import Hummingbird
-#if !os(Windows)
-import HummingbirdTLS
-#endif
 import RashunCore
 import RashunSync
+
+#if !os(Windows)
+    import HummingbirdTLS
+#endif
 
 public struct CurrentUsageDTO: Codable, Sendable {
     public struct Item: Codable, Sendable {
@@ -351,15 +352,15 @@ public struct RashunSyncServer: Sendable {
             _ = try authenticate(
                 request: request, body: Data(), repository: repository, required: .desktopSync)
             guard let trackedUsage else { throw HTTPError(.notImplemented) }
-            return try exactJSON(await trackedUsage.snapshot())
+            return try exactJSON(try await trackedUsage.snapshot())
         }
         router.post("/v1/tracked-usage") { request, _ -> String in
             let (_, body) = try await authenticatedBody(
                 request, upTo: 4_194_304, repository: repository, required: .desktopSync)
             guard let trackedUsage else { throw HTTPError(.notImplemented) }
             let snapshot = try decodeExactJSON(TrackedUsageSyncSnapshot.self, from: body)
-            _ = await trackedUsage.merge(snapshot)
-            return try exactJSON(await trackedUsage.snapshot())
+            _ = try await trackedUsage.merge(snapshot)
+            return try exactJSON(try await trackedUsage.snapshot())
         }
         router.post("/v1/peers/rotate") { request, _ -> String in
             let (credential, _) = try await authenticatedBody(

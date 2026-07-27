@@ -6,6 +6,22 @@ import SwiftUI
 import UserNotifications
 
 @MainActor
+func trackingSessionForAppRefresh(
+    store: TrackedUsageStore, trackingEnabled _: Bool
+) throws -> TrackedSession? {
+    // An active shared session is authoritative even when the app's start-control toggle is off.
+    try store.readActiveSession()
+}
+
+@MainActor
+func stopTrackingSessionAfterBoundary(
+    sessionID: UUID, store: TrackedUsageStore, boundary: () async throws -> Void
+) async throws -> TrackedSession? {
+    try await boundary()
+    return try store.stop(activeSessionID: sessionID)
+}
+
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct MetricFetchResult {
         let usages: [String: UsageResult]
@@ -129,7 +145,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             _ = await NotificationManager.shared.requestAuthorization()
             UpdateManager.shared.startPeriodicChecks()
-            await refresh(origin: trackedUsageStore.activeSession == nil ? .poll : .recovery)
+            do {
+                _ = try await refresh(
+                    origin: activeTrackingSession() == nil ? .poll : .recovery)
+            } catch {
+                reportTrackingPersistenceError(error)
+            }
         }
 
         schedulePollTimer()
@@ -181,7 +202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu?.addItem(NSMenuItem.separator())
 
-        if SettingsStore.shared.trackingEnabled || trackedUsageStore.activeSession != nil {
+        if SettingsStore.shared.trackingEnabled || activeTrackingSession() != nil {
             addTrackingMenuSection()
             menu?.addItem(NSMenuItem.separator())
         }
@@ -264,8 +285,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return (red << 16) | (green << 8) | blue
     }
 
+    private func activeTrackingSession() -> TrackedSession? {
+        do {
+            return try trackedUsageStore.readActiveSession()
+        } catch {
+            reportTrackingPersistenceError(error)
+            return nil
+        }
+    }
+
+    private func trackingLabels() -> [TrackingLabel] {
+        do {
+            return try trackedUsageStore.readLabels()
+        } catch {
+            reportTrackingPersistenceError(error)
+            return []
+        }
+    }
+
+    private func reportTrackingPersistenceError(_ error: Error) {
+        NSLog("Rashun tracking persistence error: %@", error.localizedDescription)
+    }
+
     private func addTrackingMenuSection() {
-        if let session = trackedUsageStore.activeSession {
+        if let session = activeTrackingSession() {
             let elapsed = Date().timeIntervalSince(session.startedAt)
             let title = "● Tracking \(session.labelNameSnapshot) • \(compactDuration(elapsed))"
             let indicator = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -303,7 +346,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = "Start tracked session"
         alert.informativeText = "Choose a label for this observed usage session."
-        let labels = trackedUsageStore.labels.filter { $0.archivedAt == nil }
+        let labels = trackingLabels().filter { $0.archivedAt == nil }
         guard !labels.isEmpty else {
             openPreferences(tab: .tracking)
             return
@@ -327,20 +370,40 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let identifier = picker.selectedItem?.representedObject as? String,
             let id = UUID(uuidString: identifier), let label = labels.first(where: { $0.id == id })
         else { return }
-        _ = trackedUsageStore.start(label: label)
+        let session: TrackedSession
+        do {
+            session = try trackedUsageStore.start(label: label)
+        } catch {
+            reportTrackingPersistenceError(error)
+            return
+        }
         updateMenu()
         updateStatusIcon()
         NotificationCenter.default.post(name: .aiDataRefreshed, object: nil)
-        Task { await refreshForTrackingBoundary(origin: .start) }
+        Task {
+            do {
+                try await refreshForTrackingBoundary(origin: .start, sessionID: session.id)
+            } catch {
+                reportTrackingPersistenceError(error)
+            }
+        }
     }
 
     @objc private func stopTrackingSession() {
         guard !isStoppingTrackingSession else { return }
+        guard let sessionID = activeTrackingSession()?.id else { return }
         isStoppingTrackingSession = true
         updateMenu()
         Task {
-            await refreshForTrackingBoundary(origin: .stop)
-            _ = trackedUsageStore.stop()
+            do {
+                _ = try await stopTrackingSessionAfterBoundary(
+                    sessionID: sessionID, store: trackedUsageStore
+                ) {
+                    try await refreshForTrackingBoundary(origin: .stop, sessionID: sessionID)
+                }
+            } catch {
+                reportTrackingPersistenceError(error)
+            }
             isStoppingTrackingSession = false
             trackingCompletionSummary = nil
             updateMenu()
@@ -570,7 +633,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }()
 
     @objc func refreshClicked() {
-        Task { await refresh() }
+        Task {
+            do {
+                _ = try await refresh()
+            } catch {
+                reportTrackingPersistenceError(error)
+            }
+        }
     }
 
     @objc private func handleWillSleep(_: Notification) {
@@ -601,7 +670,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         lastResumeRefreshTriggerDate = Date()
         Task {
-            await refresh()
+            do {
+                _ = try await refresh()
+            } catch {
+                reportTrackingPersistenceError(error)
+            }
             _ = await UpdateManager.shared.checkForUpdateIfDue(notify: true)
         }
     }
@@ -614,7 +687,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             Task { @MainActor in
                 guard !self.isPollingSuspended else { return }
-                await self.refresh()
+                do {
+                    _ = try await self.refresh()
+                } catch {
+                    self.reportTrackingPersistenceError(error)
+                }
                 _ = await UpdateManager.shared.checkForUpdateIfDue(notify: true)
             }
         }
@@ -710,9 +787,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @discardableResult
-    func refresh(origin: TrackedUsageObservationOrigin = .poll) async -> Bool {
+    func refresh(
+        origin: TrackedUsageObservationOrigin = .poll, trackingSessionID: UUID? = nil
+    ) async throws -> Bool {
         guard loadingSources.isEmpty else { return false }
         let enabled = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
+        let currentTrackingSession = try trackingSessionForAppRefresh(
+            store: trackedUsageStore, trackingEnabled: SettingsStore.shared.trackingEnabled)
+        let targetTrackingSessionID = trackingSessionID ?? currentTrackingSession?.id
+        let trackingSession =
+            currentTrackingSession?.id == targetTrackingSessionID ? currentTrackingSession : nil
         for source in enabled { loadingSources.insert(source.name) }
         updateMenu()
 
@@ -815,25 +899,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     usageResultsBySource[name] = metricUsages
                     sourceHeaderDetails[name] = await headerDetailText(for: source)
 
-                    if SettingsStore.shared.trackingEnabled,
-                        let activeSession = trackedUsageStore.activeSession
-                    {
+                    if let activeSession = trackingSession {
                         let timestamp = Date()
-                        let shouldRecord = origin != .poll || !activeSession.observations.isEmpty
-                        let observations: [TrackedUsageObservation] =
-                            shouldRecord
-                            ? metricUsages.map { metricID, usage in
-                                let title =
-                                    source.metrics.first(where: { $0.id == metricID })?.title
-                                    ?? metricID
-                                return TrackedUsageObservation(
-                                    timestamp: timestamp, sourceName: source.name,
-                                    metricID: metricID,
-                                    metricTitle: title, remaining: usage.remaining,
-                                    limit: usage.limit,
-                                    resetDate: usage.resetDate,
-                                    cycleStartDate: usage.cycleStartDate, origin: origin)
-                            } : []
+                        let observationOrigin: TrackedUsageObservationOrigin =
+                            origin == .poll && activeSession.observations.isEmpty
+                            ? .recovery : origin
+                        let observations = metricUsages.map { metricID, usage in
+                            let title =
+                                source.metrics.first(where: { $0.id == metricID })?.title
+                                ?? metricID
+                            return TrackedUsageObservation(
+                                timestamp: timestamp, sourceName: source.name,
+                                metricID: metricID,
+                                metricTitle: title, remaining: usage.remaining,
+                                limit: usage.limit,
+                                resetDate: usage.resetDate,
+                                cycleStartDate: usage.cycleStartDate, origin: observationOrigin)
+                        }
                         trackedObservations.append(contentsOf: observations)
                     }
 
@@ -888,7 +970,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        trackedUsageStore.append(contentsOf: trackedObservations)
+        if let targetTrackingSessionID {
+            _ = try trackedUsageStore.append(
+                contentsOf: trackedObservations, toActiveSessionID: targetTrackingSessionID)
+        }
 
         lastRefreshDate = Date()
         let celebrations = await evaluateNotifications(
@@ -911,12 +996,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
-    private func refreshForTrackingBoundary(origin: TrackedUsageObservationOrigin) async {
+    private func refreshForTrackingBoundary(
+        origin: TrackedUsageObservationOrigin, sessionID: UUID
+    ) async throws {
         while true {
             while !loadingSources.isEmpty {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
-            if await refresh(origin: origin) {
+            if try await refresh(origin: origin, trackingSessionID: sessionID) {
                 return
             }
         }
@@ -1192,8 +1279,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateTrackingSessionTitle(on button: NSStatusBarButton) {
         guard SettingsStore.shared.showTrackingSessionInMenuBar,
-            let session = trackedUsageStore.activeSession,
-            let label = trackedUsageStore.labels.first(where: { $0.id == session.labelID })
+            let session = activeTrackingSession(),
+            let label = trackingLabels().first(where: { $0.id == session.labelID })
         else {
             trackingIndicatorPulseTimer?.invalidate()
             trackingIndicatorPulseTimer = nil
@@ -1213,9 +1300,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pulseTrackingIndicator() {
         guard let button = statusItem?.button,
-            let active = trackedUsageStore.activeSession,
+            let active = activeTrackingSession(),
             SettingsStore.shared.showTrackingSessionInMenuBar,
-            let current = trackedUsageStore.labels.first(where: { $0.id == active.labelID })
+            let current = trackingLabels().first(where: { $0.id == active.labelID })
         else { return }
         trackingIndicatorPulsePhase += 0.28
         applyTrackingSessionTitle(

@@ -93,13 +93,13 @@ public final class SourceHealthStore {
     }
 
     public func resetMigrationStateForTesting() {
-        backend.set(nil, forKey: migrationKey)
+        try? backend.set(nil, forKey: migrationKey)
     }
 
     private func load() {
-        let hasMigrated = backend.data(forKey: migrationKey) != nil
+        let hasMigrated = (try? backend.data(forKey: migrationKey)) != nil
 
-        let sharedRecords = decodeRecords(from: backend.data(forKey: userDefaultsKey))
+        let sharedRecords = decodeRecords(from: try? backend.data(forKey: userDefaultsKey))
         let sharedCount = sharedRecords.count
 
         if hasMigrated {
@@ -112,7 +112,7 @@ public final class SourceHealthStore {
         var bestLegacyCount = 0
 
         for legacy in legacyBackends {
-            guard let legacyData = legacy.data(forKey: userDefaultsKey) else {
+            guard let legacyData = try? legacy.data(forKey: userDefaultsKey) else {
                 continue
             }
             let decoded = decodeRecords(from: legacyData)
@@ -132,22 +132,22 @@ public final class SourceHealthStore {
         let chosen = bestLegacyCount > sharedCount ? bestLegacyRecords : sharedRecords
         recordsBySource = chosen
         if let encoded = try? JSONEncoder().encode(chosen) {
-            backend.set(encoded, forKey: userDefaultsKey)
+            try? backend.set(encoded, forKey: userDefaultsKey)
         }
-        backend.set(Data([1]), forKey: migrationKey)
+        try? backend.set(Data([1]), forKey: migrationKey)
         migrateLegacyAmpFreeScopeIfNeeded()
     }
 
     private func migrateLegacyAmpFreeScopeIfNeeded() {
-        guard backend.data(forKey: ampFreeScopeMigrationKey) == nil else { return }
-        defer { backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
+        guard (try? backend.data(forKey: ampFreeScopeMigrationKey)) == nil else { return }
+        defer { try? backend.set(Data([1]), forKey: ampFreeScopeMigrationKey) }
 
         guard recordsBySource["AMP::amp-free"] == nil,
             let legacy = recordsBySource["AMP"]
         else { return }
         recordsBySource["AMP::amp-free"] = legacy
         if let encoded = try? JSONEncoder().encode(recordsBySource) {
-            backend.set(encoded, forKey: userDefaultsKey)
+            try? backend.set(encoded, forKey: userDefaultsKey)
         }
     }
 
@@ -162,7 +162,7 @@ public final class SourceHealthStore {
 
     private func persistAndNotify() {
         if let data = try? JSONEncoder().encode(recordsBySource) {
-            backend.set(data, forKey: userDefaultsKey)
+            try? backend.set(data, forKey: userDefaultsKey)
         }
         #if canImport(AppKit) || canImport(UIKit)
             NotificationCenter.default.post(name: .aiSourceHealthChanged, object: nil)

@@ -85,18 +85,18 @@ public struct HistorySyncAccess: Sendable {
 }
 
 public struct TrackedUsageSyncAccess: Sendable {
-    public let snapshot: @Sendable () async -> TrackedUsageSyncSnapshot
-    public let merge: @Sendable (TrackedUsageSyncSnapshot) async -> Bool
+    public let snapshot: @Sendable () async throws -> TrackedUsageSyncSnapshot
+    public let merge: @Sendable (TrackedUsageSyncSnapshot) async throws -> Bool
     public init(
-        snapshot: @escaping @Sendable () async -> TrackedUsageSyncSnapshot,
-        merge: @escaping @Sendable (TrackedUsageSyncSnapshot) async -> Bool
+        snapshot: @escaping @Sendable () async throws -> TrackedUsageSyncSnapshot,
+        merge: @escaping @Sendable (TrackedUsageSyncSnapshot) async throws -> Bool
     ) {
         self.snapshot = snapshot
         self.merge = merge
     }
     public static let live = TrackedUsageSyncAccess(
-        snapshot: { await TrackedUsageStore.shared.syncSnapshot() },
-        merge: { await TrackedUsageStore.shared.mergeSyncSnapshot($0) })
+        snapshot: { try await TrackedUsageStore.shared.syncSnapshot() },
+        merge: { try await TrackedUsageStore.shared.mergeSyncSnapshot($0) })
 }
 
 public struct SyncResult: Sendable {
@@ -146,9 +146,9 @@ public struct SyncCoordinator: Sendable {
             // separate best-effort payload and must not turn that completed history sync into a
             // failure; the foreground loop will retry them on its next pass.
             do {
-                _ = await trackedUsage.merge(try await peer.trackedUsage())
-                let converged = try await peer.mergeTrackedUsage(await trackedUsage.snapshot())
-                _ = await trackedUsage.merge(converged)
+                _ = try await trackedUsage.merge(try await peer.trackedUsage())
+                let converged = try await peer.mergeTrackedUsage(try await trackedUsage.snapshot())
+                _ = try await trackedUsage.merge(converged)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {

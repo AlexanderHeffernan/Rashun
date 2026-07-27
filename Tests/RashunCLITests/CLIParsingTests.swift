@@ -1,8 +1,11 @@
 import ArgumentParser
+import Foundation
+import RashunCore
 import XCTest
 
 @testable import RashunCLI
 
+@MainActor
 final class CLIParsingTests: XCTestCase {
     func testRootConfigurationIncludesExpectedSubcommands() {
         let names = Set(RashunCLI.configuration.subcommands.map { $0.configuration.commandName })
@@ -10,7 +13,7 @@ final class CLIParsingTests: XCTestCase {
             names,
             [
                 "check", "forecast", "history", "setup", "status", "sources", "sync", "update",
-                "version",
+                "tracking", "version",
             ])
     }
 
@@ -53,6 +56,89 @@ final class CLIParsingTests: XCTestCase {
     func testHistoryCommandDefaultsToShowSubcommand() {
         XCTAssertEqual(
             HistoryCommand.configuration.defaultSubcommand?.configuration.commandName, "show")
+    }
+
+    func testTrackingCommandExposesSharedSessionWorkflow() {
+        let names = Set(
+            TrackingCommand.configuration.subcommands.map { $0.configuration.commandName })
+        XCTAssertEqual(names, ["start", "stop", "status", "sessions", "labels"])
+        XCTAssertNoThrow(try TrackingCommand.Start.parse(["Work"]))
+        XCTAssertThrowsError(try TrackingCommand.Start.parse([]))
+    }
+
+    func testTrackingStartIgnoresAppToggleAndStartsThroughCore() async throws {
+        let store = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+        _ = try store.createLabel(name: "Work")
+        TrackingCommandStore.provider = { store }
+        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+        let command = try TrackingCommand.Start.parse(["Work"])
+
+        try await command.run()
+
+        XCTAssertEqual(try store.readActiveSession()?.labelNameSnapshot, "Work")
+    }
+
+    func testTrackingStartWriteFailureExitsNonzero() async throws {
+        let backend = CLIFailingPersistenceBackend()
+        let store = TrackedUsageStore(backend: backend)
+        _ = try store.createLabel(name: "Work")
+        backend.failUpdates = true
+        TrackingCommandStore.provider = { store }
+        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+        let command = try TrackingCommand.Start.parse(["--json", "Work"])
+
+        await assertExitCode(1) { try await command.run() }
+        XCTAssertNil(try store.readActiveSession())
+    }
+
+    func testTrackingStopWriteFailureExitsNonzeroAndLeavesSessionActive() async throws {
+        let backend = CLIFailingPersistenceBackend()
+        let store = TrackedUsageStore(backend: backend)
+        _ = try store.createLabel(name: "Work")
+        let started = try store.startExistingLabel("Work")
+        backend.failUpdates = true
+        TrackingCommandStore.provider = { store }
+        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+        let command = try TrackingCommand.Stop.parse(["--json"])
+
+        await assertExitCode(1) { try await command.run() }
+        XCTAssertEqual(try store.readActiveSession()?.id, started.id)
+    }
+
+    func testTrackingReadFailureExitsNonzeroInJSONMode() async throws {
+        let store = TrackedUsageStore(
+            backend: InMemoryPersistenceBackend(initialStorage: [
+                "trackedUsage.v1": Data("invalid".utf8)
+            ]))
+        TrackingCommandStore.provider = { store }
+        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+        let command = try TrackingCommand.Status.parse(["--json"])
+
+        await assertExitCode(1) { try await command.run() }
+    }
+
+    func testTrackingFutureSchemaReadExitsNonzeroInJSONMode() async throws {
+        let future = Data(
+            "{\"schemaVersion\":3,\"labels\":[],\"sessions\":[],\"activeSession\":null,\"deletedLabels\":[],\"deletedSessions\":[]}"
+                .utf8)
+        let store = TrackedUsageStore(
+            backend: InMemoryPersistenceBackend(initialStorage: ["trackedUsage.v1": future]))
+        TrackingCommandStore.provider = { store }
+        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+        let command = try TrackingCommand.Labels.parse(["--json"])
+
+        await assertExitCode(1) { try await command.run() }
+        XCTAssertThrowsError(try store.readLabels())
+    }
+
+    func testTrackingPersistenceJSONErrorUsesStableCode() throws {
+        let response = TrackingOutput.persistenceResponse(
+            error: PersistenceBackendError.writeFailed(path: "tracking", detail: "failed"))
+        let data = try JSONOutput.encoder.encode(response)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let error = try XCTUnwrap(object["error"] as? [String: String])
+        XCTAssertEqual(error["code"], "tracking_data_unavailable")
+        XCTAssertTrue(try XCTUnwrap(error["detail"]).contains("failed"))
     }
 
     func testSourceResolverIsCaseInsensitiveForKnownSource() {
@@ -122,5 +208,25 @@ final class CLIParsingTests: XCTestCase {
         } catch {
             XCTFail("Expected ExitCode(\(expected)), got: \(error)")
         }
+    }
+}
+
+private final class CLIFailingPersistenceBackend: PersistenceBackend, @unchecked Sendable {
+    private var storage: [String: Data] = [:]
+    var failUpdates = false
+
+    func data(forKey key: String) throws -> Data? { storage[key] }
+
+    func set(_ data: Data?, forKey key: String) throws {
+        storage[key] = data
+    }
+
+    func updateData(forKey key: String, _ update: (Data?) throws -> Data?) throws -> Data? {
+        let updated = try update(storage[key])
+        if failUpdates {
+            throw PersistenceBackendError.writeFailed(path: key, detail: "injected failure")
+        }
+        storage[key] = updated
+        return updated
     }
 }
