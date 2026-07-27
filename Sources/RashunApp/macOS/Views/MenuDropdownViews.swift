@@ -1,7 +1,81 @@
 import AppKit
 import Foundation
-import SwiftUI
 import RashunCore
+import SwiftUI
+
+private struct NaturalTextWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct HoverRevealText: View {
+    let text: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var naturalWidth: CGFloat = 0
+    @State private var isRevealed = false
+
+    static func overflowDistance(naturalWidth: CGFloat, availableWidth: CGFloat) -> CGFloat {
+        max(0, naturalWidth - availableWidth)
+    }
+
+    static func revealDuration(for distance: CGFloat) -> TimeInterval {
+        min(1.4, max(0.45, TimeInterval(distance / 90)))
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let overflow = Self.overflowDistance(
+                naturalWidth: naturalWidth,
+                availableWidth: proxy.size.width
+            )
+
+            Text(text)
+                .font(.system(size: 9, weight: .regular))
+                .foregroundColor(.secondary.opacity(0.78))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .background {
+                    GeometryReader { textProxy in
+                        Color.clear.preference(
+                            key: NaturalTextWidthPreferenceKey.self,
+                            value: textProxy.size.width
+                        )
+                    }
+                }
+                .offset(x: isRevealed ? -overflow : 0)
+                .onHover { hovering in
+                    guard overflow > 0.5 else {
+                        isRevealed = false
+                        return
+                    }
+                    if reduceMotion {
+                        isRevealed = hovering
+                    } else if hovering {
+                        withAnimation(
+                            .easeInOut(duration: Self.revealDuration(for: overflow)).delay(0.4)
+                        ) {
+                            isRevealed = true
+                        }
+                    } else {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            isRevealed = false
+                        }
+                    }
+                }
+        }
+        .frame(height: 11)
+        .clipped()
+        .contentShape(Rectangle())
+        .onPreferenceChange(NaturalTextWidthPreferenceKey.self) { naturalWidth = $0 }
+        .help(text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(text))
+    }
+}
 
 struct MenuDropdownMetricRowModel: Identifiable {
     let id = UUID()
@@ -91,10 +165,7 @@ struct MenuDropdownSourceCardView: View {
             }
 
             if let detailText = row.detailText {
-                Text(detailText)
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundColor(.secondary.opacity(0.78))
-                    .lineLimit(1)
+                HoverRevealText(text: detailText)
             }
         }
     }

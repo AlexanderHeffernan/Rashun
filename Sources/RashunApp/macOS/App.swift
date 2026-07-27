@@ -576,11 +576,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if assessment.recommendation == .limitReached {
                 return PaceStatus(
                     score: assessment.score, isExhausted: true,
-                    overrideLabel: assessment.recommendation.label
+                    overrideLabel: assessment.message
                 )
             }
             return PaceStatus(
-                score: assessment.score, overrideLabel: assessment.recommendation.label)
+                score: assessment.score, overrideLabel: assessment.message)
         }
 
         guard source.pacingBehavior != .none else {
@@ -1202,6 +1202,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         var detailText: String {
             if isExhausted {
+                return label
+            }
+            if overrideLabel != nil {
                 return label
             }
             let rounded = Int(round(score))

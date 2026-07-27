@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import RashunCore
 
 final class UsageForecastEngineTests: XCTestCase {
@@ -41,8 +42,12 @@ final class UsageForecastEngineTests: XCTestCase {
             cycleStartDate: cycleStart
         )
         let history = [
-            UsageSnapshot(timestamp: fixedDate(hour: 20), usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(hour: 21), usage: UsageResult(remaining: 80, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 20),
+                usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 21),
+                usage: UsageResult(remaining: 80, limit: 100, resetDate: reset)),
             UsageSnapshot(timestamp: now, usage: current),
         ]
 
@@ -68,9 +73,15 @@ final class UsageForecastEngineTests: XCTestCase {
             cycleStartDate: cycleStart
         )
         let history = [
-            UsageSnapshot(timestamp: fixedDate(hour: 14), usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(hour: 16), usage: UsageResult(remaining: 75, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(hour: 18), usage: UsageResult(remaining: 50, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 14),
+                usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 16),
+                usage: UsageResult(remaining: 75, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 18),
+                usage: UsageResult(remaining: 50, limit: 100, resetDate: reset)),
             UsageSnapshot(timestamp: now, usage: current),
         ]
 
@@ -84,9 +95,148 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertNotNil(assessment)
         XCTAssertTrue([.conserve, .conserveHard].contains(assessment!.recommendation))
         XCTAssertGreaterThan(assessment!.confidence, 0.35)
+        XCTAssertNotEqual(assessment?.guidanceDeadline, reset)
+        XCTAssertTrue(assessment?.message.contains("until") == true)
     }
 
-    func testPacingAssessmentClampsDisplayedScore() {
+    func testConserveDeadlineIsWhenZeroUsageMeetsGuideNotReset() {
+        let now = fixedDate(hour: 10)
+        let reset = fixedDate(dayOffset: 1, hour: 0)
+        let cycleStart = fixedDate(hour: 0)
+        let current = UsageResult(
+            remaining: 25,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: cycleStart
+        )
+
+        let assessment = UsageForecastEngine.resetWindowPacingAssessment(
+            current: current,
+            history: [],
+            resetDate: reset,
+            now: now,
+            calendar: utcCalendar,
+            mode: .simple
+        )
+
+        XCTAssertEqual(assessment?.recommendation, .conserveHard)
+        XCTAssertEqual(assessment?.score ?? 0, -100 / 3, accuracy: 0.001)
+        XCTAssertEqual(assessment?.guidanceDeadline, fixedDate(hour: 18))
+        XCTAssertEqual(
+            guidePercent(at: assessment!.guidanceDeadline!, from: cycleStart, to: reset), 25,
+            accuracy: 0.001)
+    }
+
+    func testConserveDeadlineConvertsActiveTimeToWallClock() {
+        let now = fixedDate(hour: 20)
+        let reset = fixedDate(dayOffset: 1, hour: 12)
+        let current = UsageResult(
+            remaining: 20,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: fixedDate(hour: 8)
+        )
+
+        let assessment = UsageForecastEngine.resetWindowPacingAssessment(
+            current: current,
+            history: [],
+            resetDate: reset,
+            now: now,
+            calendar: utcCalendar,
+            mode: .smart
+        )
+
+        XCTAssertEqual(assessment?.recommendation, .conserve)
+        XCTAssertEqual(assessment?.guidanceDeadline, fixedDate(dayOffset: 1, hour: 0))
+    }
+
+    func testPushDeadlineIsUndefinedWithoutAConfidentIntersectingBurnRate() {
+        let now = fixedDate(hour: 12)
+        let reset = fixedDate(dayOffset: 1, hour: 0)
+        let current = UsageResult(
+            remaining: 70,
+            limit: 100,
+            resetDate: reset,
+            cycleStartDate: fixedDate(hour: 0)
+        )
+
+        let assessment = UsageForecastEngine.resetWindowPacingAssessment(
+            current: current,
+            history: [],
+            resetDate: reset,
+            now: now,
+            calendar: utcCalendar,
+            mode: .simple
+        )
+
+        XCTAssertEqual(assessment?.recommendation, .push)
+        XCTAssertNil(assessment?.guidanceDeadline)
+        XCTAssertEqual(assessment?.message, "Push")
+    }
+
+    func testPushDurationEndsWhenObservedUsageMeetsGuide() {
+        let guideBurnRate = 4.0 / 3600
+        let observedBurnRate = 6.0 / 3600
+
+        let duration = UsageForecastEngine.activeSecondsToPacingAlignment(
+            currentPercent: 60,
+            guidePercent: 50,
+            guideBurnRate: guideBurnRate,
+            observedBurnRate: observedBurnRate,
+            confidence: 0.8
+        )
+
+        XCTAssertEqual(duration ?? 0, 5 * 3600, accuracy: 0.001)
+        XCTAssertEqual(
+            60 - observedBurnRate * duration!, 50 - guideBurnRate * duration!, accuracy: 0.001)
+    }
+
+    func testGuidanceDeadlineUsesTimeOnlyToday() {
+        let now = fixedDate(hour: 10)
+        let deadline = fixedDate(hour: 17, minute: 45)
+
+        XCTAssertEqual(
+            UsageForecastEngine.guidanceDeadlineDescription(
+                deadline, relativeTo: now, calendar: utcCalendar, locale: enUSLocale),
+            "5:45\u{202F}PM")
+    }
+
+    func testGuidanceDeadlineIncludesCalendarDateTomorrow() {
+        let now = fixedDate(hour: 22)
+        let deadline = fixedDate(dayOffset: 1, hour: 17, minute: 45)
+
+        XCTAssertEqual(
+            UsageForecastEngine.guidanceDeadlineDescription(
+                deadline, relativeTo: now, calendar: utcCalendar, locale: enUSLocale),
+            "Jul 7, 2026 at 5:45\u{202F}PM")
+    }
+
+    func testGuidanceDeadlineIncludesCalendarDateForLaterDay() {
+        let now = fixedDate(hour: 10)
+        let deadline = fixedDate(dayOffset: 6, hour: 9, minute: 5)
+
+        XCTAssertEqual(
+            UsageForecastEngine.guidanceDeadlineDescription(
+                deadline, relativeTo: now, calendar: utcCalendar, locale: enUSLocale),
+            "Jul 12, 2026 at 9:05\u{202F}AM")
+    }
+
+    func testGuidanceDeadlineUsesCalendarDayAcrossDSTBoundary() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = date(
+            year: 2026, month: 3, day: 7, hour: 23, minute: 30, calendar: calendar)
+        let deadline = date(
+            year: 2026, month: 3, day: 8, hour: 3, minute: 30, calendar: calendar)
+
+        XCTAssertEqual(deadline.timeIntervalSince(now), 3 * 3600)
+        XCTAssertEqual(
+            UsageForecastEngine.guidanceDeadlineDescription(
+                deadline, relativeTo: now, calendar: calendar, locale: enUSLocale),
+            "Mar 8, 2026 at 3:30\u{202F}AM")
+    }
+
+    func testPacingAssessmentScoreIsCurrentDistanceFromGuide() {
         let now = fixedDate(dayOffset: 1, hour: 8)
         let reset = fixedDate(dayOffset: 3, hour: 10)
         let cycleStart = fixedDate(hour: 22)
@@ -97,11 +247,21 @@ final class UsageForecastEngineTests: XCTestCase {
             cycleStartDate: cycleStart
         )
         let history = [
-            UsageSnapshot(timestamp: fixedDate(hour: 22), usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(hour: 23), usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 0), usage: UsageResult(remaining: 80, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 2), usage: UsageResult(remaining: 70, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 4), usage: UsageResult(remaining: 60, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 22),
+                usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 23),
+                usage: UsageResult(remaining: 90, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 1, hour: 0),
+                usage: UsageResult(remaining: 80, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 1, hour: 2),
+                usage: UsageResult(remaining: 70, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 1, hour: 4),
+                usage: UsageResult(remaining: 60, limit: 100, resetDate: reset)),
             UsageSnapshot(timestamp: now, usage: current),
         ]
 
@@ -114,7 +274,7 @@ final class UsageForecastEngineTests: XCTestCase {
         )
 
         XCTAssertNotNil(assessment)
-        XCTAssertEqual(assessment?.score, -100)
+        XCTAssertEqual(assessment?.score ?? 0, -100 / 3, accuracy: 0.001)
         XCTAssertEqual(assessment?.recommendation, .conserveHard)
     }
 
@@ -153,13 +313,27 @@ final class UsageForecastEngineTests: XCTestCase {
             cycleStartDate: fixedDate(dayOffset: 3, hour: 6)
         )
         let history = [
-            UsageSnapshot(timestamp: fixedDate(hour: 7), usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(hour: 8), usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 7), usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 1, hour: 8), usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 2, hour: 7), usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 2, hour: 8), usage: UsageResult(remaining: 82, limit: 100, resetDate: reset)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 7), usage: UsageResult(remaining: 66, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 7),
+                usage: UsageResult(remaining: 100, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 8),
+                usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 1, hour: 7),
+                usage: UsageResult(remaining: 94, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 1, hour: 8),
+                usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 2, hour: 7),
+                usage: UsageResult(remaining: 88, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 2, hour: 8),
+                usage: UsageResult(remaining: 82, limit: 100, resetDate: reset)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 3, hour: 7),
+                usage: UsageResult(remaining: 66, limit: 100, resetDate: reset)),
             UsageSnapshot(timestamp: now, usage: current),
         ]
 
@@ -184,7 +358,9 @@ final class UsageForecastEngineTests: XCTestCase {
 
         XCTAssertNotNil(smart)
         XCTAssertNotNil(simple)
-        XCTAssertGreaterThan(smart!.points[smart!.points.count - 2].value, simple!.points[simple!.points.count - 2].value)
+        XCTAssertGreaterThan(
+            smart!.points[smart!.points.count - 2].value,
+            simple!.points[simple!.points.count - 2].value)
     }
 
     func testSmartForecastLearnsDifferentWeekdayHourlyBurnRates() {
@@ -228,7 +404,9 @@ final class UsageForecastEngineTests: XCTestCase {
 
         XCTAssertNotNil(monday)
         XCTAssertNotNil(thursday)
-        XCTAssertLessThan(monday!.points[monday!.points.count - 2].value, thursday!.points[thursday!.points.count - 2].value)
+        XCTAssertLessThan(
+            monday!.points[monday!.points.count - 2].value,
+            thursday!.points[thursday!.points.count - 2].value)
     }
 
     func testResetWindowPaceGuideRunsFromFullToEmptyAtReset() {
@@ -263,7 +441,8 @@ final class UsageForecastEngineTests: XCTestCase {
         let reset = fixedDate(dayOffset: 1, hour: 0)
         let assessment = source.pacingAssessment(
             for: source.metrics[0].id,
-            current: UsageResult(remaining: 50, limit: 100, resetDate: reset, cycleStartDate: fixedDate(hour: 0)),
+            current: UsageResult(
+                remaining: 50, limit: 100, resetDate: reset, cycleStartDate: fixedDate(hour: 0)),
             history: [],
             now: now
         )
@@ -271,29 +450,65 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertNotNil(assessment)
     }
 
-    private func fixedDate(dayOffset: Int = 0, hour: Int) -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    private func fixedDate(dayOffset: Int = 0, hour: Int, minute: Int = 0) -> Date {
+        let calendar = utcCalendar
         var components = DateComponents()
         components.timeZone = calendar.timeZone
         components.year = 2026
         components.month = 7
         components.day = 6 + dayOffset
         components.hour = hour
-        components.minute = 0
+        components.minute = minute
         components.second = 0
         return calendar.date(from: components)!
     }
 
+    private var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    private var enUSLocale: Locale {
+        Locale(identifier: "en_US")
+    }
+
+    private func date(
+        year: Int, month: Int, day: Int, hour: Int, minute: Int, calendar: Calendar
+    ) -> Date {
+        calendar.date(
+            from: DateComponents(
+                timeZone: calendar.timeZone, year: year, month: month, day: day, hour: hour,
+                minute: minute))!
+    }
+
+    private func guidePercent(at date: Date, from cycleStart: Date, to reset: Date) -> Double {
+        100 * reset.timeIntervalSince(date) / reset.timeIntervalSince(cycleStart)
+    }
+
     private func weekdayProfileHistory(resetDate: Date) -> [UsageSnapshot] {
         [
-            UsageSnapshot(timestamp: fixedDate(dayOffset: -7, hour: 8), usage: UsageResult(remaining: 100, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: -7, hour: 9), usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(hour: 8), usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(hour: 9), usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 8), usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 3, hour: 9), usage: UsageResult(remaining: 75, limit: 100, resetDate: resetDate)),
-            UsageSnapshot(timestamp: fixedDate(dayOffset: 10, hour: 7), usage: UsageResult(remaining: 72, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: -7, hour: 8),
+                usage: UsageResult(remaining: 100, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: -7, hour: 9),
+                usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 8),
+                usage: UsageResult(remaining: 88, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(hour: 9),
+                usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 3, hour: 8),
+                usage: UsageResult(remaining: 76, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 3, hour: 9),
+                usage: UsageResult(remaining: 75, limit: 100, resetDate: resetDate)),
+            UsageSnapshot(
+                timestamp: fixedDate(dayOffset: 10, hour: 7),
+                usage: UsageResult(remaining: 72, limit: 100, resetDate: resetDate)),
         ]
     }
 }
