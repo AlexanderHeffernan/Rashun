@@ -1,5 +1,5 @@
-import SwiftUI
 import RashunCore
+import SwiftUI
 
 struct SourceRowView: View {
     @ObservedObject var model: PreferencesViewModel
@@ -10,7 +10,11 @@ struct SourceRowView: View {
         let isSingleMetric = source.metrics.count <= 1
         let isExpanded = model.isSourceExpanded(source.name)
         let notificationSections = model.notificationSections(for: source)
-        let hasNotifications = notificationSections.contains { !$0.definitions.isEmpty }
+        let sourceNotificationSection = model.sourceNotificationSection(for: source)
+        let headerNotificationSection =
+            sourceNotificationSection
+            ?? (isSingleMetric ? notificationSections.first : nil)
+        let hasHeaderNotifications = !(headerNotificationSection?.definitions.isEmpty ?? true)
         let hasMultipleMetrics = !isSingleMetric
         let anyMetricExpanded = source.metrics.contains {
             model.isMetricNotificationsExpanded(sourceName: source.name, metricId: $0.id)
@@ -18,17 +22,21 @@ struct SourceRowView: View {
         let isCheckingHealth = model.isSourceHealthCheckInProgress(source.name)
         let warningSummary = isSingleMetric ? model.sourceWarningSummary(source.name) : nil
         let warningDetail = isSingleMetric ? model.sourceWarningDetail(source.name) : nil
-        let hasWarning = isSingleMetric
+        let hasWarning =
+            isSingleMetric
             ? (warningSummary != nil)
             : model.sourceHasAnyMetricWarning(source)
-        let showExpandedStyle = isSingleMetric ? isExpanded : anyMetricExpanded
+        let showExpandedStyle = isExpanded || anyMetricExpanded
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 10) {
-                Toggle(source.displayName, isOn: Binding(
-                    get: { isEnabled },
-                    set: { model.sourceToggleChanged(source, enabled: $0) }
-                ))
+                Toggle(
+                    source.displayName,
+                    isOn: Binding(
+                        get: { isEnabled },
+                        set: { model.sourceToggleChanged(source, enabled: $0) }
+                    )
+                )
                 .toggleStyle(.checkbox)
                 .disabled(isCheckingHealth)
                 .font(.system(size: 16, weight: .semibold, design: .rounded))
@@ -49,7 +57,7 @@ struct SourceRowView: View {
 
                 Spacer(minLength: 0)
 
-                if isEnabled, isSingleMetric, hasNotifications {
+                if isEnabled, hasHeaderNotifications {
                     Button {
                         model.toggleNotificationsSection(source.name)
                     } label: {
@@ -104,6 +112,35 @@ struct SourceRowView: View {
                 )
             }
 
+            if isEnabled, isExpanded, let section = headerNotificationSection {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(
+                        sourceNotificationSection == nil
+                            ? "Notification Rules" : "Source Notifications"
+                    )
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(BrandPalette.textSecondary)
+                    .textCase(.uppercase)
+
+                    ForEach(section.definitions, id: \.id) { definition in
+                        RuleRowView(
+                            model: model,
+                            sourceName: section.sourceName,
+                            definition: definition
+                        )
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(BrandPalette.cardAlt.opacity(0.55))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(BrandPalette.primary.opacity(0.18), lineWidth: 1)
+                        )
+                )
+            }
+
             if isEnabled, hasMultipleMetrics {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Usage Metrics")
@@ -128,30 +165,6 @@ struct SourceRowView: View {
                         )
                 )
             }
-
-            if isEnabled, isSingleMetric, isExpanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Notification Rules")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(BrandPalette.textSecondary)
-                        .textCase(.uppercase)
-
-                    if let section = notificationSections.first {
-                        ForEach(section.definitions, id: \.id) { definition in
-                            RuleRowView(model: model, sourceName: section.sourceName, definition: definition)
-                        }
-                    }
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(BrandPalette.cardAlt.opacity(0.55))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(BrandPalette.primary.opacity(0.18), lineWidth: 1)
-                        )
-                )
-            }
         }
         .padding(14)
         .background(
@@ -159,7 +172,9 @@ struct SourceRowView: View {
                 .fill(BrandPalette.cardAlt.opacity(0.38))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(BrandPalette.primary.opacity(showExpandedStyle ? 0.22 : 0.14), lineWidth: 1)
+                        .stroke(
+                            BrandPalette.primary.opacity(showExpandedStyle ? 0.22 : 0.14),
+                            lineWidth: 1)
                 )
         )
     }
@@ -205,10 +220,16 @@ private struct MetricNotificationsRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
-                Toggle(metric.title, isOn: Binding(
-                    get: { metricEnabled },
-                    set: { model.setMetricEnabled(sourceName: source.name, metricId: metric.id, enabled: $0) }
-                ))
+                Toggle(
+                    metric.title,
+                    isOn: Binding(
+                        get: { metricEnabled },
+                        set: {
+                            model.setMetricEnabled(
+                                sourceName: source.name, metricId: metric.id, enabled: $0)
+                        }
+                    )
+                )
                 .toggleStyle(.checkbox)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(BrandPalette.textPrimary)
@@ -223,7 +244,8 @@ private struct MetricNotificationsRowView: View {
 
                 if metricEnabled, metricHasNotifications {
                     Button {
-                        model.toggleMetricNotificationsSection(sourceName: source.name, metricId: metric.id)
+                        model.toggleMetricNotificationsSection(
+                            sourceName: source.name, metricId: metric.id)
                     } label: {
                         HStack(spacing: 6) {
                             Text("Notifications")

@@ -54,6 +54,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var trackingIndicatorPulsePhase = 0.0
     private var syncServerTask: Task<Void, Never>?
     private var peerSyncTask: Task<Void, Never>?
+    private let codexResetAlertStateKey = "ai.codexResetAlertState.v1"
 
     private var isPollingSuspended: Bool {
         isSleepSuspended || isLockSuspended
@@ -1968,12 +1969,53 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else {
             return nil
         }
+        sendCodexResetAlerts(for: balance)
 
         var parts = ["\(balance.count) \(balance.count == 1 ? "reset" : "resets")"]
         if let nextExpiration = balance.nextExpiration {
             parts.append("next exp. \(compactDaysDescription(for: nextExpiration, now: Date()))")
         }
         return parts.joined(separator: ", ")
+    }
+
+    private func sendCodexResetAlerts(for balance: CodexResetBalance) {
+        let source = CodexSource()
+        let settings = SettingsStore.shared
+        settings.ensureSourceNotificationRules(source: source)
+        let rules = settings.ruleSettings(for: source.name)
+        let receivedEnabled =
+            rules.first {
+                $0.ruleId == CodexSource.bankedResetReceivedRuleID
+            }?.isEnabled ?? false
+        let expirationRule =
+            rules.first {
+                $0.ruleId == CodexSource.bankedResetExpiringRuleID
+            }
+        let expirationEnabled = expirationRule?.isEnabled ?? false
+        let warningDays =
+            expirationRule?.inputValues[
+                CodexSource.expirationWarningDaysInputID
+            ] ?? 2
+
+        let defaults = UserDefaults.standard
+        let state =
+            defaults.data(forKey: codexResetAlertStateKey)
+            .flatMap { try? JSONDecoder().decode(CodexResetAlertState.self, from: $0) }
+            ?? CodexResetAlertState()
+        let evaluation = CodexResetAlertEvaluator.evaluate(
+            balance: balance,
+            state: state,
+            notifyOnReceived: receivedEnabled,
+            notifyOnExpiration: expirationEnabled,
+            expirationWarningDays: warningDays
+        )
+        for event in evaluation.events {
+            NotificationManager.shared.sendNotification(
+                title: event.title, body: event.body, route: .usageHistory)
+        }
+        if let encoded = try? JSONEncoder().encode(evaluation.state) {
+            defaults.set(encoded, forKey: codexResetAlertStateKey)
+        }
     }
 
     private func compactDaysDescription(for date: Date, now: Date) -> String {

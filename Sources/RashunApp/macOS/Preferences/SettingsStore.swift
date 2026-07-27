@@ -4,7 +4,12 @@ import RashunCore
 @MainActor
 final class SettingsStore {
     static let shared = SettingsStore()
-    private init() { load() }
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        load()
+    }
 
     private let userDefaultsKey = "ai.sourceSettings.v1"
     private let sourceMetricSettingsKey = "ai.sourceMetricSettings.v1"
@@ -35,26 +40,26 @@ final class SettingsStore {
     private(set) var showTrackingSessionInMenuBar = true
 
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+        if let data = defaults.data(forKey: userDefaultsKey),
             let decoded = try? JSONDecoder().decode([String: Bool].self, from: data)
         {
             enabledMap = decoded
         }
-        if let metricData = UserDefaults.standard.data(forKey: sourceMetricSettingsKey),
+        if let metricData = defaults.data(forKey: sourceMetricSettingsKey),
             let decodedMetricSettings = try? JSONDecoder().decode(
                 [String: [String: Bool]].self, from: metricData)
         {
             sourceMetricEnabledMap = decodedMetricSettings
         }
 
-        if let settingsData = UserDefaults.standard.data(forKey: notificationDefaultsKey),
+        if let settingsData = defaults.data(forKey: notificationDefaultsKey),
             let decodedSettings = try? JSONDecoder().decode(
                 [String: [NotificationRuleSetting]].self, from: settingsData)
         {
             notificationSettings = decodedSettings
         }
 
-        if let stateData = UserDefaults.standard.data(forKey: notificationStateKey),
+        if let stateData = defaults.data(forKey: notificationStateKey),
             let decodedState = try? JSONDecoder().decode(
                 [String: NotificationRuleState].self, from: stateData)
         {
@@ -64,36 +69,36 @@ final class SettingsStore {
         let ampFreeScopeMigrated = migrateLegacyAmpFreeScopeIfNeeded()
         let migrated = migrateLegacyCopilotPacingRuleIfNeeded()
 
-        let poll = UserDefaults.standard.double(forKey: pollIntervalKey)
+        let poll = defaults.double(forKey: pollIntervalKey)
         if poll > 0 {
             pollIntervalSeconds = poll
         }
-        let sync = UserDefaults.standard.double(forKey: syncIntervalKey)
+        let sync = defaults.double(forKey: syncIntervalKey)
         if sync > 0 {
             syncIntervalSeconds = sync
         }
 
-        if UserDefaults.standard.object(forKey: autoUpdateCheckKey) != nil {
-            autoUpdateCheckEnabled = UserDefaults.standard.bool(forKey: autoUpdateCheckKey)
+        if defaults.object(forKey: autoUpdateCheckKey) != nil {
+            autoUpdateCheckEnabled = defaults.bool(forKey: autoUpdateCheckKey)
         }
-        if UserDefaults.standard.object(forKey: trackingEnabledKey) != nil {
-            trackingEnabled = UserDefaults.standard.bool(forKey: trackingEnabledKey)
+        if defaults.object(forKey: trackingEnabledKey) != nil {
+            trackingEnabled = defaults.bool(forKey: trackingEnabledKey)
         }
-        if UserDefaults.standard.object(forKey: syncServerEnabledKey) != nil {
-            syncServerEnabled = UserDefaults.standard.bool(forKey: syncServerEnabledKey)
+        if defaults.object(forKey: syncServerEnabledKey) != nil {
+            syncServerEnabled = defaults.bool(forKey: syncServerEnabledKey)
         }
-        let storedPort = UserDefaults.standard.integer(forKey: syncServerPortKey)
+        let storedPort = defaults.integer(forKey: syncServerPortKey)
         if Self.isValidSyncServerPort(storedPort) {
             syncServerPort = storedPort
         }
-        if UserDefaults.standard.object(forKey: showTrackingSessionInMenuBarKey) != nil {
-            showTrackingSessionInMenuBar = UserDefaults.standard.bool(
+        if defaults.object(forKey: showTrackingSessionInMenuBarKey) != nil {
+            showTrackingSessionInMenuBar = defaults.bool(
                 forKey: showTrackingSessionInMenuBarKey)
         }
 
         forecastingMode = UsageForecastModePreference.current
 
-        if let appearanceData = UserDefaults.standard.data(forKey: menuBarAppearanceKey),
+        if let appearanceData = defaults.data(forKey: menuBarAppearanceKey),
             let decodedAppearance = try? JSONDecoder().decode(
                 MenuBarAppearanceSettings.self, from: appearanceData)
         {
@@ -109,28 +114,28 @@ final class SettingsStore {
             save()
         }
         if ampFreeScopeMigrated {
-            UserDefaults.standard.set(true, forKey: ampFreeScopeMigrationKey)
+            defaults.set(true, forKey: ampFreeScopeMigrationKey)
         }
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(enabledMap) {
-            UserDefaults.standard.set(data, forKey: userDefaultsKey)
+            defaults.set(data, forKey: userDefaultsKey)
         }
         if let data = try? JSONEncoder().encode(sourceMetricEnabledMap) {
-            UserDefaults.standard.set(data, forKey: sourceMetricSettingsKey)
+            defaults.set(data, forKey: sourceMetricSettingsKey)
         }
 
         if let data = try? JSONEncoder().encode(notificationSettings) {
-            UserDefaults.standard.set(data, forKey: notificationDefaultsKey)
+            defaults.set(data, forKey: notificationDefaultsKey)
         }
 
         if let data = try? JSONEncoder().encode(notificationState) {
-            UserDefaults.standard.set(data, forKey: notificationStateKey)
+            defaults.set(data, forKey: notificationStateKey)
         }
 
         if let data = try? JSONEncoder().encode(menuBarAppearance) {
-            UserDefaults.standard.set(data, forKey: menuBarAppearanceKey)
+            defaults.set(data, forKey: menuBarAppearanceKey)
         }
     }
 
@@ -184,7 +189,7 @@ final class SettingsStore {
 
     func setPollIntervalSeconds(_ seconds: TimeInterval) {
         pollIntervalSeconds = max(30, seconds)
-        UserDefaults.standard.set(pollIntervalSeconds, forKey: pollIntervalKey)
+        defaults.set(pollIntervalSeconds, forKey: pollIntervalKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
@@ -192,18 +197,18 @@ final class SettingsStore {
 
     func setSyncIntervalSeconds(_ seconds: TimeInterval) {
         syncIntervalSeconds = max(30, seconds)
-        UserDefaults.standard.set(syncIntervalSeconds, forKey: syncIntervalKey)
+        defaults.set(syncIntervalSeconds, forKey: syncIntervalKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
     func setTrackingEnabled(_ enabled: Bool) {
         trackingEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: trackingEnabledKey)
+        defaults.set(enabled, forKey: trackingEnabledKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
     func setSyncServerEnabled(_ enabled: Bool) {
         syncServerEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: syncServerEnabledKey)
+        defaults.set(enabled, forKey: syncServerEnabledKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
@@ -211,7 +216,7 @@ final class SettingsStore {
     func setSyncServerPort(_ port: Int) -> Bool {
         guard Self.isValidSyncServerPort(port) else { return false }
         syncServerPort = port
-        UserDefaults.standard.set(port, forKey: syncServerPortKey)
+        defaults.set(port, forKey: syncServerPortKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
         return true
     }
@@ -222,13 +227,13 @@ final class SettingsStore {
 
     func setShowTrackingSessionInMenuBar(_ show: Bool) {
         showTrackingSessionInMenuBar = show
-        UserDefaults.standard.set(show, forKey: showTrackingSessionInMenuBarKey)
+        defaults.set(show, forKey: showTrackingSessionInMenuBarKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
     }
 
     func setAutoUpdateCheckEnabled(_ enabled: Bool) {
         autoUpdateCheckEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: autoUpdateCheckKey)
+        defaults.set(enabled, forKey: autoUpdateCheckKey)
         if enabled {
             UpdateManager.shared.startPeriodicChecks()
         } else {
@@ -331,6 +336,31 @@ final class SettingsStore {
         save()
     }
 
+    func ensureSourceNotificationRules(source: AISource) {
+        ensureNotificationRules(
+            definitions: source.sourceNotificationDefinitions,
+            scopeName: source.name
+        )
+    }
+
+    private func ensureNotificationRules(
+        definitions: [NotificationDefinition], scopeName: String
+    ) {
+        var map = Dictionary(
+            uniqueKeysWithValues: (notificationSettings[scopeName] ?? []).map { ($0.ruleId, $0) })
+        for definition in definitions where map[definition.id] == nil {
+            map[definition.id] = NotificationRuleSetting(
+                ruleId: definition.id,
+                isEnabled: false,
+                inputValues: Dictionary(
+                    uniqueKeysWithValues: definition.inputs.map { ($0.id, $0.defaultValue) }
+                )
+            )
+        }
+        notificationSettings[scopeName] = definitions.compactMap { map[$0.id] }
+        save()
+    }
+
     func setRuleEnabled(_ enabled: Bool, sourceName: String, ruleId: String) {
         var rules = notificationSettings[sourceName] ?? []
         for idx in rules.indices where rules[idx].ruleId == ruleId {
@@ -379,7 +409,7 @@ final class SettingsStore {
 
     @discardableResult
     private func migrateLegacyAmpFreeScopeIfNeeded() -> Bool {
-        guard UserDefaults.standard.object(forKey: ampFreeScopeMigrationKey) == nil else {
+        guard defaults.object(forKey: ampFreeScopeMigrationKey) == nil else {
             return false
         }
 

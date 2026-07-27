@@ -57,6 +57,9 @@ final class PreferencesViewModel: ObservableObject {
         settings.ensureSources(newSources.map { $0.name })
         for source in newSources {
             settings.ensureSourceMetrics(source: source)
+            if !source.sourceNotificationDefinitions.isEmpty {
+                settings.ensureSourceNotificationRules(source: source)
+            }
             if source.metrics.count <= 1 {
                 settings.ensureNotificationRules(source: source)
             } else {
@@ -225,7 +228,7 @@ final class PreferencesViewModel: ObservableObject {
     func flushPendingEdits() {
         applyPollInterval()
         for source in sources {
-            for section in notificationSections(for: source) {
+            for section in allNotificationSections(for: source) {
                 for definition in section.definitions {
                     for input in definition.inputs {
                         commitRuleInput(
@@ -460,7 +463,7 @@ final class PreferencesViewModel: ObservableObject {
     }
 
     private func seedRuleInputDrafts(for source: AISource) {
-        for section in notificationSections(for: source) {
+        for section in allNotificationSections(for: source) {
             for definition in section.definitions {
                 for input in definition.inputs {
                     let key = inputKey(
@@ -502,8 +505,20 @@ final class PreferencesViewModel: ObservableObject {
         }
     }
 
+    func sourceNotificationSection(for source: AISource) -> NotificationSection? {
+        guard !source.sourceNotificationDefinitions.isEmpty else { return nil }
+        return NotificationSection(
+            id: source.name,
+            title: nil,
+            sourceName: source.name,
+            definitions: source.sourceNotificationDefinitions
+        )
+    }
+
     func notificationDefinitions(for source: AISource) -> [NotificationDefinition] {
-        notificationSections(for: source).first?.definitions ?? []
+        sourceNotificationSection(for: source)?.definitions
+            ?? notificationSections(for: source).first?.definitions
+            ?? []
     }
 
     func notificationDefinitions(for source: AISource, metricId: String) -> [NotificationDefinition]
@@ -567,5 +582,10 @@ final class PreferencesViewModel: ObservableObject {
 
     private func notificationScopeName(sourceName: String, metricId: String) -> String {
         "\(sourceName)::\(metricId)"
+    }
+
+    private func allNotificationSections(for source: AISource) -> [NotificationSection] {
+        [sourceNotificationSection(for: source)].compactMap { $0 }
+            + notificationSections(for: source)
     }
 }

@@ -21,6 +21,8 @@ public protocol AISource: Sendable {
     func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation
     /// Metric-specific notification definitions.
     func notificationDefinitions(for metricId: String) -> [NotificationDefinition]
+    /// Provider-level notifications that are not owned by an individual metric.
+    var sourceNotificationDefinitions: [NotificationDefinition] { get }
     /// Metric-specific forecast.
     func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot])
         -> ForecastResult?
@@ -54,6 +56,8 @@ public protocol AISource: Sendable {
 
 extension AISource {
     public var displayName: String { name }
+
+    public var sourceNotificationDefinitions: [NotificationDefinition] { [] }
 
     /// Default fetch behavior throws unsupported-metric.
     /// Source implementations should override and return usage for known metric IDs.

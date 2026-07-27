@@ -1,7 +1,37 @@
 import XCTest
+
 @testable import RashunCore
 
 final class UsageSampleStabilityGateTests: XCTestCase {
+    func testExpectedResetIsAcceptedWithoutSecondSample() {
+        var gate = UsageSampleStabilityGate()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let previous = UsageResult(
+            remaining: 5, limit: 100, resetDate: now.addingTimeInterval(-30))
+        let incoming = UsageResult(
+            remaining: 100, limit: 100, resetDate: now.addingTimeInterval(7 * 24 * 3600))
+
+        let verified = gate.verifiedUsage(
+            scope: "Codex::weekly", incoming: incoming, previousAccepted: previous, now: now)
+
+        XCTAssertEqual(verified?.usage, incoming)
+        XCTAssertTrue(verified?.wasConfirmed == true)
+        XCTAssertEqual(verified?.confirmedResetUsage, incoming)
+    }
+
+    func testEarlyIncreaseStillRequiresConfirmation() {
+        var gate = UsageSampleStabilityGate()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let previous = UsageResult(
+            remaining: 40, limit: 100, resetDate: now.addingTimeInterval(3600))
+        let incoming = UsageResult(
+            remaining: 80, limit: 100, resetDate: now.addingTimeInterval(7 * 24 * 3600))
+
+        XCTAssertNil(
+            gate.verifiedUsage(
+                scope: "Codex::weekly", incoming: incoming, previousAccepted: previous,
+                now: now))
+    }
     func testSuspiciousQuotaJumpIsWithheldUntilMatchingSecondSample() {
         var gate = UsageSampleStabilityGate()
         let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
@@ -9,8 +39,10 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let previous = UsageResult(remaining: 30, limit: 100, resetDate: oldReset)
         let reset = UsageResult(remaining: 100, limit: 100, resetDate: newReset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
-        let confirmed = gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous)
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
+        let confirmed = gate.verifiedUsage(
+            scope: "Codex::weekly", incoming: reset, previousAccepted: previous)
         XCTAssertEqual(confirmed?.usage.remaining, 100)
         XCTAssertEqual(confirmed?.previousAccepted.remaining, 30)
         XCTAssertTrue(confirmed?.wasConfirmed == true)
@@ -20,11 +52,17 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         var gate = UsageSampleStabilityGate()
         let oldReset = Date(timeIntervalSince1970: 1_700_000_000)
         let previous = UsageResult(remaining: 30, limit: 100, resetDate: oldReset)
-        let misfire = UsageResult(remaining: 100, limit: 100, resetDate: oldReset.addingTimeInterval(7 * 24 * 3600))
+        let misfire = UsageResult(
+            remaining: 100, limit: 100, resetDate: oldReset.addingTimeInterval(7 * 24 * 3600))
         let corrected = UsageResult(remaining: 28, limit: 100, resetDate: oldReset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: misfire, previousAccepted: previous))
-        XCTAssertEqual(gate.verifiedUsage(scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)?.usage.remaining, 28)
+        XCTAssertNil(
+            gate.verifiedUsage(
+                scope: "Codex::weekly", incoming: misfire, previousAccepted: previous))
+        XCTAssertEqual(
+            gate.verifiedUsage(
+                scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)?.usage
+                .remaining, 28)
     }
 
     func testSmallUpwardSpikeIsWithheldUntilARealLaterRefresh() {
@@ -34,8 +72,10 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let spike = UsageResult(remaining: 98, limit: 100, resetDate: reset.addingTimeInterval(12))
         let corrected = UsageResult(remaining: 93, limit: 100, resetDate: reset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: spike, previousAccepted: previous))
-        let result = gate.verifiedUsage(scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::weekly", incoming: spike, previousAccepted: previous))
+        let result = gate.verifiedUsage(
+            scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)
         XCTAssertEqual(result?.usage.remaining, 93)
         XCTAssertFalse(result?.wasConfirmed == true)
     }
@@ -47,8 +87,11 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let previous = UsageResult(remaining: 91, limit: 100, resetDate: oldReset)
         let reset = UsageResult(remaining: 98, limit: 100, resetDate: newReset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous))
-        XCTAssertTrue(gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous)?.wasConfirmed == true)
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous))
+        XCTAssertTrue(
+            gate.verifiedUsage(scope: "Codex::5h", incoming: reset, previousAccepted: previous)?
+                .wasConfirmed == true)
     }
 
     func testConfirmedResetRetainsEvidenceWhenUsageDropsSlightlyBeforeSecondPoll() {
@@ -59,7 +102,8 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let reset = UsageResult(remaining: 100, limit: 100, resetDate: newReset)
         let postResetUsage = UsageResult(remaining: 92, limit: 100, resetDate: newReset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
 
         let confirmed = gate.verifiedUsage(
             scope: "Codex::weekly",
@@ -78,11 +122,15 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let newReset = oldReset.addingTimeInterval(7 * 24 * 3600)
         let previous = UsageResult(remaining: 30, limit: 100, resetDate: oldReset)
         let reset = UsageResult(remaining: 100, limit: 100, resetDate: newReset)
-        let revised = UsageResult(remaining: 97, limit: 100, resetDate: newReset.addingTimeInterval(30))
+        let revised = UsageResult(
+            remaining: 97, limit: 100, resetDate: newReset.addingTimeInterval(30))
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::weekly", incoming: reset, previousAccepted: previous))
         XCTAssertTrue(
-            gate.verifiedUsage(scope: "Codex::weekly", incoming: revised, previousAccepted: previous)?.wasConfirmed == true
+            gate.verifiedUsage(
+                scope: "Codex::weekly", incoming: revised, previousAccepted: previous)?.wasConfirmed
+                == true
         )
     }
 
@@ -94,9 +142,12 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         let candidate = UsageResult(remaining: 99, limit: 100, resetDate: newReset)
         let corrected = UsageResult(remaining: 62, limit: 100, resetDate: newReset)
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::weekly", incoming: candidate, previousAccepted: previous))
+        XCTAssertNil(
+            gate.verifiedUsage(
+                scope: "Codex::weekly", incoming: candidate, previousAccepted: previous))
 
-        let result = gate.verifiedUsage(scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)
+        let result = gate.verifiedUsage(
+            scope: "Codex::weekly", incoming: corrected, previousAccepted: previous)
         XCTAssertEqual(result?.usage.remaining, 62)
         XCTAssertFalse(result?.wasConfirmed == true)
         XCTAssertNil(result?.confirmedResetUsage)
@@ -106,7 +157,8 @@ final class UsageSampleStabilityGateTests: XCTestCase {
         var gate = UsageSampleStabilityGate()
         let cycleStart = Date(timeIntervalSince1970: 1_700_000_000)
         let reset = cycleStart.addingTimeInterval(5 * 3600)
-        let previous = UsageResult(remaining: 27, limit: 100, resetDate: reset, cycleStartDate: cycleStart)
+        let previous = UsageResult(
+            remaining: 27, limit: 100, resetDate: reset, cycleStartDate: cycleStart)
         let earlyReset = UsageResult(
             remaining: 94,
             limit: 100,
@@ -114,9 +166,13 @@ final class UsageSampleStabilityGateTests: XCTestCase {
             cycleStartDate: cycleStart.addingTimeInterval(178)
         )
 
-        XCTAssertNil(gate.verifiedUsage(scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous))
+        XCTAssertNil(
+            gate.verifiedUsage(scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous)
+        )
         XCTAssertTrue(
-            gate.verifiedUsage(scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous)?.wasConfirmed == true
+            gate.verifiedUsage(
+                scope: "Codex::5h", incoming: earlyReset, previousAccepted: previous)?.wasConfirmed
+                == true
         )
     }
 }

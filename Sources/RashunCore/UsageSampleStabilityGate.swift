@@ -38,7 +38,8 @@ public struct UsageSampleStabilityGate {
     public mutating func verifiedUsage(
         scope: String,
         incoming: UsageResult,
-        previousAccepted: UsageResult?
+        previousAccepted: UsageResult?,
+        now: Date = Date()
     ) -> VerifiedUsage? {
         guard let previousAccepted else {
             candidates.removeValue(forKey: scope)
@@ -59,14 +60,39 @@ public struct UsageSampleStabilityGate {
         }
 
         guard isPotentialQuotaIncrease(from: previousAccepted, to: incoming) else {
-            return VerifiedUsage(usage: incoming, previousAccepted: previousAccepted, wasConfirmed: false)
+            return VerifiedUsage(
+                usage: incoming, previousAccepted: previousAccepted, wasConfirmed: false)
+        }
+
+        if isExpectedReset(from: previousAccepted, to: incoming, now: now) {
+            candidates.removeValue(forKey: scope)
+            return VerifiedUsage(
+                usage: incoming,
+                previousAccepted: previousAccepted,
+                wasConfirmed: true,
+                confirmedResetUsage: incoming
+            )
         }
 
         candidates[scope] = Candidate(usage: incoming, previousAccepted: previousAccepted)
         return nil
     }
 
-    private func isPotentialQuotaIncrease(from previous: UsageResult, to current: UsageResult) -> Bool {
+    private func isExpectedReset(from previous: UsageResult, to current: UsageResult, now: Date)
+        -> Bool
+    {
+        guard let previousReset = previous.resetDate,
+            previousReset <= now.addingTimeInterval(2 * 60),
+            previousReset >= now.addingTimeInterval(-10 * 60),
+            let currentReset = current.resetDate,
+            currentReset > previousReset
+        else { return false }
+        return true
+    }
+
+    private func isPotentialQuotaIncrease(from previous: UsageResult, to current: UsageResult)
+        -> Bool
+    {
         // Remaining quota is monotonic within a usage cycle. Provider glitches
         // are not always dramatic near-full jumps; small upward blips are just
         // as visible in history and must also wait for independent confirmation.
@@ -75,17 +101,18 @@ public struct UsageSampleStabilityGate {
 
     private func confirms(candidate: Candidate, with current: UsageResult) -> Bool {
         switch (candidate.usage.resetDate, current.resetDate) {
-        case let (candidateReset?, currentReset?):
+        case (let candidateReset?, let currentReset?):
             // Providers occasionally round or slightly revise the reset time.
             // Require the quota itself to remain close too. A reset date alone
             // has proven insufficient evidence when an API glitches.
             let distanceFromCandidate = abs(currentReset.timeIntervalSince(candidateReset))
             if let previousReset = candidate.previousAccepted.resetDate,
-               abs(currentReset.timeIntervalSince(previousReset)) < distanceFromCandidate {
+                abs(currentReset.timeIntervalSince(previousReset)) < distanceFromCandidate
+            {
                 return false
             }
-            return distanceFromCandidate <= 60 &&
-                abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10
+            return distanceFromCandidate <= 60
+                && abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10
         case (nil, nil):
             // Allow a modest amount of real post-reset usage between polls.
             return abs(current.percentRemaining - candidate.usage.percentRemaining) <= 10

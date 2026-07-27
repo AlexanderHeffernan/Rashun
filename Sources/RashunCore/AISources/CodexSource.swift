@@ -1,9 +1,14 @@
 import Foundation
+
 #if canImport(FoundationNetworking)
-import FoundationNetworking
+    import FoundationNetworking
 #endif
 
 public struct CodexSource: AISource {
+    public static let bankedResetReceivedRuleID = "bankedResetReceived"
+    public static let bankedResetExpiringRuleID = "bankedResetExpiring"
+    public static let expirationWarningDaysInputID = "warningDays"
+
     private actor ResetBalanceCache {
         private var lastValue: CodexResetBalance?
 
@@ -20,7 +25,9 @@ public struct CodexSource: AISource {
         private var inFlight: Task<[String: UsageResult], Error>?
         private var lastValue: (timestamp: Date, usages: [String: UsageResult])?
 
-        func usages(loader: @escaping @Sendable () async throws -> [String: UsageResult]) async throws -> [String: UsageResult] {
+        func usages(loader: @escaping @Sendable () async throws -> [String: UsageResult])
+            async throws -> [String: UsageResult]
+        {
             if let cached = lastValue, Date().timeIntervalSince(cached.timestamp) < 2 {
                 return cached.usages
             }
@@ -46,9 +53,11 @@ public struct CodexSource: AISource {
     private static let resetBalanceCache = ResetBalanceCache()
 
     public let name = "Codex"
-    public let requirements = "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
+    public let requirements =
+        "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
     public let metrics = [
-        AISourceMetric(id: "codex-free-weekly", title: "Free Weekly Usage", menuBarBadgeText: "Free"),
+        AISourceMetric(
+            id: "codex-free-weekly", title: "Free Weekly Usage", menuBarBadgeText: "Free"),
         AISourceMetric(id: "codex-pro-5h", title: "Pro 5 Hour", menuBarBadgeText: "5h"),
         AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly", menuBarBadgeText: "7d"),
     ]
@@ -57,13 +66,44 @@ public struct CodexSource: AISource {
     public var agentConfigDirectory: String? { "~/.codex" }
     public var agentInstructionFilePath: String? { "~/.codex/AGENTS.md" }
 
+    public var sourceNotificationDefinitions: [NotificationDefinition] {
+        [
+            NotificationDefinition(
+                id: Self.bankedResetReceivedRuleID,
+                title: "Banked reset received",
+                detail: "Notifies when a new Codex banked reset becomes available.",
+                inputs: [],
+                evaluate: { _ in nil }
+            ),
+            NotificationDefinition(
+                id: Self.bankedResetExpiringRuleID,
+                title: "Banked reset expiring",
+                detail: "Warns once for each banked reset expiration.",
+                inputs: [
+                    NotificationInputSpec(
+                        id: Self.expirationWarningDaysInputID,
+                        label: "Lead time",
+                        unit: "days",
+                        defaultValue: 2,
+                        min: 1,
+                        max: 30,
+                        step: 1
+                    )
+                ],
+                evaluate: { _ in nil }
+            ),
+        ]
+    }
+
     public init() {}
 
     public static func latestResetBalance() async -> CodexResetBalance? {
         await resetBalanceCache.value()
     }
 
-    public func pacingLookbackStart(for metricId: String) -> ((_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?)? {
+    public func pacingLookbackStart(for metricId: String) -> (
+        (_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?
+    )? {
         { current, _, _ in
             current.cycleStartDate
         }
@@ -91,19 +131,25 @@ public struct CodexSource: AISource {
             sample.planType == "free" && sample.primary?.windowMinutes == 10_080
         }
         guard sample.planType == "free",
-              let primary = sample.primary,
-              primary.windowMinutes == 10_080,
-              let usage = parseUsageWindow(primary) else {
+            let primary = sample.primary,
+            primary.windowMinutes == 10_080,
+            let usage = parseUsageWindow(primary)
+        else {
             throw CodexFetchError.noTokenCountEvents
         }
         return usage
     }
 
-    private func latestRateLimitSample(matching predicate: (CodexRateLimitSample) -> Bool = { _ in true }) throws -> CodexRateLimitSample {
-        let sessionsURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/sessions")
+    private func latestRateLimitSample(
+        matching predicate: (CodexRateLimitSample) -> Bool = { _ in true }
+    ) throws -> CodexRateLimitSample {
+        let sessionsURL = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(
+            ".codex/sessions")
         let sessionsPath = sessionsURL.path
         var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: sessionsPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+        guard FileManager.default.fileExists(atPath: sessionsPath, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else {
             throw CodexFetchError.sessionsDirectoryMissing(path: sessionsPath)
         }
         guard FileManager.default.isReadableFile(atPath: sessionsPath) else {
@@ -120,7 +166,8 @@ public struct CodexSource: AISource {
         var latestSample: CodexRateLimitSample?
         for fileURL in files {
             guard let text = try? String(contentsOf: fileURL, encoding: .utf8),
-                  let sample = parseLatestRateLimitSample(from: text, matching: predicate) else {
+                let sample = parseLatestRateLimitSample(from: text, matching: predicate)
+            else {
                 continue
             }
 
@@ -140,7 +187,8 @@ public struct CodexSource: AISource {
     }
 
     private let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
-    private let resetCreditsURL = URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
+    private let resetCreditsURL = URL(
+        string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
     private let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
     private let oauthClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
@@ -167,7 +215,8 @@ public struct CodexSource: AISource {
         var usages: [String: UsageResult] = [:]
         for window in [sample.primary, sample.secondary].compactMap({ $0 }) {
             guard let metricId = proMetricId(windowMinutes: window.windowMinutes),
-                  let usage = parseUsageWindow(window) else { continue }
+                let usage = parseUsageWindow(window)
+            else { continue }
             usages[metricId] = usage
         }
         return usages
@@ -179,7 +228,8 @@ public struct CodexSource: AISource {
             .compactMap { $0 }
         for window in windows {
             guard let metricId = proMetricId(windowSeconds: window.limitWindowSeconds),
-                  let usage = parseUsageWindow(window) else { continue }
+                let usage = parseUsageWindow(window)
+            else { continue }
             parsed[metricId] = usage
         }
         return parsed
@@ -201,7 +251,9 @@ public struct CodexSource: AISource {
         return parseResetBalance(fromJSONObject: object, now: now)
     }
 
-    public func parseResetBalance(fromJSONObject object: Any, now: Date = Date()) -> CodexResetBalance? {
+    public func parseResetBalance(fromJSONObject object: Any, now: Date = Date())
+        -> CodexResetBalance?
+    {
         if let explicit = explicitRateLimitResetCredits(in: object, now: now) {
             return explicit
         }
@@ -210,7 +262,8 @@ public struct CodexSource: AISource {
             .compactMap { parseResetBalanceCandidate($0, now: now) }
             .max { lhs, rhs in
                 if lhs.count == rhs.count {
-                    return (lhs.nextExpiration ?? .distantFuture) > (rhs.nextExpiration ?? .distantFuture)
+                    return (lhs.nextExpiration ?? .distantFuture)
+                        > (rhs.nextExpiration ?? .distantFuture)
                 }
                 return lhs.count < rhs.count
             }
@@ -226,7 +279,8 @@ public struct CodexSource: AISource {
         } else {
             cycleStartDate = nil
         }
-        return UsageResult(remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
+        return UsageResult(
+            remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
     }
 
     private func parseUsageWindow(_ window: CodexLogRateLimitWindow?) -> UsageResult? {
@@ -239,43 +293,51 @@ public struct CodexSource: AISource {
         } else {
             cycleStartDate = nil
         }
-        return UsageResult(remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
+        return UsageResult(
+            remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
     }
 
-    public func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation {
+    public func mapFetchError(for metricId: String, _ error: Error) -> SourceFetchErrorPresentation
+    {
         if let codexError = error as? CodexFetchError {
             switch codexError {
-            case let .sessionsDirectoryMissing(path):
+            case .sessionsDirectoryMissing(let path):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex sessions folder missing",
-                    detailedMessage: "Expected Codex sessions folder was not found at \(path). Open Codex and run at least one request, then retry."
+                    detailedMessage:
+                        "Expected Codex sessions folder was not found at \(path). Open Codex and run at least one request, then retry."
                 )
-            case let .sessionsDirectoryUnreadable(path):
+            case .sessionsDirectoryUnreadable(let path):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex sessions unreadable",
-                    detailedMessage: "Rashun cannot read Codex session files at \(path). Check file permissions and try again."
+                    detailedMessage:
+                        "Rashun cannot read Codex session files at \(path). Check file permissions and try again."
                 )
-            case let .sessionsEnumerationFailed(path):
+            case .sessionsEnumerationFailed(let path):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Could not read Codex sessions",
-                    detailedMessage: "Rashun failed to enumerate files in \(path). Check permissions and that the folder is accessible."
+                    detailedMessage:
+                        "Rashun failed to enumerate files in \(path). Check permissions and that the folder is accessible."
                 )
-            case let .noSessionFiles(path):
+            case .noSessionFiles(let path):
                 return SourceFetchErrorPresentation(
                     shortMessage: "No Codex sessions found",
-                    detailedMessage: "No recent `.jsonl` session files were found in \(path). Open Codex and run at least one request, then retry."
+                    detailedMessage:
+                        "No recent `.jsonl` session files were found in \(path). Open Codex and run at least one request, then retry."
                 )
             case .noTokenCountEvents:
                 return SourceFetchErrorPresentation(
                     shortMessage: "No Codex usage data yet",
-                    detailedMessage: "Recent Codex sessions did not include token usage events. Run a Codex request that emits `token_count` data, then try again."
+                    detailedMessage:
+                        "Recent Codex sessions did not include token usage events. Run a Codex request that emits `token_count` data, then try again."
                 )
-            case let .authMissing(path):
+            case .authMissing(let path):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex auth missing",
-                    detailedMessage: "Expected Codex auth file was not found at \(path). Open Codex and sign in with ChatGPT, then try again."
+                    detailedMessage:
+                        "Expected Codex auth file was not found at \(path). Open Codex and sign in with ChatGPT, then try again."
                 )
-            case let .authReadFailed(message):
+            case .authReadFailed(let message):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Cannot read Codex auth",
                     detailedMessage: "Failed to read Codex auth. \(message)"
@@ -283,25 +345,28 @@ public struct CodexSource: AISource {
             case .accessTokenMissing:
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex auth incomplete",
-                    detailedMessage: "Codex auth.json did not contain an access token. Open Codex and sign in again."
+                    detailedMessage:
+                        "Codex auth.json did not contain an access token. Open Codex and sign in again."
                 )
             case .refreshTokenMissing:
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex auth refresh unavailable",
-                    detailedMessage: "Codex auth.json did not contain a refresh token. Open Codex and sign in again."
+                    detailedMessage:
+                        "Codex auth.json did not contain a refresh token. Open Codex and sign in again."
                 )
-            case let .tokenRefreshFailed(statusCode, bodySnippet):
+            case .tokenRefreshFailed(let statusCode, let bodySnippet):
                 let suffix = bodySnippet.isEmpty ? "" : " Response: \(bodySnippet)"
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex token refresh failed",
-                    detailedMessage: "Codex OAuth token refresh failed with HTTP \(statusCode).\(suffix)"
+                    detailedMessage:
+                        "Codex OAuth token refresh failed with HTTP \(statusCode).\(suffix)"
                 )
             case .tokenRefreshMissingAccessToken:
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex auth issue",
                     detailedMessage: "Codex token refresh succeeded but returned no access token."
                 )
-            case let .usageAPIStatus(statusCode, bodySnippet):
+            case .usageAPIStatus(let statusCode, let bodySnippet):
                 let suffix = bodySnippet.isEmpty ? "" : " Response: \(bodySnippet)"
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex API error (\(statusCode))",
@@ -310,9 +375,10 @@ public struct CodexSource: AISource {
             case .usagePayloadInvalid:
                 return SourceFetchErrorPresentation(
                     shortMessage: "Unexpected Codex response",
-                    detailedMessage: "Codex usage API response was missing expected rate limit fields. If this persists, the endpoint response format may have changed."
+                    detailedMessage:
+                        "Codex usage API response was missing expected rate limit fields. If this persists, the endpoint response format may have changed."
                 )
-            case let .proUsageWindowMissing(metricId):
+            case .proUsageWindowMissing(let metricId):
                 return SourceFetchErrorPresentation(
                     shortMessage: "Codex usage unavailable",
                     detailedMessage: "Codex usage API did not include data for \(metricId)."
@@ -323,7 +389,8 @@ public struct CodexSource: AISource {
         if let urlError = error as? URLError {
             return SourceFetchErrorPresentation(
                 shortMessage: "Network error",
-                detailedMessage: "Network request to Codex failed (\(urlError.code.rawValue)). Check connectivity, VPN/proxy settings, and try again."
+                detailedMessage:
+                    "Network request to Codex failed (\(urlError.code.rawValue)). Check connectivity, VPN/proxy settings, and try again."
             )
         }
 
@@ -334,7 +401,9 @@ public struct CodexSource: AISource {
         )
     }
 
-    public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot]) -> ForecastResult? {
+    public func forecast(for metricId: String, current: UsageResult, history: [UsageSnapshot])
+        -> ForecastResult?
+    {
         guard let resetDate = current.resetDate, resetDate > Date() else { return nil }
         return UsageForecastEngine.resetWindowForecast(
             sourceLabel: name,
@@ -351,22 +420,27 @@ public struct CodexSource: AISource {
 
     public func newestSessionFiles(in root: URL, limit: Int) -> [URL]? {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentModificationDateKey]
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: Array(keys)) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: root, includingPropertiesForKeys: Array(keys))
+        else {
             return nil
         }
 
         var candidates: [(url: URL, modified: Date)] = []
         for case let fileURL as URL in enumerator {
             guard fileURL.pathExtension == "jsonl",
-                  let values = try? fileURL.resourceValues(forKeys: keys),
-                  values.isRegularFile == true else {
+                let values = try? fileURL.resourceValues(forKeys: keys),
+                values.isRegularFile == true
+            else {
                 continue
             }
 
             candidates.append((fileURL, values.contentModificationDate ?? .distantPast))
         }
 
-        return candidates
+        return
+            candidates
             .sorted { $0.modified > $1.modified }
             .prefix(max(1, limit))
             .map(\.url)
@@ -382,22 +456,24 @@ public struct CodexSource: AISource {
     ) -> CodexRateLimitSample? {
         for line in sessionContent.split(whereSeparator: \.isNewline).reversed() {
             guard line.contains("\"type\":\"event_msg\""),
-                  line.contains("\"type\":\"token_count\""),
-                  line.contains("\"used_percent\""),
-                  let data = String(line).data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let payload = object["payload"] as? [String: Any],
-                  let payloadType = payload["type"] as? String,
-                  payloadType == "token_count",
-                  let rateLimits = rateLimits(from: object, payload: payload),
-                  let primary = rateLimits["primary"] as? [String: Any],
-                  let usedPercent = numericValue(primary["used_percent"]) else {
+                line.contains("\"type\":\"token_count\""),
+                line.contains("\"used_percent\""),
+                let data = String(line).data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let payload = object["payload"] as? [String: Any],
+                let payloadType = payload["type"] as? String,
+                payloadType == "token_count",
+                let rateLimits = rateLimits(from: object, payload: payload),
+                let primary = rateLimits["primary"] as? [String: Any],
+                let usedPercent = numericValue(primary["used_percent"])
+            else {
                 continue
             }
 
             if let limitID = rateLimits["limit_id"] as? String,
-               !limitID.isEmpty,
-               limitID != "codex" {
+                !limitID.isEmpty,
+                limitID != "codex"
+            {
                 continue
             }
 
@@ -409,7 +485,8 @@ public struct CodexSource: AISource {
             )
             let secondaryWindow: CodexLogRateLimitWindow?
             if let secondary = rateLimits["secondary"] as? [String: Any],
-               let secondaryUsedPercent = numericValue(secondary["used_percent"]) {
+                let secondaryUsedPercent = numericValue(secondary["used_percent"])
+            {
                 secondaryWindow = CodexLogRateLimitWindow(
                     usedPercent: secondaryUsedPercent,
                     resetsAt: numericValue(secondary["resets_at"]),
@@ -438,7 +515,8 @@ public struct CodexSource: AISource {
         }
 
         if let info = payload["info"] as? [String: Any],
-           let rateLimits = info["rate_limits"] as? [String: Any] {
+            let rateLimits = info["rate_limits"] as? [String: Any]
+        {
             return rateLimits
         }
 
@@ -489,11 +567,13 @@ public struct CodexSource: AISource {
 
         for attempt in 0..<2 {
             var request = URLRequest(url: usageURL)
-            addCodexAPIHeaders(to: &request, accessToken: accessToken, accountID: auth.tokens.accountID)
+            addCodexAPIHeaders(
+                to: &request, accessToken: accessToken, accountID: auth.tokens.accountID)
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
-                throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Non-HTTP response")
+                throw CodexFetchError.usageAPIStatus(
+                    statusCode: -1, bodySnippet: "Non-HTTP response")
             }
             if http.statusCode == 200 {
                 let fallbackResetBalance = parseResetBalance(from: data)
@@ -510,31 +590,39 @@ public struct CodexSource: AISource {
                 }
                 return decoded
             }
-            if (http.statusCode == 401 || http.statusCode == 403), attempt == 0 {
+            if http.statusCode == 401 || http.statusCode == 403, attempt == 0 {
                 accessToken = try await refreshAccessToken(auth: auth)
                 continue
             }
-            throw CodexFetchError.usageAPIStatus(statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
+            throw CodexFetchError.usageAPIStatus(
+                statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
         }
 
-        throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Failed after token refresh")
+        throw CodexFetchError.usageAPIStatus(
+            statusCode: -1, bodySnippet: "Failed after token refresh")
     }
 
-    private func fetchResetCreditsBalance(accessToken: String, accountID: String?) async throws -> CodexResetBalance? {
+    private func fetchResetCreditsBalance(accessToken: String, accountID: String?) async throws
+        -> CodexResetBalance?
+    {
         var request = URLRequest(url: resetCreditsURL)
         addCodexAPIHeaders(to: &request, accessToken: accessToken, accountID: accountID)
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw CodexFetchError.usageAPIStatus(statusCode: -1, bodySnippet: "Non-HTTP reset credits response")
+            throw CodexFetchError.usageAPIStatus(
+                statusCode: -1, bodySnippet: "Non-HTTP reset credits response")
         }
         guard http.statusCode == 200 else {
-            throw CodexFetchError.usageAPIStatus(statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
+            throw CodexFetchError.usageAPIStatus(
+                statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
         }
         return parseResetBalance(from: data)
     }
 
-    private func addCodexAPIHeaders(to request: inout URLRequest, accessToken: String, accountID: String?) {
+    private func addCodexAPIHeaders(
+        to request: inout URLRequest, accessToken: String, accountID: String?
+    ) {
         request.addValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         if let accountID, !accountID.isEmpty {
             request.addValue(accountID, forHTTPHeaderField: "chatgpt-account-id")
@@ -566,10 +654,12 @@ public struct CodexSource: AISource {
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
-            throw CodexFetchError.tokenRefreshFailed(statusCode: -1, bodySnippet: "Non-HTTP response")
+            throw CodexFetchError.tokenRefreshFailed(
+                statusCode: -1, bodySnippet: "Non-HTTP response")
         }
         guard http.statusCode == 200 else {
-            throw CodexFetchError.tokenRefreshFailed(statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
+            throw CodexFetchError.tokenRefreshFailed(
+                statusCode: http.statusCode, bodySnippet: bodySnippet(from: data))
         }
 
         let refreshResponse = try JSONDecoder().decode(CodexTokenRefreshResponse.self, from: data)
@@ -584,7 +674,8 @@ public struct CodexSource: AISource {
         let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/auth.json")
         let data = try Data(contentsOf: url)
         guard var root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              var tokens = root["tokens"] as? [String: Any] else {
+            var tokens = root["tokens"] as? [String: Any]
+        else {
             throw CodexFetchError.authReadFailed(message: "Unexpected auth.json structure.")
         }
 
@@ -592,13 +683,15 @@ public struct CodexSource: AISource {
         root["tokens"] = tokens
         root["last_refresh"] = ISO8601DateFormatter().string(from: Date())
 
-        let updated = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        let updated = try JSONSerialization.data(
+            withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
         try updated.write(to: url, options: .atomic)
     }
 
     private func bodySnippet(from data: Data, maxLength: Int = 500) -> String {
         let raw = String(data: data, encoding: .utf8) ?? ""
-        let singleLine = raw
+        let singleLine =
+            raw
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return String(singleLine.prefix(maxLength))
@@ -630,7 +723,8 @@ public struct CodexSource: AISource {
 
     private func parseRateLimitResetCredits(_ value: Any, now: Date) -> CodexResetBalance? {
         if let array = value as? [Any] {
-            let expirations = array
+            let expirations =
+                array
                 .compactMap { resetExpiration(in: $0) }
                 .filter { $0 > now }
             return CodexResetBalance(count: expirations.count, nextExpiration: expirations.min())
@@ -662,7 +756,8 @@ public struct CodexSource: AISource {
                 if isResetBalanceKey(lowered) {
                     candidates.append(nested)
                 }
-                candidates.append(contentsOf: resetBalanceCandidates(in: nested, keyPath: keyPath + [lowered]))
+                candidates.append(
+                    contentsOf: resetBalanceCandidates(in: nested, keyPath: keyPath + [lowered]))
             }
             return candidates
         }
@@ -697,18 +792,22 @@ public struct CodexSource: AISource {
         if let array = value as? [Any] {
             let activeExpirations = array.compactMap { resetExpiration(in: $0) }.filter { $0 > now }
             if !activeExpirations.isEmpty {
-                return CodexResetBalance(count: activeExpirations.count, nextExpiration: activeExpirations.min())
+                return CodexResetBalance(
+                    count: activeExpirations.count, nextExpiration: activeExpirations.min())
             }
             let nested = array.compactMap { parseResetBalanceCandidate($0, now: now) }
             guard !nested.isEmpty else { return nil }
             let count = nested.reduce(0) { $0 + $1.count }
-            return CodexResetBalance(count: count, nextExpiration: nested.compactMap(\.nextExpiration).min())
+            return CodexResetBalance(
+                count: count, nextExpiration: nested.compactMap(\.nextExpiration).min())
         }
 
         guard let dictionary = value as? [String: Any] else { return nil }
-        let nestedArrays = ["grants", "items", "data", "credits", "resets", "banked_resets", "bankable_resets"]
-            .compactMap { dictionary[$0] }
-            .compactMap { parseResetBalanceCandidate($0, now: now) }
+        let nestedArrays = [
+            "grants", "items", "data", "credits", "resets", "banked_resets", "bankable_resets",
+        ]
+        .compactMap { dictionary[$0] }
+        .compactMap { parseResetBalanceCandidate($0, now: now) }
 
         if !nestedArrays.isEmpty {
             let nestedCount = nestedArrays.reduce(0) { $0 + $1.count }
@@ -813,7 +912,10 @@ public struct CodexRateLimitSample {
     public let secondary: CodexLogRateLimitWindow?
     public let planType: String?
 
-    public init(timestamp: Date, primary: CodexLogRateLimitWindow?, secondary: CodexLogRateLimitWindow?, planType: String?) {
+    public init(
+        timestamp: Date, primary: CodexLogRateLimitWindow?, secondary: CodexLogRateLimitWindow?,
+        planType: String?
+    ) {
         self.timestamp = timestamp
         self.primary = primary
         self.secondary = secondary
@@ -874,11 +976,74 @@ public struct CodexResetBalance: Sendable, Equatable {
     }
 }
 
+public struct CodexResetAlertState: Codable, Sendable, Equatable {
+    public var lastCount: Int?
+    public var notifiedExpirationKeys: Set<String>
+
+    public init(lastCount: Int? = nil, notifiedExpirationKeys: Set<String> = []) {
+        self.lastCount = lastCount
+        self.notifiedExpirationKeys = notifiedExpirationKeys
+    }
+}
+
+public enum CodexResetAlertEvaluator {
+    public static func evaluate(
+        balance: CodexResetBalance,
+        state: CodexResetAlertState,
+        now: Date = Date(),
+        notifyOnReceived: Bool = true,
+        notifyOnExpiration: Bool = true,
+        expirationWarningDays: Double = 2
+    ) -> (events: [NotificationEvent], state: CodexResetAlertState) {
+        var nextState = state
+        var events: [NotificationEvent] = []
+        if notifyOnReceived,
+            let previousCount = state.lastCount,
+            balance.count > previousCount
+        {
+            let added = balance.count - previousCount
+            events.append(
+                NotificationEvent(
+                    title: "Codex banked reset received",
+                    body:
+                        "\(added) new banked \(added == 1 ? "reset is" : "resets are") available.",
+                    cooldownSeconds: nil,
+                    cycleKey: "count:\(balance.count)"
+                ))
+        }
+        nextState.lastCount = balance.count
+
+        if notifyOnExpiration,
+            let expiration = balance.nextExpiration,
+            expiration > now,
+            expiration.timeIntervalSince(now) <= expirationWarningDays * 24 * 3600
+        {
+            let key = ISO8601DateFormatter().string(from: expiration)
+            if !state.notifiedExpirationKeys.contains(key) {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                events.append(
+                    NotificationEvent(
+                        title: "Codex banked reset expiring",
+                        body: "A banked reset expires \(formatter.string(from: expiration)).",
+                        cooldownSeconds: nil,
+                        cycleKey: key
+                    ))
+                nextState.notifiedExpirationKeys.insert(key)
+            }
+        }
+        return (events, nextState)
+    }
+}
+
 public struct CodexRateLimit: Decodable {
     public let primaryWindow: CodexRateLimitWindow?
     public let secondaryWindow: CodexRateLimitWindow?
 
-    public init(primaryWindow: CodexRateLimitWindow? = nil, secondaryWindow: CodexRateLimitWindow? = nil) {
+    public init(
+        primaryWindow: CodexRateLimitWindow? = nil, secondaryWindow: CodexRateLimitWindow? = nil
+    ) {
         self.primaryWindow = primaryWindow
         self.secondaryWindow = secondaryWindow
     }
@@ -894,7 +1059,9 @@ public struct CodexRateLimitWindow: Decodable {
     public let resetAt: Double?
     public let limitWindowSeconds: Double?
 
-    public init(usedPercent: Double? = nil, resetAt: Double? = nil, limitWindowSeconds: Double? = nil) {
+    public init(
+        usedPercent: Double? = nil, resetAt: Double? = nil, limitWindowSeconds: Double? = nil
+    ) {
         self.usedPercent = usedPercent
         self.resetAt = resetAt
         self.limitWindowSeconds = limitWindowSeconds
