@@ -1,13 +1,18 @@
 import Foundation
 
 public enum ChartTimeRange: String, CaseIterable, Hashable {
+    case hour = "Hour"
     case day = "Day"
     case week = "Week"
     case month = "Month"
     case all = "All"
 
-    public func rangeBounds(now: Date, calendar: Calendar = .current) -> (start: Date?, end: Date?) {
+    public func rangeBounds(now: Date, calendar: Calendar = .current) -> (start: Date?, end: Date?)
+    {
         switch self {
+        case .hour:
+            let interval = calendar.dateInterval(of: .hour, for: now)
+            return (interval?.start, interval?.end)
         case .day:
             let interval = calendar.dateInterval(of: .day, for: now)
             return (interval?.start, interval?.end)

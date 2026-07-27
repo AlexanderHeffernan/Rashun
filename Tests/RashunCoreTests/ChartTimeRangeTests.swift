@@ -1,7 +1,23 @@
 import XCTest
+
 @testable import RashunCore
 
 final class ChartTimeRangeTests: XCTestCase {
+
+    func testHourUsesCurrentCalendarHour() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 14, minute: 37))
+        )
+
+        let (start, end) = ChartTimeRange.hour.rangeBounds(now: now, calendar: calendar)
+
+        XCTAssertEqual(
+            start, calendar.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 14)))
+        XCTAssertEqual(
+            end, calendar.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 15)))
+    }
 
     func testAll_returnsNilBounds() {
         let (start, end) = ChartTimeRange.all.rangeBounds(now: Date())

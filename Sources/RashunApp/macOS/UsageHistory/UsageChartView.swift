@@ -12,6 +12,7 @@ final class UsageChartView: NSView {
     }
 
     private enum XAxisTickStride {
+        case minutes(Int)
         case hours(Int)
         case days(Int)
         case months(Int)
@@ -52,7 +53,9 @@ final class UsageChartView: NSView {
         if let trackingAreaRef {
             removeTrackingArea(trackingAreaRef)
         }
-        let options: NSTrackingArea.Options = [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect]
+        let options: NSTrackingArea.Options = [
+            .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect,
+        ]
         let tracking = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
         addTrackingArea(tracking)
         trackingAreaRef = tracking
@@ -66,11 +69,13 @@ final class UsageChartView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         if chartRect.contains(location),
-           let (startDate, endDate) = effectiveDateRange(),
-           endDate > startDate {
+            let (startDate, endDate) = effectiveDateRange(),
+            endDate > startDate
+        {
             let clampedX = min(max(location.x, chartRect.minX), chartRect.maxX)
             let fraction = (clampedX - chartRect.minX) / chartRect.width
-            hoverDate = startDate.addingTimeInterval(endDate.timeIntervalSince(startDate) * Double(fraction))
+            hoverDate = startDate.addingTimeInterval(
+                endDate.timeIntervalSince(startDate) * Double(fraction))
         } else {
             hoverDate = nil
         }
@@ -113,10 +118,14 @@ final class UsageChartView: NSView {
         NSBezierPath(rect: chart).addClip()
 
         for s in series {
-            drawLine(s.paceGuide, color: s.color.withAlphaComponent(0.42), in: chart, start: startDate, end: endDate, dashed: true, lineWidth: 1.25, dashPattern: [2, 5])
+            drawLine(
+                s.paceGuide, color: s.color.withAlphaComponent(0.42), in: chart, start: startDate,
+                end: endDate, dashed: true, lineWidth: 1.25, dashPattern: [2, 5])
             drawArea(s.points, color: s.color, in: chart, start: startDate, end: endDate)
             drawLine(s.points, color: s.color, in: chart, start: startDate, end: endDate)
-            drawLine(s.forecast, color: s.color.withAlphaComponent(0.78), in: chart, start: startDate, end: endDate, dashed: true)
+            drawLine(
+                s.forecast, color: s.color.withAlphaComponent(0.78), in: chart, start: startDate,
+                end: endDate, dashed: true)
         }
 
         if let hoverDate {
@@ -141,7 +150,8 @@ final class UsageChartView: NSView {
         let paceGuidePoints = series.flatMap(\.paceGuide)
         let allPoints = actualPoints + forecastPoints + paceGuidePoints
         guard let earliest = allPoints.min(by: { $0.date < $1.date })?.date,
-              let latest = allPoints.max(by: { $0.date < $1.date })?.date else {
+            let latest = allPoints.max(by: { $0.date < $1.date })?.date
+        else {
             return nil
         }
 
@@ -199,7 +209,8 @@ final class UsageChartView: NSView {
             let label = "\(Int(pct))%"
             let size = label.size(withAttributes: attrs)
             label.draw(
-                at: NSPoint(x: rect.minX - size.width - 6, y: yFor(pct, in: rect) - size.height / 2),
+                at: NSPoint(
+                    x: rect.minX - size.width - 6, y: yFor(pct, in: rect) - size.height / 2),
                 withAttributes: attrs
             )
         }
@@ -208,15 +219,7 @@ final class UsageChartView: NSView {
     private func drawXAxisLabels(in rect: NSRect, start: Date, end: Date) {
         let totalSeconds = end.timeIntervalSince(start)
         let formatter = DateFormatter()
-        if totalSeconds <= 36 * 3600 {
-            formatter.dateFormat = "h a MMM d"
-        } else if totalSeconds <= 10 * 24 * 3600 {
-            formatter.dateFormat = "MMM d"
-        } else if totalSeconds <= 45 * 24 * 3600 {
-            formatter.dateFormat = "MMM d"
-        } else {
-            formatter.dateFormat = "MMM yyyy"
-        }
+        formatter.dateFormat = Self.xAxisTickDateFormat(duration: totalSeconds)
 
         let attrs = axisLabelAttributes()
         for date in xAxisTicks(start: start, end: end) {
@@ -229,6 +232,33 @@ final class UsageChartView: NSView {
                 withAttributes: attrs
             )
         }
+
+        if let dateContextFormat = Self.xAxisDateContextFormat(duration: totalSeconds) {
+            formatter.dateFormat = dateContextFormat
+            let label = formatter.string(from: start)
+            let size = label.size(withAttributes: attrs)
+            label.draw(
+                at: NSPoint(x: rect.midX - size.width / 2, y: bounds.minY + 2),
+                withAttributes: attrs
+            )
+        }
+    }
+
+    nonisolated static func xAxisTickDateFormat(duration: TimeInterval) -> String {
+        if duration <= 2 * 3600 {
+            return "h:mm"
+        }
+        if duration <= 36 * 3600 {
+            return "h a MMM d"
+        }
+        if duration <= 45 * 24 * 3600 {
+            return "MMM d"
+        }
+        return "MMM yyyy"
+    }
+
+    nonisolated static func xAxisDateContextFormat(duration: TimeInterval) -> String? {
+        duration <= 2 * 3600 ? "MMM d, yyyy" : nil
     }
 
     private func xAxisTicks(start: Date, end: Date, calendar: Calendar = .current) -> [Date] {
@@ -241,7 +271,8 @@ final class UsageChartView: NSView {
         while cursor <= end, safety < 160 {
             ticks.append(cursor)
             guard let next = nextXAxisTick(after: cursor, stride: stride, calendar: calendar),
-                  next > cursor else {
+                next > cursor
+            else {
                 break
             }
             cursor = next
@@ -252,6 +283,9 @@ final class UsageChartView: NSView {
     }
 
     private func xAxisTickStride(duration: TimeInterval) -> XAxisTickStride {
+        if duration <= 2 * 3600 {
+            return .minutes(10)
+        }
         if duration <= 36 * 3600 {
             return .hours(3)
         }
@@ -264,39 +298,71 @@ final class UsageChartView: NSView {
         return .months(1)
     }
 
-    private func firstXAxisTick(onOrAfter date: Date, stride: XAxisTickStride, calendar: Calendar) -> Date {
+    private func firstXAxisTick(onOrAfter date: Date, stride: XAxisTickStride, calendar: Calendar)
+        -> Date
+    {
         switch stride {
-        case let .hours(step):
-            guard let hourStart = calendar.dateInterval(of: .hour, for: date)?.start else { return date }
-            let firstHour = hourStart < date ? calendar.date(byAdding: .hour, value: 1, to: hourStart) ?? date : hourStart
+        case .minutes(let step):
+            guard let minuteStart = calendar.dateInterval(of: .minute, for: date)?.start else {
+                return date
+            }
+            let firstMinute =
+                minuteStart < date
+                ? calendar.date(byAdding: .minute, value: 1, to: minuteStart) ?? date : minuteStart
+            let minute = calendar.component(.minute, from: firstMinute)
+            let remainder = minute % step
+            if remainder == 0 { return firstMinute }
+            return calendar.date(byAdding: .minute, value: step - remainder, to: firstMinute)
+                ?? firstMinute
+        case .hours(let step):
+            guard let hourStart = calendar.dateInterval(of: .hour, for: date)?.start else {
+                return date
+            }
+            let firstHour =
+                hourStart < date
+                ? calendar.date(byAdding: .hour, value: 1, to: hourStart) ?? date : hourStart
             let hour = calendar.component(.hour, from: firstHour)
             let remainder = hour % step
             if remainder == 0 { return firstHour }
-            return calendar.date(byAdding: .hour, value: step - remainder, to: firstHour) ?? firstHour
-        case let .days(step):
-            guard let dayStart = calendar.dateInterval(of: .day, for: date)?.start else { return date }
-            var firstDay = dayStart < date ? calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date : dayStart
+            return calendar.date(byAdding: .hour, value: step - remainder, to: firstHour)
+                ?? firstHour
+        case .days(let step):
+            guard let dayStart = calendar.dateInterval(of: .day, for: date)?.start else {
+                return date
+            }
+            var firstDay =
+                dayStart < date
+                ? calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date : dayStart
             if step > 1 {
                 let ordinal = calendar.ordinality(of: .day, in: .era, for: firstDay) ?? 0
                 let remainder = ordinal % step
                 if remainder != 0 {
-                    firstDay = calendar.date(byAdding: .day, value: step - remainder, to: firstDay) ?? firstDay
+                    firstDay =
+                        calendar.date(byAdding: .day, value: step - remainder, to: firstDay)
+                        ?? firstDay
                 }
             }
             return firstDay
         case .months:
-            guard let monthStart = calendar.dateInterval(of: .month, for: date)?.start else { return date }
-            return monthStart < date ? calendar.date(byAdding: .month, value: 1, to: monthStart) ?? date : monthStart
+            guard let monthStart = calendar.dateInterval(of: .month, for: date)?.start else {
+                return date
+            }
+            return monthStart < date
+                ? calendar.date(byAdding: .month, value: 1, to: monthStart) ?? date : monthStart
         }
     }
 
-    private func nextXAxisTick(after date: Date, stride: XAxisTickStride, calendar: Calendar) -> Date? {
+    private func nextXAxisTick(after date: Date, stride: XAxisTickStride, calendar: Calendar)
+        -> Date?
+    {
         switch stride {
-        case let .hours(step):
+        case .minutes(let step):
+            return calendar.date(byAdding: .minute, value: step, to: date)
+        case .hours(let step):
             return calendar.date(byAdding: .hour, value: step, to: date)
-        case let .days(step):
+        case .days(let step):
             return calendar.date(byAdding: .day, value: step, to: date)
-        case let .months(step):
+        case .months(let step):
             return calendar.date(byAdding: .month, value: step, to: date)
         }
     }
@@ -304,11 +370,13 @@ final class UsageChartView: NSView {
     private func axisLabelAttributes() -> [NSAttributedString.Key: Any] {
         [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: NSColor.secondaryLabelColor,
         ]
     }
 
-    private func drawArea(_ points: [ChartPoint], color: NSColor, in rect: NSRect, start: Date, end: Date) {
+    private func drawArea(
+        _ points: [ChartPoint], color: NSColor, in rect: NSRect, start: Date, end: Date
+    ) {
         guard points.count >= 2 else { return }
 
         let path = NSBezierPath()
@@ -316,11 +384,16 @@ final class UsageChartView: NSView {
         path.move(to: NSPoint(x: firstX, y: yFor(0, in: rect)))
 
         for point in points {
-            path.line(to: NSPoint(x: xFor(point.date, in: rect, start: start, end: end), y: yFor(point.value, in: rect)))
+            path.line(
+                to: NSPoint(
+                    x: xFor(point.date, in: rect, start: start, end: end),
+                    y: yFor(point.value, in: rect)))
         }
 
         if let last = points.last {
-            path.line(to: NSPoint(x: xFor(last.date, in: rect, start: start, end: end), y: yFor(0, in: rect)))
+            path.line(
+                to: NSPoint(
+                    x: xFor(last.date, in: rect, start: start, end: end), y: yFor(0, in: rect)))
             path.close()
             color.withAlphaComponent(0.08).setFill()
             path.fill()
@@ -348,7 +421,9 @@ final class UsageChartView: NSView {
         }
 
         for (i, point) in points.enumerated() {
-            let p = NSPoint(x: xFor(point.date, in: rect, start: start, end: end), y: yFor(point.value, in: rect))
+            let p = NSPoint(
+                x: xFor(point.date, in: rect, start: start, end: end),
+                y: yFor(point.value, in: rect))
             if i == 0 { path.move(to: p) } else { path.line(to: p) }
         }
 
@@ -393,15 +468,15 @@ final class UsageChartView: NSView {
 
         let headerAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: NSColor.labelColor,
         ]
         let valueAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: NSColor.labelColor,
         ]
         let footnoteAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: NSColor.secondaryLabelColor,
         ]
 
         var lines: [(String, [NSAttributedString.Key: Any])] = []
@@ -416,7 +491,11 @@ final class UsageChartView: NSView {
             }
             lines.append((usageText, valueAttrs))
             if let paceGuide = value.paceGuide {
-                lines.append(("\(value.label) pace guide: \(String(format: "%.1f", paceGuide))%", footnoteAttrs))
+                lines.append(
+                    (
+                        "\(value.label) pace guide: \(String(format: "%.1f", paceGuide))%",
+                        footnoteAttrs
+                    ))
             }
         }
         if anyForecast {
@@ -476,12 +555,17 @@ final class UsageChartView: NSView {
         let paceGuideValue = value(at: date, from: series.paceGuide)
 
         if let lastActualDate, date <= lastActualDate, let actualValue {
-            return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false, paceGuide: paceGuideValue)
+            return HoverSeriesValue(
+                label: series.label, value: actualValue, isForecast: false,
+                paceGuide: paceGuideValue)
         }
         if let forecastValue {
-            return HoverSeriesValue(label: series.label, value: forecastValue, isForecast: true, paceGuide: paceGuideValue)
+            return HoverSeriesValue(
+                label: series.label, value: forecastValue, isForecast: true,
+                paceGuide: paceGuideValue)
         }
-        return HoverSeriesValue(label: series.label, value: actualValue, isForecast: false, paceGuide: paceGuideValue)
+        return HoverSeriesValue(
+            label: series.label, value: actualValue, isForecast: false, paceGuide: paceGuideValue)
     }
 
     private func value(at date: Date, from points: [ChartPoint]) -> Double? {
@@ -515,7 +599,7 @@ final class UsageChartView: NSView {
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor.labelColor
+            .foregroundColor: NSColor.labelColor,
         ]
         let dotSize: CGFloat = 8
         let dotSpacing: CGFloat = 6
@@ -543,9 +627,11 @@ final class UsageChartView: NSView {
     private func drawCenteredText(_ text: String, in rect: NSRect) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: NSColor.secondaryLabelColor,
         ]
         let size = text.size(withAttributes: attrs)
-        text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attrs)
+        text.draw(
+            at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2),
+            withAttributes: attrs)
     }
 }
