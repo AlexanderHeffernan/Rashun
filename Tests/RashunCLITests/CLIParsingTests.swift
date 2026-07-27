@@ -5,7 +5,6 @@ import XCTest
 
 @testable import RashunCLI
 
-@MainActor
 final class CLIParsingTests: XCTestCase {
     func testRootConfigurationIncludesExpectedSubcommands() {
         let names = Set(RashunCLI.configuration.subcommands.map { $0.configuration.commandName })
@@ -67,68 +66,78 @@ final class CLIParsingTests: XCTestCase {
     }
 
     func testTrackingStartIgnoresAppToggleAndStartsThroughCore() async throws {
-        let store = TrackedUsageStore(backend: InMemoryPersistenceBackend())
-        _ = try store.createLabel(name: "Work")
-        TrackingCommandStore.provider = { store }
-        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
-        let command = try TrackingCommand.Start.parse(["Work"])
+        try await Task { @MainActor in
+            let store = TrackedUsageStore(backend: InMemoryPersistenceBackend())
+            _ = try store.createLabel(name: "Work")
+            TrackingCommandStore.provider = { store }
+            defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+            let command = try TrackingCommand.Start.parse(["Work"])
 
-        try await command.run()
+            try await command.run()
 
-        XCTAssertEqual(try store.readActiveSession()?.labelNameSnapshot, "Work")
+            XCTAssertEqual(try store.readActiveSession()?.labelNameSnapshot, "Work")
+        }.value
     }
 
     func testTrackingStartWriteFailureExitsNonzero() async throws {
-        let backend = CLIFailingPersistenceBackend()
-        let store = TrackedUsageStore(backend: backend)
-        _ = try store.createLabel(name: "Work")
-        backend.failUpdates = true
-        TrackingCommandStore.provider = { store }
-        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
-        let command = try TrackingCommand.Start.parse(["--json", "Work"])
+        try await Task { @MainActor in
+            let backend = CLIFailingPersistenceBackend()
+            let store = TrackedUsageStore(backend: backend)
+            _ = try store.createLabel(name: "Work")
+            backend.failUpdates = true
+            TrackingCommandStore.provider = { store }
+            defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+            let command = try TrackingCommand.Start.parse(["--json", "Work"])
 
-        await assertExitCode(1) { try await command.run() }
-        XCTAssertNil(try store.readActiveSession())
+            await Self.assertExitCode(1) { try await command.run() }
+            XCTAssertNil(try store.readActiveSession())
+        }.value
     }
 
     func testTrackingStopWriteFailureExitsNonzeroAndLeavesSessionActive() async throws {
-        let backend = CLIFailingPersistenceBackend()
-        let store = TrackedUsageStore(backend: backend)
-        _ = try store.createLabel(name: "Work")
-        let started = try store.startExistingLabel("Work")
-        backend.failUpdates = true
-        TrackingCommandStore.provider = { store }
-        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
-        let command = try TrackingCommand.Stop.parse(["--json"])
+        try await Task { @MainActor in
+            let backend = CLIFailingPersistenceBackend()
+            let store = TrackedUsageStore(backend: backend)
+            _ = try store.createLabel(name: "Work")
+            let started = try store.startExistingLabel("Work")
+            backend.failUpdates = true
+            TrackingCommandStore.provider = { store }
+            defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+            let command = try TrackingCommand.Stop.parse(["--json"])
 
-        await assertExitCode(1) { try await command.run() }
-        XCTAssertEqual(try store.readActiveSession()?.id, started.id)
+            await Self.assertExitCode(1) { try await command.run() }
+            XCTAssertEqual(try store.readActiveSession()?.id, started.id)
+        }.value
     }
 
     func testTrackingReadFailureExitsNonzeroInJSONMode() async throws {
-        let store = TrackedUsageStore(
-            backend: InMemoryPersistenceBackend(initialStorage: [
-                "trackedUsage.v1": Data("invalid".utf8)
-            ]))
-        TrackingCommandStore.provider = { store }
-        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
-        let command = try TrackingCommand.Status.parse(["--json"])
+        try await Task { @MainActor in
+            let store = TrackedUsageStore(
+                backend: InMemoryPersistenceBackend(initialStorage: [
+                    "trackedUsage.v1": Data("invalid".utf8)
+                ]))
+            TrackingCommandStore.provider = { store }
+            defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+            let command = try TrackingCommand.Status.parse(["--json"])
 
-        await assertExitCode(1) { try await command.run() }
+            await Self.assertExitCode(1) { try await command.run() }
+        }.value
     }
 
     func testTrackingFutureSchemaReadExitsNonzeroInJSONMode() async throws {
-        let future = Data(
-            "{\"schemaVersion\":3,\"labels\":[],\"sessions\":[],\"activeSession\":null,\"deletedLabels\":[],\"deletedSessions\":[]}"
-                .utf8)
-        let store = TrackedUsageStore(
-            backend: InMemoryPersistenceBackend(initialStorage: ["trackedUsage.v1": future]))
-        TrackingCommandStore.provider = { store }
-        defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
-        let command = try TrackingCommand.Labels.parse(["--json"])
+        try await Task { @MainActor in
+            let future = Data(
+                "{\"schemaVersion\":3,\"labels\":[],\"sessions\":[],\"activeSession\":null,\"deletedLabels\":[],\"deletedSessions\":[]}"
+                    .utf8)
+            let store = TrackedUsageStore(
+                backend: InMemoryPersistenceBackend(initialStorage: ["trackedUsage.v1": future]))
+            TrackingCommandStore.provider = { store }
+            defer { TrackingCommandStore.provider = { TrackedUsageStore.shared } }
+            let command = try TrackingCommand.Labels.parse(["--json"])
 
-        await assertExitCode(1) { try await command.run() }
-        XCTAssertThrowsError(try store.readLabels())
+            await Self.assertExitCode(1) { try await command.run() }
+            XCTAssertThrowsError(try store.readLabels())
+        }.value
     }
 
     func testTrackingPersistenceJSONErrorUsesStableCode() throws {
@@ -152,54 +161,57 @@ final class CLIParsingTests: XCTestCase {
     func testHistoryClearJsonWithoutYesExitsWithConfirmationRequired() async {
         let command = try? HistoryClearCommand.parse(["--json"])
         XCTAssertNotNil(command)
-        await assertExitCode(4) {
+        await Self.assertExitCode(4) {
             try await command?.run()
         }
     }
 
     func testUpdateRejectsCheckAndInstallTogether() async throws {
         let command = try UpdateCommand.parse(["--check", "--install"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
     func testStatusUnknownSourceExitsWithUserError() async throws {
         let command = try StatusCommand.parse(["--json", "not-a-real-source"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
     func testCheckUnknownSourceExitsWithUserError() async throws {
         let command = try CheckCommand.parse(["--json", "not-a-real-source"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
     func testForecastUnknownSourceExitsWithUserError() async throws {
         let command = try ForecastCommand.parse(["--json", "not-a-real-source"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
     func testHistoryShowRejectsNonPositiveLimit() async throws {
         let command = try HistoryShowCommand.parse(["--json", "Codex", "--limit", "0"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
     func testHistoryClearRejectsNonPositiveOlderThan() async throws {
         let command = try HistoryClearCommand.parse(["--json", "--older-than", "0"])
-        await assertExitCode(2) {
+        await Self.assertExitCode(2) {
             try await command.run()
         }
     }
 
-    private func assertExitCode(_ expected: Int32, operation: () async throws -> Void) async {
+    @MainActor
+    private static func assertExitCode(
+        _ expected: Int32, operation: () async throws -> Void
+    ) async {
         do {
             try await operation()
             XCTFail("Expected ExitCode(\(expected))")

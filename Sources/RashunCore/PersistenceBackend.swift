@@ -143,8 +143,8 @@ public final class FilePersistenceBackend: PersistenceBackend, @unchecked Sendab
         #elseif canImport(WinSDK)
             let handle = lockURL.path.withCString(encodedAs: UTF16.self) { path in
                 CreateFileW(
-                    path, DWORD(GENERIC_READ | GENERIC_WRITE),
-                    DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE), nil, DWORD(OPEN_ALWAYS),
+                    path, DWORD(GENERIC_READ) | DWORD(GENERIC_WRITE),
+                    DWORD(FILE_SHARE_READ) | DWORD(FILE_SHARE_WRITE), nil, DWORD(OPEN_ALWAYS),
                     DWORD(FILE_ATTRIBUTE_NORMAL), nil)
             }
             guard handle != INVALID_HANDLE_VALUE else {
