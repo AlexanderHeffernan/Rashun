@@ -31,6 +31,24 @@ final class BatteryOptimizationTests: XCTestCase {
         XCTAssertTrue(result.usages.isEmpty)
         XCTAssertTrue(result.errorsByMetric.isEmpty)
     }
+
+    func testPaceCacheKeyChangesWithForecastModeAndHistoryRevision() {
+        let smart = AppDelegate.PaceStatusCacheKey(
+            sourceName: "Codex", metricID: "weekly", remainingBits: 50.0.bitPattern,
+            limitBits: 100.0.bitPattern, resetDateBits: nil, cycleStartDateBits: nil,
+            minute: 100, forecastMode: "smart", historyRevision: 7)
+        let simple = AppDelegate.PaceStatusCacheKey(
+            sourceName: "Codex", metricID: "weekly", remainingBits: 50.0.bitPattern,
+            limitBits: 100.0.bitPattern, resetDateBits: nil, cycleStartDateBits: nil,
+            minute: 100, forecastMode: "simple", historyRevision: 7)
+        let newerHistory = AppDelegate.PaceStatusCacheKey(
+            sourceName: "Codex", metricID: "weekly", remainingBits: 50.0.bitPattern,
+            limitBits: 100.0.bitPattern, resetDateBits: nil, cycleStartDateBits: nil,
+            minute: 100, forecastMode: "smart", historyRevision: 8)
+
+        XCTAssertNotEqual(smart, simple)
+        XCTAssertNotEqual(smart, newerHistory)
+    }
 }
 
 private actor MetricFetchRecorder {

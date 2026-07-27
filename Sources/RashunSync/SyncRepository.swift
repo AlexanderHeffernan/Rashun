@@ -215,6 +215,14 @@ public final class SyncRepository: @unchecked Sendable {
         }
     }
 
+    public func cancelPeerSync(credentialID: UUID, attemptStartedAt: Date) throws {
+        try updatePeer(credentialID) {
+            if let activeStart = $0.syncStartedAt, activeStart <= attemptStartedAt {
+                $0.syncStartedAt = nil
+            }
+        }
+    }
+
     public func finishPeerSync(
         credentialID: UUID, imported: Int, error: String? = nil, at date: Date = Date()
     ) throws {

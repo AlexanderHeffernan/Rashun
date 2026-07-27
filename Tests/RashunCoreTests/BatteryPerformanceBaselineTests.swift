@@ -33,6 +33,13 @@ final class BatteryPerformanceBaselineTests: XCTestCase {
             XCTAssertEqual(historyWrites.count, 1)
             XCTAssertEqual(metadataWrites.count, 1)
             XCTAssertEqual(store.currentSyncRevision, 2)
+            let delta = store.syncSnapshot(since: 1)
+            XCTAssertEqual(
+                Set(delta.historyBySource.keys),
+                ["AMP::amp-free", "Codex::codex-pro-weekly"]
+            )
+            let reloaded = UsageHistoryStore(backend: backend, legacyBackends: [])
+            XCTAssertEqual(reloaded.currentSyncRevision, 2)
             print(
                 "BATTERY_BASELINE history_persistence"
                     + " fixture_snapshots=24630"
@@ -160,6 +167,16 @@ private final class CountingPersistenceBackend: PersistenceBackend, @unchecked S
             storage[key] = data
             writesByKey[key, default: []].append(data?.count ?? 0)
         }
+    }
+
+    @discardableResult
+    func updateData(forKey key: String, _ update: (Data?) throws -> Data?) throws -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        let data = try update(storage[key])
+        storage[key] = data
+        writesByKey[key, default: []].append(data?.count ?? 0)
+        return data
     }
 
     func resetMeasurements() {

@@ -31,6 +31,7 @@ public actor PeerSyncService {
         var attempts: [PeerSyncAttempt] = []
         do {
             for peer in try repository.peers() where peer.scopes.contains(.desktopSync) {
+                if Task.isCancelled { return attempts }
                 guard let credential = try repository.peerCredential(id: peer.credentialID) else {
                     continue
                 }
@@ -41,6 +42,12 @@ public actor PeerSyncService {
                     credentialID: peer.credentialID, at: attemptStartedAt)
                 for address in addresses {
                     for attempt in 0..<2 {
+                        if Task.isCancelled {
+                            try? repository.cancelPeerSync(
+                                credentialID: peer.credentialID,
+                                attemptStartedAt: attemptStartedAt)
+                            return attempts
+                        }
                         do {
                             let result = try await SyncCoordinator(
                                 repository: repository, requiredAppVersion: appVersion,
@@ -60,8 +67,21 @@ public actor PeerSyncService {
                             completed = true
                             break
                         } catch {
+                            if Task.isCancelled {
+                                try? repository.cancelPeerSync(
+                                    credentialID: peer.credentialID,
+                                    attemptStartedAt: attemptStartedAt)
+                                return attempts
+                            }
                             if attempt == 0, Self.shouldRetry(error) {
-                                try? await Task.sleep(for: .milliseconds(750))
+                                do {
+                                    try await Task.sleep(for: .milliseconds(750))
+                                } catch {
+                                    try? repository.cancelPeerSync(
+                                        credentialID: peer.credentialID,
+                                        attemptStartedAt: attemptStartedAt)
+                                    return attempts
+                                }
                                 continue
                             }
                             try? repository.recordAddressResult(
@@ -75,6 +95,11 @@ public actor PeerSyncService {
                         }
                     }
                     if completed { break }
+                }
+                if Task.isCancelled {
+                    try? repository.cancelPeerSync(
+                        credentialID: peer.credentialID, attemptStartedAt: attemptStartedAt)
+                    return attempts
                 }
                 if !completed {
                     let message =
@@ -107,15 +132,23 @@ public actor PeerSyncService {
             let results = await syncAllOnce()
             if results.isEmpty {
                 failureCount = 0
-                try? await Task.sleep(for: interval)
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
                 continue
             }
             let succeeded = results.contains { $0.result != nil }
             failureCount = succeeded ? 0 : min(failureCount + 1, 4)
-            try? await Task.sleep(
-                for: succeeded
-                    ? interval
-                    : Self.failureRetryDelay(failureCount: failureCount, interval: interval))
+            do {
+                try await Task.sleep(
+                    for: succeeded
+                        ? interval
+                        : Self.failureRetryDelay(failureCount: failureCount, interval: interval))
+            } catch {
+                return
+            }
         }
     }
 

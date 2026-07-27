@@ -118,17 +118,19 @@ Review and commit this baseline independently. Then implement **A only**, rerun 
 
 The attributable A, B, C, E, and I commits were measured with the same optimized fixture bundle. Raw results are in `benchmarks/issue-8/after-optimized-xctest.log`.
 
-| Candidate | Before | After | Change |
+| Candidate | Before | After | Result type |
 | --- | ---: | ---: | ---: |
-| A: fetched Codex metric IDs when only weekly is selected | 3 | 1 | Disabled metrics no longer fetched |
-| A: Free Weekly session scan exposure | 56,258,396 bytes | 0 bytes | -100% |
-| B: history transactions / two-metric refresh | 2 | 1 | -50% |
-| B: history bytes passed to backend | 3,094,367 | 1,547,242 | -50.0% |
-| B: fixture persistence elapsed | 421 ms | 66 ms | -84.3% |
-| C: three forecast consumers, median | 83 ms | 68 ms | -18.1% |
-| E: steady failed-sync retry with 1,200s setting | 120s | 1,200s | 90% fewer steady attempts |
-| I: tracking animation timer fires/hour | 30,000 | 0 | -100% |
+| A: fetched Codex metric IDs when only weekly is selected | 3 | 1 | Deterministic call-count reduction |
+| A: modeled Free Weekly scan-set exposure | 56,258,396 bytes | 0 bytes | Source-derived, not measured file reads |
+| B: history transactions / two-metric fixture | 2 | 1 | Measured fixture reduction: 50% |
+| B: history bytes passed to backend | 3,094,367 | 1,547,242 | Measured fixture reduction: 50.0% |
+| B: fixture persistence elapsed | 421 ms | 66 ms | Single-run observation; no percentage claim |
+| C: three forecast consumers, median | 83 ms | 68 ms | Measured fixture reduction: 18.1% |
+| E: steady failed-sync cadence with 1,200s setting | 120s | 1,200s | Source-derived: 90% fewer steady attempts |
+| I: tracking animation timer fires/hour | 30,000 | 0 | Source-derived timer elimination, not measured wakeups |
 
-All existing forecast equivalence tests pass. C computes each point's cumulative active-time offset once for OLS, Theil–Sen, and weighted interval rates, and the app caches a metric's pacing status within the current minute/refresh. B also reuses the already-encoded sorted history bytes for its checksum instead of encoding the entire history a second time.
+Existing forecast behavior tests pass, and the 1,500-point Issue #8 fixture now checks forecast, pacing-assessment, and pace-guide outputs against values captured from the baseline implementation. C computes each point's cumulative active-time offset once for OLS, Theil–Sen, and weighted interval rates, and the app caches a metric's pacing status within the current minute/refresh. B also reuses the already-encoded sorted history bytes for its checksum instead of encoding the entire history a second time.
+
+These are operation-count and release-fixture results, not battery-life or end-to-end process measurements. In particular, A's bytes are a modeled maximum candidate file set, E and I are derived from source-defined cadence/timer removal, and B's elapsed value is only a single before/after observation. Only B's fixture write count/bytes and C's recorded fixture median support measured percentage-reduction wording.
 
 The candidate app was not installed over the user's running 1.1.1 app, so no candidate whole-process live window was captured. That preserves the no-real-data-mutation constraint and means the 7.6352%-of-one-core live baseline must be repeated manually after installing a review build before making an end-to-end energy claim.

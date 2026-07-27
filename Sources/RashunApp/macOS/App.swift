@@ -28,6 +28,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let errorsByMetric: [String: Error]
     }
 
+    struct PaceStatusCacheKey: Hashable {
+        let sourceName: String
+        let metricID: String
+        let remainingBits: UInt64
+        let limitBits: UInt64
+        let resetDateBits: UInt64?
+        let cycleStartDateBits: UInt64?
+        let minute: Int
+        let forecastMode: String
+        let historyRevision: UInt64
+    }
+
     private struct SourceMetricFetchError: Error {
         let metricId: String
         let underlying: Error
@@ -52,7 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var sourceHeaderDetails: [String: String] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
-    private var paceStatusCache: [String: PaceStatus] = [:]
+    private var paceStatusCache: [PaceStatusCacheKey: PaceStatus] = [:]
     private var usageSampleStabilityGate = UsageSampleStabilityGate()
     private let statusRingSize: CGFloat = 20
     private let statusRingSpacing: CGFloat = 3
@@ -567,13 +579,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         -> PaceStatus?
     {
         let now = Date()
-        let key = [
-            source.name, metric.id, String(usage.remaining.bitPattern),
-            String(usage.limit.bitPattern),
-            usage.resetDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
-            usage.cycleStartDate.map { String($0.timeIntervalSince1970.bitPattern) } ?? "-",
-            String(Int(now.timeIntervalSince1970 / 60)),
-        ].joined(separator: ":")
+        let key = PaceStatusCacheKey(
+            sourceName: source.name,
+            metricID: metric.id,
+            remainingBits: usage.remaining.bitPattern,
+            limitBits: usage.limit.bitPattern,
+            resetDateBits: usage.resetDate?.timeIntervalSince1970.bitPattern,
+            cycleStartDateBits: usage.cycleStartDate?.timeIntervalSince1970.bitPattern,
+            minute: Int(now.timeIntervalSince1970 / 60),
+            forecastMode: UsageForecastModePreference.current.rawValue,
+            historyRevision: UsageHistoryStore.shared.currentSyncRevision
+        )
         if let cached = paceStatusCache[key] {
             return cached
         }
@@ -1112,6 +1128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func settingsChanged(_ note: Notification) {
+        paceStatusCache.removeAll(keepingCapacity: true)
         updateSyncServerLifecycle()
         let enabled = Set(
             sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
@@ -1910,18 +1927,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                 }
 
-                if SettingsStore.shared.syncServerEnabled {
-                    do {
-                        try SyncEnvironment.shared.record(
-                            sourceName: scopedName, usage: current)
-                    } catch {
-                        NSLog(
-                            "Rashun canonical observation write failed: %@",
-                            String(describing: error))
-                    }
-                } else {
-                    historyUpdates[scopedName] = current
-                }
+                historyUpdates[scopedName] = current
             }
         }
         UsageHistoryStore.shared.append(contentsOf: historyUpdates)
