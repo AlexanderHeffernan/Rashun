@@ -1024,7 +1024,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         syncServerTask = Task {
             do {
                 try await RashunSyncServer(
-                    repository: repository, host: "0.0.0.0", port: 8787, webRoot: root,
+                    repository: repository, host: "0.0.0.0",
+                    port: SettingsStore.shared.syncServerPort, webRoot: root,
                     historyChanged: changed, appVersion: version, trackedUsage: .live
                 ).run()
             } catch {

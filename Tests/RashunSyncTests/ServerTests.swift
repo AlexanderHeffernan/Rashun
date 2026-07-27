@@ -7,6 +7,16 @@ import XCTest
 @testable import RashunSyncServer
 
 final class ServerTests: XCTestCase {
+    func testHealthIdentifiesRunningSyncServer() async throws {
+        try await RashunSyncServer(repository: try repository()).application().test(.router) {
+            client in
+            try await client.execute(uri: "/v1/health", method: .get) { response in
+                XCTAssertEqual(response.status, .ok)
+                XCTAssertEqual(String(buffer: response.body), "rashun-sync")
+            }
+        }
+    }
+
     func testDesktopPairingRejectsDifferentAppVersion() async throws {
         let repo = try repository()
         let access = try PairingCoordinator.simpleAccess(repository: repo, scope: .desktopSync)

@@ -80,10 +80,13 @@ final class SyncPreferencesViewModel: ObservableObject {
     @Published var retryingPeerID: UUID?
     @Published var testingNotificationPeerID: UUID?
     @Published var syncMinutesText = ""
+    @Published var portText = "8787"
+    @Published var isApplyingPort = false
     private var repository: SyncRepository? { SyncEnvironment.shared.repository }
 
     init() {
         syncMinutesText = Self.formattedMinutes(SettingsStore.shared.syncInterval())
+        portText = String(SettingsStore.shared.syncServerPort)
     }
 
     func applySyncInterval() {
@@ -95,13 +98,86 @@ final class SyncPreferencesViewModel: ObservableObject {
         syncMinutesText = Self.formattedMinutes(SettingsStore.shared.syncInterval())
     }
 
+    nonisolated static func validatedPort(_ text: String) -> Int? {
+        guard let port = Int(text), SettingsStore.isValidSyncServerPort(port) else { return nil }
+        return port
+    }
+
+    var stagedPort: Int? { Self.validatedPort(portText) }
+
+    var canApplyPort: Bool {
+        !isApplyingPort && !isConfiguringTailscale && stagedPort != nil
+            && stagedPort != SettingsStore.shared.syncServerPort
+    }
+
+    func applyPort() {
+        guard canApplyPort, let port = stagedPort else { return }
+        let previousPort = SettingsStore.shared.syncServerPort
+        let previousTailscaleState = tailscaleServeState
+        isApplyingPort = true
+        portText = String(port)
+        status = "Applying port \(port) and restarting mobile access…"
+        guard SettingsStore.shared.setSyncServerPort(port) else {
+            isApplyingPort = false
+            status = "Port \(port) is invalid. Enter a port from 1 through 65535."
+            return
+        }
+        Task {
+            guard await waitForServer(port: port) else {
+                _ = SettingsStore.shared.setSyncServerPort(previousPort)
+                let restored = await waitForServer(port: previousPort)
+                portText = String(previousPort)
+                isApplyingPort = false
+                load(syncEnabled: SettingsStore.shared.syncServerEnabled)
+                status =
+                    restored
+                    ? "Couldn’t bind port \(port). Mobile access was restored on port \(previousPort)."
+                    : "Couldn’t bind port \(port). Port \(previousPort) was restored, but mobile access is still offline."
+                return
+            }
+            if let previousTailscaleState, previousTailscaleState.isEnabled {
+                do {
+                    tailscaleServeState = try await TailscaleServeController.setEnabled(
+                        true, state: previousTailscaleState, port: port)
+                } catch {
+                    isApplyingPort = false
+                    load(syncEnabled: SettingsStore.shared.syncServerEnabled)
+                    status =
+                        "Mobile access is using port \(port), but Secure Mobile Access could not be updated: \(error.localizedDescription)"
+                    return
+                }
+            }
+            isApplyingPort = false
+            load(syncEnabled: SettingsStore.shared.syncServerEnabled)
+            status = "Mobile access is now using port \(port)."
+        }
+    }
+
+    private func waitForServer(port: Int) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/v1/health") else { return false }
+        for _ in 0..<20 {
+            if Task.isCancelled { return false }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                if (response as? HTTPURLResponse)?.statusCode == 200,
+                    String(decoding: data, as: UTF8.self) == "rashun-sync"
+                {
+                    return true
+                }
+            } catch {}
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return false
+    }
+
     private static func formattedMinutes(_ seconds: TimeInterval) -> String {
         String(format: "%.0f", seconds / 60)
     }
 
     var baseURL: URL? {
         if tailscaleServeState?.isEnabled == true { return tailscaleServeState?.httpsURL }
-        return lanAddress.flatMap { URL(string: "http://\($0):8787") }
+        let port = SettingsStore.shared.syncServerPort
+        return lanAddress.flatMap { URL(string: "http://\($0):\(port)") }
     }
     var mobileURL: URL? {
         guard let baseURL, let password = mobileAccess?.password else { return nil }
@@ -146,7 +222,8 @@ final class SyncPreferencesViewModel: ObservableObject {
                 lanAddress = result.0
                 tailscaleAddress = result.1
                 peers = result.2
-                tailscaleServeState = await TailscaleServeController.probe()
+                tailscaleServeState = await TailscaleServeController.probe(
+                    port: SettingsStore.shared.syncServerPort)
             } catch { status = error.localizedDescription }
             isLoading = false
             if mobileAccess != nil { checkServer() }
@@ -163,7 +240,7 @@ final class SyncPreferencesViewModel: ObservableObject {
             defer { isConfiguringTailscale = false }
             do {
                 tailscaleServeState = try await TailscaleServeController.setEnabled(
-                    enabled, state: current)
+                    enabled, state: current, port: SettingsStore.shared.syncServerPort)
                 status = enabled ? "Secure mobile access is ready." : "Secure mobile access is off."
                 createMobileLink()
             } catch let error as TailscaleServeCommandError {
@@ -172,11 +249,13 @@ final class SyncPreferencesViewModel: ObservableObject {
                     NSWorkspace.shared.open(url)
                     await waitForTailscaleHTTPS(expected: enabled)
                 } else {
-                    tailscaleServeState = await TailscaleServeController.probe()
+                    tailscaleServeState = await TailscaleServeController.probe(
+                        port: SettingsStore.shared.syncServerPort)
                 }
             } catch {
                 status = error.localizedDescription
-                tailscaleServeState = await TailscaleServeController.probe()
+                tailscaleServeState = await TailscaleServeController.probe(
+                    port: SettingsStore.shared.syncServerPort)
             }
         }
     }
@@ -184,7 +263,10 @@ final class SyncPreferencesViewModel: ObservableObject {
     private func waitForTailscaleHTTPS(expected: Bool) async {
         for _ in 0..<30 {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard let latest = await TailscaleServeController.probe() else { continue }
+            guard
+                let latest = await TailscaleServeController.probe(
+                    port: SettingsStore.shared.syncServerPort)
+            else { continue }
             tailscaleServeState = latest
             if latest.isEnabled == expected {
                 status =
@@ -567,6 +649,42 @@ struct SyncTabView: View {
             }.padding(18)
 
             if mobileEnabled {
+                Divider().opacity(0.35)
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Server port").fontWeight(.semibold)
+                            Text("Used by LAN and Tailscale URLs.").font(.caption)
+                                .foregroundStyle(BrandPalette.textSecondary)
+                        }
+                        Spacer()
+                        BrandNumericField(text: $model.portText, width: 86) {}
+                            .disabled(model.isApplyingPort)
+                        Button("Apply") { model.applyPort() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(!model.canApplyPort)
+                    }
+                    if model.isApplyingPort {
+                        Label("Restarting mobile access…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption)
+                            .foregroundStyle(BrandPalette.textSecondary)
+                    } else if model.stagedPort == nil {
+                        Label("Enter a port from 1 through 65535.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(BrandPalette.warning)
+                    } else if model.canApplyPort {
+                        Text(
+                            "Change staged. Mobile access still uses port \(SettingsStore.shared.syncServerPort) until you apply it."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(BrandPalette.warning)
+                    } else {
+                        Text("Currently using port \(SettingsStore.shared.syncServerPort).")
+                            .font(.caption)
+                            .foregroundStyle(BrandPalette.textSecondary)
+                    }
+                }
+                .padding(.horizontal, 18).padding(.vertical, 12)
                 Divider().opacity(0.35)
                 if let access = model.mobileAccess, let link = model.mobileURL {
                     HStack(spacing: 24) {

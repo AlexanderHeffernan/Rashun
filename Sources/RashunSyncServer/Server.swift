@@ -141,6 +141,7 @@ public struct RashunSyncServer: Sendable {
         if let webRoot {
             router.addMiddleware { FileMiddleware(webRoot, searchForIndexHtml: true) }
         }
+        router.get("/v1/health") { _, _ in "rashun-sync" }
         router.post("/v1/pairing/connect") { request, _ in
             let value = try decodeJSON(
                 SimplePairingRequest.self, from: try await collectBody(request, upTo: 4_096))

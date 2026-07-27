@@ -17,9 +17,7 @@ struct TailscaleServeCommandError: LocalizedError, Sendable {
 
 enum TailscaleServeController {
     private static let managedKey = "ai.tailscaleServeManaged.v1"
-    private static let expectedProxy = "http://127.0.0.1:8787"
-
-    static func probe() async -> TailscaleServeState? {
+    static func probe(port: Int = 8787) async -> TailscaleServeState? {
         await Task.detached(priority: .utility) {
             guard
                 let cliURL = cliCandidates.first(where: {
@@ -30,7 +28,8 @@ enum TailscaleServeController {
             else { return nil }
             let serve = try? run(cliURL, ["serve", "status", "--json"])
             let configuration =
-                serve.flatMap { parseServeStatus($0.output, dnsName: identity.dnsName) } ?? (
+                serve.flatMap { parseServeStatus($0.output, dnsName: identity.dnsName, port: port) }
+                ?? (
                     false, false
                 )
             return TailscaleServeState(
@@ -39,7 +38,8 @@ enum TailscaleServeController {
         }.value
     }
 
-    static func setEnabled(_ enabled: Bool, state: TailscaleServeState) async throws
+    static func setEnabled(_ enabled: Bool, state: TailscaleServeState, port: Int = 8787)
+        async throws
         -> TailscaleServeState
     {
         try await Task.detached(priority: .userInitiated) {
@@ -55,7 +55,8 @@ enum TailscaleServeController {
                         "This HTTPS route was configured outside Rashun, so Rashun will not remove it.",
                     consentURL: nil)
             }
-            let arguments = enabled ? ["serve", "--bg", "8787"] : ["serve", "--https=443", "off"]
+            let arguments =
+                enabled ? ["serve", "--bg", "\(port)"] : ["serve", "--https=443", "off"]
             let result = try run(state.cliURL, arguments)
             guard result.code == 0 else {
                 let output = String(decoding: result.output, as: UTF8.self).trimmingCharacters(
@@ -66,7 +67,7 @@ enum TailscaleServeController {
                     consentURL: firstURL(in: result.output))
             }
             UserDefaults.standard.set(enabled, forKey: managedKey)
-            guard let refreshed = awaitProbeSync(cliURL: state.cliURL) else {
+            guard let refreshed = awaitProbeSync(cliURL: state.cliURL, port: port) else {
                 throw TailscaleServeCommandError(
                     message: "Tailscale updated, but Rashun could not verify the HTTPS address.",
                     consentURL: firstURL(in: result.output))
@@ -92,8 +93,9 @@ enum TailscaleServeController {
         return dnsName.isEmpty ? nil : (dnsName, backend == "Running")
     }
 
-    static func parseServeStatus(_ data: Data, dnsName: String) -> (enabled: Bool, conflict: Bool)?
-    {
+    static func parseServeStatus(_ data: Data, dnsName: String, port: Int = 8787) -> (
+        enabled: Bool, conflict: Bool
+    )? {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
@@ -106,6 +108,7 @@ enum TailscaleServeController {
         else {
             return (false, false)
         }
+        let expectedProxy = "http://127.0.0.1:\(port)"
         return (proxy == expectedProxy, proxy != expectedProxy)
     }
 
@@ -119,13 +122,14 @@ enum TailscaleServeController {
         ].map { URL(fileURLWithPath: $0) }
     }
 
-    private static func awaitProbeSync(cliURL: URL) -> TailscaleServeState? {
+    private static func awaitProbeSync(cliURL: URL, port: Int) -> TailscaleServeState? {
         guard let status = try? run(cliURL, ["status", "--json"]), status.code == 0,
             let identity = parseIdentity(status.output), identity.running
         else { return nil }
         let serve = try? run(cliURL, ["serve", "status", "--json"])
         let configuration =
-            serve.flatMap { parseServeStatus($0.output, dnsName: identity.dnsName) } ?? (
+            serve.flatMap { parseServeStatus($0.output, dnsName: identity.dnsName, port: port) }
+            ?? (
                 false, false
             )
         return .init(

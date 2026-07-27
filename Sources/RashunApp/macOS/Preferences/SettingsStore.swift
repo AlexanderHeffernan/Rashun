@@ -17,6 +17,7 @@ final class SettingsStore {
     private let menuBarAppearanceKey = "ai.menuBarAppearance.v1"
     private let trackingEnabledKey = "ai.trackingEnabled.v1"
     private let syncServerEnabledKey = "ai.syncServerEnabled.v1"
+    private let syncServerPortKey = "ai.syncServerPort.v1"
     private let showTrackingSessionInMenuBarKey = "ai.showTrackingSessionInMenuBar.v1"
     private var enabledMap: [String: Bool] = [:]
     private var sourceMetricEnabledMap: [String: [String: Bool]] = [:]
@@ -30,6 +31,7 @@ final class SettingsStore {
     private(set) var forecastingMode: UsageForecastEngine.Mode = .smart
     private(set) var trackingEnabled = true
     private(set) var syncServerEnabled = false
+    private(set) var syncServerPort = 8787
     private(set) var showTrackingSessionInMenuBar = true
 
     private func load() {
@@ -79,6 +81,10 @@ final class SettingsStore {
         }
         if UserDefaults.standard.object(forKey: syncServerEnabledKey) != nil {
             syncServerEnabled = UserDefaults.standard.bool(forKey: syncServerEnabledKey)
+        }
+        let storedPort = UserDefaults.standard.integer(forKey: syncServerPortKey)
+        if Self.isValidSyncServerPort(storedPort) {
+            syncServerPort = storedPort
         }
         if UserDefaults.standard.object(forKey: showTrackingSessionInMenuBarKey) != nil {
             showTrackingSessionInMenuBar = UserDefaults.standard.bool(
@@ -199,6 +205,19 @@ final class SettingsStore {
         syncServerEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: syncServerEnabledKey)
         NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+    }
+
+    @discardableResult
+    func setSyncServerPort(_ port: Int) -> Bool {
+        guard Self.isValidSyncServerPort(port) else { return false }
+        syncServerPort = port
+        UserDefaults.standard.set(port, forKey: syncServerPortKey)
+        NotificationCenter.default.post(name: .aiSettingsChanged, object: nil)
+        return true
+    }
+
+    nonisolated static func isValidSyncServerPort(_ port: Int) -> Bool {
+        (1...65_535).contains(port)
     }
 
     func setShowTrackingSessionInMenuBar(_ show: Bool) {
