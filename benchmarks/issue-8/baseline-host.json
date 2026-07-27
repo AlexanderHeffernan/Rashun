@@ -1,0 +1,180 @@
+{
+  "app": {
+    "active_tracking_session": false,
+    "enabled_metrics": {
+      "AMP": [
+        "amp-agent-usage",
+        "amp-free",
+        "amp-orb-usage"
+      ],
+      "Codex": [
+        "codex-pro-weekly"
+      ],
+      "Copilot": [
+        "copilot-premium-interactions"
+      ],
+      "Cursor": [
+        "cursor-auto"
+      ],
+      "Gemini": [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-3-flash-preview",
+        "gemini-3-pro-preview"
+      ]
+    },
+    "enabled_sources": [
+      "AMP",
+      "Codex"
+    ],
+    "path": "/Applications/Rashun.app",
+    "pid": 2021,
+    "poll_interval_seconds": 60.0,
+    "sync_enabled": true,
+    "sync_interval_seconds": 1200.0,
+    "tracking_enabled": true,
+    "version": "1.1.1"
+  },
+  "captured_at_utc": "2026-07-27T11:25:41.171507+00:00",
+  "fixture_exposure": {
+    "codex_newest_20_session_bytes": 56258396,
+    "codex_newest_20_session_file_count": 20,
+    "failed_sync_retry_schedule_seconds": [
+      15,
+      30,
+      60,
+      120,
+      120
+    ],
+    "history_bytes": 2790847,
+    "history_snapshot_count": 24632,
+    "history_source_count": 16,
+    "tracking_timer_fires_per_hour_when_active": 30000,
+    "tracking_timer_interval_seconds": 0.12
+  },
+  "git_commit": "6176e0fedc6113b5c3d3a388cf1398d294ce2b26",
+  "host": {
+    "build_version": "25F84",
+    "cpu": "Apple M1 Pro",
+    "memory_bytes": 17179869184,
+    "model": "MacBookPro18,3",
+    "power_source": "Now drawing from 'AC Power'",
+    "product_version": "26.5.2"
+  },
+  "limitations": [
+    "Capture observes the installed app and does not mutate or copy user data.",
+    "Host was on AC power; results characterize CPU and file activity, not battery drain.",
+    "powermetrics process-coalition data is unavailable without interactive sudo.",
+    "Codex bytes are the source-defined maximum scan set, not kernel-measured read bytes.",
+    "Timer and retry rates are deterministic values derived from current source constants."
+  ],
+  "observation": {
+    "elapsed_seconds": 185.064,
+    "file_changes": {
+      "history": [
+        {
+          "bytes": 2790610,
+          "elapsed_seconds": 1.023
+        },
+        {
+          "bytes": 2790611,
+          "elapsed_seconds": 59.381
+        },
+        {
+          "bytes": 2790730,
+          "elapsed_seconds": 60.399
+        },
+        {
+          "bytes": 2790729,
+          "elapsed_seconds": 123.896
+        },
+        {
+          "bytes": 2790846,
+          "elapsed_seconds": 124.908
+        },
+        {
+          "bytes": 2790847,
+          "elapsed_seconds": 179.931
+        },
+        {
+          "bytes": 2790847,
+          "elapsed_seconds": 180.958
+        }
+      ],
+      "history_sync_metadata": [
+        {
+          "bytes": 14894,
+          "elapsed_seconds": 1.023
+        },
+        {
+          "bytes": 14889,
+          "elapsed_seconds": 59.381
+        },
+        {
+          "bytes": 14899,
+          "elapsed_seconds": 60.399
+        },
+        {
+          "bytes": 14892,
+          "elapsed_seconds": 123.896
+        },
+        {
+          "bytes": 14903,
+          "elapsed_seconds": 124.908
+        },
+        {
+          "bytes": 14900,
+          "elapsed_seconds": 179.931
+        },
+        {
+          "bytes": 14907,
+          "elapsed_seconds": 180.958
+        }
+      ],
+      "source_health": [
+        {
+          "bytes": 2337,
+          "elapsed_seconds": 57.35
+        },
+        {
+          "bytes": 2337,
+          "elapsed_seconds": 59.381
+        },
+        {
+          "bytes": 2336,
+          "elapsed_seconds": 120.864
+        },
+        {
+          "bytes": 2336,
+          "elapsed_seconds": 122.885
+        },
+        {
+          "bytes": 2337,
+          "elapsed_seconds": 176.872
+        },
+        {
+          "bytes": 2335,
+          "elapsed_seconds": 179.931
+        }
+      ],
+      "sync_state": [
+        {
+          "bytes": 8174,
+          "elapsed_seconds": 17.448
+        },
+        {
+          "bytes": 8102,
+          "elapsed_seconds": 137.068
+        }
+      ]
+    },
+    "process_average_cpu_percent": 7.6352,
+    "process_cpu_seconds_delta": 14.13,
+    "rss_bytes_max": 219283456,
+    "rss_bytes_median": 204914688,
+    "sampled_cpu_percent_max": 105.2,
+    "sampled_cpu_percent_median": 0.4
+  },
+  "schema_version": 1
+}
