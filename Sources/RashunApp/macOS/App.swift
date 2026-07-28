@@ -23,9 +23,21 @@ func stopTrackingSessionAfterBoundary(
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private struct MetricFetchResult {
+    struct MetricFetchResult {
         let usages: [String: UsageResult]
         let errorsByMetric: [String: Error]
+    }
+
+    struct PaceStatusCacheKey: Hashable {
+        let sourceName: String
+        let metricID: String
+        let remainingBits: UInt64
+        let limitBits: UInt64
+        let resetDateBits: UInt64?
+        let cycleStartDateBits: UInt64?
+        let minute: Int
+        let forecastMode: String
+        let historyRevision: UInt64
     }
 
     private struct SourceMetricFetchError: Error {
@@ -52,6 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var sourceHeaderDetails: [String: String] = [:]
     var loadingSources: Set<String> = []
     var lastRefreshDate: Date?
+    private var paceStatusCache: [PaceStatusCacheKey: PaceStatus] = [:]
     private var usageSampleStabilityGate = UsageSampleStabilityGate()
     private let statusRingSize: CGFloat = 20
     private let statusRingSpacing: CGFloat = 3
@@ -66,8 +79,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let trackedUsageStore = TrackedUsageStore.shared
     private var isStoppingTrackingSession = false
     private var trackingCompletionSummary: String?
-    private var trackingIndicatorPulseTimer: Timer?
-    private var trackingIndicatorPulsePhase = 0.0
     private var syncServerTask: Task<Void, Never>?
     private var peerSyncTask: Task<Void, Never>?
     private let codexResetAlertStateKey = "ai.codexResetAlertState.v1"
@@ -567,11 +578,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func paceStatus(source: AISource, metric: AISourceMetric, usage: UsageResult)
         -> PaceStatus?
     {
+        let now = Date()
+        let key = PaceStatusCacheKey(
+            sourceName: source.name,
+            metricID: metric.id,
+            remainingBits: usage.remaining.bitPattern,
+            limitBits: usage.limit.bitPattern,
+            resetDateBits: usage.resetDate?.timeIntervalSince1970.bitPattern,
+            cycleStartDateBits: usage.cycleStartDate?.timeIntervalSince1970.bitPattern,
+            minute: Int(now.timeIntervalSince1970 / 60),
+            forecastMode: UsageForecastModePreference.current.rawValue,
+            historyRevision: UsageHistoryStore.shared.currentSyncRevision
+        )
+        if let cached = paceStatusCache[key] {
+            return cached
+        }
+        let status = calculatePaceStatus(source: source, metric: metric, usage: usage, now: now)
+        if let status {
+            paceStatusCache[key] = status
+        }
+        return status
+    }
+
+    private func calculatePaceStatus(
+        source: AISource, metric: AISourceMetric, usage: UsageResult, now: Date
+    ) -> PaceStatus? {
         let percent = min(max(usage.percentRemaining, 0), 100)
         let history = UsageHistoryStore.shared.history(
             for: notificationScopeName(source: source, metric: metric))
         if let assessment = source.pacingAssessment(
-            for: metric.id, current: usage, history: history, now: Date())
+            for: metric.id, current: usage, history: history, now: now)
         {
             if assessment.recommendation == .limitReached {
                 return PaceStatus(
@@ -594,7 +630,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let forecast = source.forecast(for: metric.id, current: usage, history: history),
             let fullDate = forecast.points.last(where: { $0.value >= 99.5 })?.date
         {
-            let hoursToFull = fullDate.timeIntervalSince(Date()) / 3600
+            let hoursToFull = fullDate.timeIntervalSince(now) / 3600
             if hoursToFull <= 6 {
                 let urgency = 30 + ((6 - max(hoursToFull, 0)) / 6) * 50
                 return PaceStatus(score: urgency)
@@ -791,13 +827,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         origin: TrackedUsageObservationOrigin = .poll, trackingSessionID: UUID? = nil
     ) async throws -> Bool {
         guard loadingSources.isEmpty else { return false }
+        paceStatusCache.removeAll(keepingCapacity: true)
         let enabled = sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }
         let currentTrackingSession = try trackingSessionForAppRefresh(
             store: trackedUsageStore, trackingEnabled: SettingsStore.shared.trackingEnabled)
         let targetTrackingSessionID = trackingSessionID ?? currentTrackingSession?.id
         let trackingSession =
             currentTrackingSession?.id == targetTrackingSessionID ? currentTrackingSession : nil
-        for source in enabled { loadingSources.insert(source.name) }
+        let fetches = enabled.compactMap { source -> (AISource, [AISourceMetric])? in
+            let metrics = enabledMetrics(for: source)
+            return metrics.isEmpty ? nil : (source, metrics)
+        }
+        for (source, _) in fetches { loadingSources.insert(source.name) }
         updateMenu()
 
         var percentValues: [Double] = []
@@ -807,11 +848,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var confirmedResetMetricIds: [String: Set<String>] = [:]
         var trackedObservations: [TrackedUsageObservation] = []
 
+        SourceHealthStore.shared.beginBatch()
         await withTaskGroup(of: (String, Result<MetricFetchResult, Error>).self) { group in
-            for source in enabled {
+            for (source, metrics) in fetches {
                 group.addTask {
                     do {
-                        let fetchResult = try await self.fetchUsageByMetric(for: source)
+                        let fetchResult = try await self.fetchUsageByMetric(
+                            for: source, metrics: metrics)
                         return (source.name, .success(fetchResult))
                     } catch {
                         return (source.name, .failure(error))
@@ -969,6 +1012,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 updateStatusIcon()
             }
         }
+        SourceHealthStore.shared.endBatch()
 
         if let targetTrackingSessionID {
             _ = try trackedUsageStore.append(
@@ -1084,6 +1128,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func settingsChanged(_ note: Notification) {
+        paceStatusCache.removeAll(keepingCapacity: true)
         updateSyncServerLifecycle()
         let enabled = Set(
             sources.filter { SettingsStore.shared.isEnabled(sourceName: $0.name) }.map { $0.name })
@@ -1285,8 +1330,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let session = activeTrackingSession(),
             let label = trackingLabels().first(where: { $0.id == session.labelID })
         else {
-            trackingIndicatorPulseTimer?.invalidate()
-            trackingIndicatorPulseTimer = nil
             button.title = ""
             button.imagePosition = .imageOnly
             return
@@ -1294,23 +1337,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyTrackingSessionTitle(
             session: session, color: NSColor(hexString: label.colorHex) ?? .systemPurple, alpha: 1,
             button: button)
-        if trackingIndicatorPulseTimer == nil {
-            trackingIndicatorPulseTimer = Timer.scheduledTimer(
-                timeInterval: 0.12, target: self, selector: #selector(pulseTrackingIndicator),
-                userInfo: nil, repeats: true)
-        }
-    }
-
-    @objc private func pulseTrackingIndicator() {
-        guard let button = statusItem?.button,
-            let active = activeTrackingSession(),
-            SettingsStore.shared.showTrackingSessionInMenuBar,
-            let current = trackingLabels().first(where: { $0.id == active.labelID })
-        else { return }
-        trackingIndicatorPulsePhase += 0.28
-        applyTrackingSessionTitle(
-            session: active, color: NSColor(hexString: current.colorHex) ?? .systemPurple,
-            alpha: 0.56 + 0.44 * ((sin(trackingIndicatorPulsePhase) + 1) / 2), button: button)
     }
 
     private func applyTrackingSessionTitle(
@@ -1825,6 +1851,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         confirmedResetMetricIds: [String: Set<String>] = [:]
     ) async -> [ResetCelebration] {
         var celebrations: [ResetCelebration] = []
+        var historyUpdates: [String: UsageResult] = [:]
         for source in sources {
             let metricUsages = results[source.name] ?? [:]
             for metric in enabledMetrics(for: source) {
@@ -1900,20 +1927,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     }
                 }
 
-                if SettingsStore.shared.syncServerEnabled {
-                    do {
-                        try SyncEnvironment.shared.record(
-                            sourceName: scopedName, usage: current)
-                    } catch {
-                        NSLog(
-                            "Rashun canonical observation write failed: %@",
-                            String(describing: error))
-                    }
-                } else {
-                    UsageHistoryStore.shared.append(sourceName: scopedName, usage: current)
-                }
+                historyUpdates[scopedName] = current
             }
         }
+        UsageHistoryStore.shared.append(contentsOf: historyUpdates)
         return celebrations
     }
 
@@ -2030,11 +2047,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func fetchUsageByMetric(for source: AISource) async throws -> MetricFetchResult {
+    func fetchUsageByMetric(for source: AISource, metrics: [AISourceMetric]) async throws
+        -> MetricFetchResult
+    {
         var usages: [String: UsageResult] = [:]
         var errorsByMetric: [String: Error] = [:]
         var firstError: (metricId: String, error: Error)?
-        for metric in source.metrics {
+        for metric in metrics {
             do {
                 usages[metric.id] = try await source.fetchUsage(for: metric.id)
             } catch {

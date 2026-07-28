@@ -155,9 +155,21 @@ public final class UsageHistoryStore {
     }
 
     public func append(sourceName: String, usage: UsageResult) {
-        sourceDeletionRevisions.removeValue(forKey: sourceName)
-        var history = historyBySource[sourceName] ?? []
+        append(contentsOf: [sourceName: usage])
+    }
+
+    public func append(contentsOf usagesBySource: [String: UsageResult]) {
+        guard !usagesBySource.isEmpty else { return }
         let now = Date()
+        for (sourceName, usage) in usagesBySource {
+            sourceDeletionRevisions.removeValue(forKey: sourceName)
+            appendInMemory(sourceName: sourceName, usage: usage, now: now)
+        }
+        didChange(sources: Set(usagesBySource.keys))
+    }
+
+    private func appendInMemory(sourceName: String, usage: UsageResult, now: Date) {
+        var history = historyBySource[sourceName] ?? []
         if let last = history.last, hasSameUsageState(lhs: last.usage, rhs: usage) {
             if history.count >= 2,
                 let secondLast = history.dropLast().last,
@@ -168,12 +180,10 @@ public final class UsageHistoryStore {
                 history.append(UsageSnapshot(timestamp: now, usage: usage))
             }
             historyBySource[sourceName] = history
-            didChange(sources: [sourceName])
             return
         }
         history.append(UsageSnapshot(timestamp: now, usage: usage))
         historyBySource[sourceName] = history
-        didChange(sources: [sourceName])
     }
 
     private func load() {
@@ -258,10 +268,15 @@ public final class UsageHistoryStore {
         return result
     }
 
-    private func save() {
-        if let data = try? JSONEncoder().encode(historyBySource) {
+    @discardableResult
+    private func save() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        if let data = try? encoder.encode(historyBySource) {
             try? backend.set(data, forKey: userDefaultsKey)
+            return data
         }
+        return nil
     }
 
     public func syncSnapshot(since revision: UInt64?) -> HistorySyncSnapshot {
@@ -367,8 +382,8 @@ public final class UsageHistoryStore {
                 changedSourcesByRevision.removeValue(forKey: key)
             }
         }
-        save()
-        saveSyncMetadata()
+        let historyData = save()
+        saveSyncMetadata(historyData: historyData)
     }
 
     private struct SyncMetadata: Codable {
@@ -388,10 +403,11 @@ public final class UsageHistoryStore {
         sourceDeletionRevisions = value.deletionRevisions ?? [:]
     }
 
-    private func saveSyncMetadata() {
+    private func saveSyncMetadata(historyData: Data? = nil) {
         let value = SyncMetadata(
             revision: syncRevision, changes: changedSourcesByRevision,
-            historyChecksum: historyChecksum(), deletionRevisions: sourceDeletionRevisions)
+            historyChecksum: historyData.map(Self.checksum) ?? historyChecksum(),
+            deletionRevisions: sourceDeletionRevisions)
         if let data = try? JSONEncoder().encode(value) {
             try? backend.set(data, forKey: syncMetadataKey)
         }
@@ -409,6 +425,10 @@ public final class UsageHistoryStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(historyBySource) else { return 0 }
+        return Self.checksum(data)
+    }
+
+    nonisolated private static func checksum(_ data: Data) -> UInt64 {
         return data.reduce(14_695_981_039_346_656_037) { hash, byte in
             (hash ^ UInt64(byte)) &* 1_099_511_628_211
         }

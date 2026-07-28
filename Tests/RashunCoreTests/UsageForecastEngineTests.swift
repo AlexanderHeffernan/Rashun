@@ -435,6 +435,49 @@ final class UsageForecastEngineTests: XCTestCase {
         XCTAssertEqual(guide?.points.last?.value ?? -1, 0, accuracy: 0.001)
     }
 
+    func testOptimizedActiveOffsetsMatchIssue8BaselineGoldenOutputs() throws {
+        let now = Date(timeIntervalSince1970: 1_706_400_000)
+        let reset = now.addingTimeInterval(6 * 24 * 3_600)
+        let cycleStart = now.addingTimeInterval(-90 * 24 * 3_600)
+        let current = UsageResult(
+            remaining: 61, limit: 100, resetDate: reset, cycleStartDate: cycleStart)
+        let history = (0..<1_500).map { index in
+            let fraction = Double(index) / 1_499
+            return UsageSnapshot(
+                timestamp: cycleStart.addingTimeInterval(fraction * 90 * 24 * 3_600),
+                usage: UsageResult(
+                    remaining: 100 - (39 * fraction), limit: 100, resetDate: reset,
+                    cycleStartDate: cycleStart))
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let forecast = try XCTUnwrap(
+            UsageForecastEngine.resetWindowForecast(
+                sourceLabel: "Fixture", current: current, history: history, resetDate: reset,
+                historyWindowHours: 72, now: now, calendar: calendar, mode: .smart))
+        let assessment = try XCTUnwrap(
+            UsageForecastEngine.resetWindowPacingAssessment(
+                current: current, history: history, resetDate: reset, historyWindowHours: 72,
+                now: now, calendar: calendar, mode: .smart))
+        let guide = try XCTUnwrap(
+            UsageForecastEngine.resetWindowPaceGuide(
+                current: current, history: history, resetDate: reset, now: now,
+                calendar: calendar, mode: .smart))
+
+        XCTAssertEqual(forecast.points.count, 83)
+        XCTAssertEqual(
+            forecast.points[forecast.points.count - 2].value, 59.23354337349265,
+            accuracy: 1e-10)
+        XCTAssertEqual(assessment.score, 54.75, accuracy: 1e-10)
+        XCTAssertEqual(assessment.confidence, 0.6, accuracy: 1e-12)
+        XCTAssertEqual(assessment.recommendation, .pushHard)
+        XCTAssertNil(assessment.projectedZeroDate)
+        XCTAssertEqual(guide.points.count, 81)
+        XCTAssertEqual(guide.points[40].value, 50, accuracy: 1e-12)
+        XCTAssertEqual(guide.points.last?.value ?? -1, 0, accuracy: 1e-12)
+    }
+
     func testAmpDailySourceExposesPacingAssessment() {
         let source = AmpSource()
         let now = fixedDate(hour: 12)

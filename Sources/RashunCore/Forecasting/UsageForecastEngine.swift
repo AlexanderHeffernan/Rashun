@@ -396,12 +396,17 @@ public enum UsageForecastEngine {
             .compactMap { $0 }
             .filter { $0 > 0 && $0.isFinite }
         } else {
+            let firstDate = points[0].date
+            let activeOffsets = points.map {
+                activeSeconds(
+                    from: firstDate, to: $0.date, calendar: calendar,
+                    activeProfile: activeProfile)
+            }
             rates = [
-                ordinaryLeastSquaresRate(
-                    points: points, calendar: calendar, activeProfile: activeProfile),
-                theilSenRate(points: points, calendar: calendar, activeProfile: activeProfile),
+                ordinaryLeastSquaresRate(points: points, activeOffsets: activeOffsets),
+                theilSenRate(points: points, activeOffsets: activeOffsets),
                 exponentiallyWeightedIntervalRate(
-                    points: points, calendar: calendar, activeProfile: activeProfile),
+                    points: points, activeOffsets: activeOffsets),
                 cycleAverageRate(
                     current: current, now: now, calendar: calendar, activeProfile: activeProfile),
             ].compactMap { $0 }.filter { $0 > 0 && $0.isFinite }
@@ -416,30 +421,24 @@ public enum UsageForecastEngine {
     }
 
     private static func ordinaryLeastSquaresRate(
-        points: [(date: Date, value: Double)], calendar: Calendar, activeProfile: ActiveHoursProfile
+        points: [(date: Date, value: Double)], activeOffsets: [TimeInterval]
     ) -> Double? {
-        guard let start = points.first?.date else { return nil }
-        let xs = points.map {
-            activeSeconds(
-                from: start, to: $0.date, calendar: calendar, activeProfile: activeProfile)
-        }
-        guard let maxX = xs.max(), maxX > 0 else { return nil }
+        guard let maxX = activeOffsets.max(), maxX > 0 else { return nil }
         let ys = points.map(\.value)
-        guard let slope = LinearRegression.slope(xs: xs, ys: ys) else { return nil }
+        guard let slope = LinearRegression.slope(xs: activeOffsets, ys: ys) else { return nil }
         return max(0, -slope)
     }
 
     private static func theilSenRate(
-        points: [(date: Date, value: Double)], calendar: Calendar, activeProfile: ActiveHoursProfile
+        points: [(date: Date, value: Double)], activeOffsets: [TimeInterval]
     ) -> Double? {
         guard points.count >= 3 else { return nil }
         let sampled = Array(points.suffix(36))
+        let sampledOffsets = Array(activeOffsets.suffix(sampled.count))
         var slopes: [Double] = []
         for i in 0..<sampled.count {
             for j in (i + 1)..<sampled.count {
-                let dx = activeSeconds(
-                    from: sampled[i].date, to: sampled[j].date, calendar: calendar,
-                    activeProfile: activeProfile)
+                let dx = sampledOffsets[j] - sampledOffsets[i]
                 guard dx > 0 else { continue }
                 slopes.append((sampled[j].value - sampled[i].value) / dx)
             }
@@ -450,16 +449,14 @@ public enum UsageForecastEngine {
     }
 
     private static func exponentiallyWeightedIntervalRate(
-        points: [(date: Date, value: Double)], calendar: Calendar, activeProfile: ActiveHoursProfile
+        points: [(date: Date, value: Double)], activeOffsets: [TimeInterval]
     ) -> Double? {
         guard points.count >= 2 else { return nil }
         var smoothed: Double?
         let alpha = 0.42
-        for pair in zip(points.dropLast(), points.dropFirst()) {
-            let active = activeSeconds(
-                from: pair.0.date, to: pair.1.date, calendar: calendar, activeProfile: activeProfile
-            )
-            let drop = pair.0.value - pair.1.value
+        for index in 1..<points.count {
+            let active = activeOffsets[index] - activeOffsets[index - 1]
+            let drop = points[index - 1].value - points[index].value
             guard active >= 60, drop > 0 else { continue }
             let rate = drop / active
             smoothed = smoothed.map { (alpha * rate) + ((1 - alpha) * $0) } ?? rate

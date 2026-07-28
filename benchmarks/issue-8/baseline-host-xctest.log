@@ -1,0 +1,15 @@
+Test Suite 'Selected tests' started at 2026-07-27 23:25:39.596.
+Test Suite 'RashunPackageTests.xctest' started at 2026-07-27 23:25:39.606.
+Test Suite 'BatteryPerformanceBaselineTests' started at 2026-07-27 23:25:39.607.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testForecastConsumerBaseline]' started.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testForecastConsumerBaseline]' passed (0.429 seconds).
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testHistoryPersistenceBaseline]' started.
+Test Case '-[RashunCoreTests.BatteryPerformanceBaselineTests testHistoryPersistenceBaseline]' passed (0.946 seconds).
+Test Suite 'BatteryPerformanceBaselineTests' passed at 2026-07-27 23:25:40.981.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 1.374 (1.375) seconds
+Test Suite 'RashunPackageTests.xctest' passed at 2026-07-27 23:25:40.981.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 1.374 (1.375) seconds
+Test Suite 'Selected tests' passed at 2026-07-27 23:25:40.981.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 1.374 (1.385) seconds
+BATTERY_BASELINE forecast_consumers fixture_points=1500 consumers_per_sample=3 samples=5 sample_ms=94,83,83,83,83 median_ms=83
+BATTERY_BASELINE history_persistence fixture_snapshots=24630 fixture_bytes=1547057 enabled_metrics=2 history_writes=2 history_bytes_written=3094367 metadata_writes=2 metadata_bytes_written=337 elapsed_ms=421
