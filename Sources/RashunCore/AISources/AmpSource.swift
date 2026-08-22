@@ -1,15 +1,19 @@
 import Foundation
 
 public struct AmpSource: AISource {
+    static let minimumRefreshInterval: TimeInterval = 2 * 60
+
     private actor UsageCache {
         private var inFlight: Task<[String: UsageResult], Error>?
-        private var lastValue: (timestamp: Date, usages: [String: UsageResult])?
+        private var lastResult: (timestamp: Date, result: Result<[String: UsageResult], Error>)?
 
         func usages(loader: @escaping @Sendable () async throws -> [String: UsageResult])
             async throws -> [String: UsageResult]
         {
-            if let cached = lastValue, Date().timeIntervalSince(cached.timestamp) < 2 {
-                return cached.usages
+            if let cached = lastResult,
+                Date().timeIntervalSince(cached.timestamp) < AmpSource.minimumRefreshInterval
+            {
+                return try cached.result.get()
             }
             if let inFlight {
                 return try await inFlight.value
@@ -19,10 +23,11 @@ public struct AmpSource: AISource {
             inFlight = task
             do {
                 let usages = try await task.value
-                lastValue = (Date(), usages)
+                lastResult = (Date(), .success(usages))
                 inFlight = nil
                 return usages
             } catch {
+                lastResult = (Date(), .failure(error))
                 inFlight = nil
                 throw error
             }
@@ -330,10 +335,11 @@ public struct AmpSource: AISource {
             usages["amp-free"] = freeUsage
         }
 
-        // The initial subscription CLI calls agent allowance "other usage". Accept
-        // "agent usage" as well so the tracker survives a terminology alignment.
+        // Amp has emitted both "Subscription Megawatt:" and the Markdown-formatted
+        // "**Amp Megawatt Subscription:**" heading. Accept either heading and both
+        // names used for the agent allowance.
         let subscriptionPattern =
-            #"(?im)^\s*Subscription\s+[^:\r\n]+:\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#
+            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#
         if let regex = try? NSRegularExpression(pattern: subscriptionPattern) {
             let range = NSRange(output.startIndex..., in: output)
             if let match = regex.firstMatch(in: output, range: range), match.numberOfRanges == 3,

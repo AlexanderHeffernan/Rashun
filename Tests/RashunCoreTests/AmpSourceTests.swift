@@ -94,6 +94,24 @@ final class AmpSourceTests: XCTestCase {
         XCTAssertNil(usages["amp-orb-usage"]?.resetDate)
     }
 
+    func testParseUsageByMetric_currentSubscriptionOutput() {
+        let output = """
+            Signed in as test@example.com (test)
+            **Amp Megawatt Subscription:** 52% other usage and 92% orb usage remaining - resets upon renewal in 2 days
+
+            # Run `amp usage --details` for more detailed information.
+            """
+
+        let usages = source.parseUsageByMetric(from: output)
+
+        XCTAssertEqual(usages["amp-agent-usage"]?.remaining, 52)
+        XCTAssertEqual(usages["amp-orb-usage"]?.remaining, 92)
+    }
+
+    func testAmpRefreshIntervalHonorsEndpointRateLimit() {
+        XCTAssertEqual(AmpSource.minimumRefreshInterval, 2 * 60)
+    }
+
     func testParseUsageByMetric_acceptsAgentUsageTerminology() {
         let output =
             "Subscription Gigawatt: 12% agent usage and 34% orb usage remaining - resets upon renewal in 2 weeks"
