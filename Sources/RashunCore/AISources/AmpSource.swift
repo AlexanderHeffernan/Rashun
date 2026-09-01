@@ -335,12 +335,16 @@ public struct AmpSource: AISource {
             usages["amp-free"] = freeUsage
         }
 
-        // Amp has emitted both "Subscription Megawatt:" and the Markdown-formatted
-        // "**Amp Megawatt Subscription:**" heading. Accept either heading and both
-        // names used for the agent allowance.
-        let subscriptionPattern =
-            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#
-        if let regex = try? NSRegularExpression(pattern: subscriptionPattern) {
+        // Amp has emitted percentage-first and allowance-first subscription lines.
+        // Accept both while keeping support for its legacy headings and terminology.
+        let subscriptionPatterns = [
+            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#,
+            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*agent\s+usage\s+[^\r\n]*?\(([\d.]+)%\),\s*orb\s+usage\s+[^\r\n]*?\(([\d.]+)%\)"#,
+        ]
+        for subscriptionPattern in subscriptionPatterns {
+            guard let regex = try? NSRegularExpression(pattern: subscriptionPattern) else {
+                continue
+            }
             let range = NSRange(output.startIndex..., in: output)
             if let match = regex.firstMatch(in: output, range: range), match.numberOfRanges == 3,
                 let agentRange = Range(match.range(at: 1), in: output),
@@ -350,6 +354,7 @@ public struct AmpSource: AISource {
             {
                 usages["amp-agent-usage"] = UsageResult(remaining: agentRemaining, limit: 100)
                 usages["amp-orb-usage"] = UsageResult(remaining: orbRemaining, limit: 100)
+                break
             }
         }
 
