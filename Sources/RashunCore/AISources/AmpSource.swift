@@ -3,6 +3,18 @@ import Foundation
 public struct AmpSource: AISource {
     static let minimumRefreshInterval: TimeInterval = 2 * 60
 
+    private actor CreditBalanceCache {
+        private var lastValue: AmpCreditBalance?
+
+        func set(_ value: AmpCreditBalance?) {
+            lastValue = value
+        }
+
+        func value() -> AmpCreditBalance? {
+            lastValue
+        }
+    }
+
     private actor UsageCache {
         private var inFlight: Task<[String: UsageResult], Error>?
         private var lastResult: (timestamp: Date, result: Result<[String: UsageResult], Error>)?
@@ -35,6 +47,7 @@ public struct AmpSource: AISource {
     }
 
     private static let usageCache = UsageCache()
+    private static let creditBalanceCache = CreditBalanceCache()
 
     /// Keep this stable so existing usage history and source settings continue to work.
     public let name = "AMP"
@@ -60,6 +73,10 @@ public struct AmpSource: AISource {
 
     public init() {}
 
+    public static func latestCreditBalance() async -> AmpCreditBalance? {
+        await creditBalanceCache.value()
+    }
+
     public func fetchUsage(for metricId: String) async throws -> UsageResult {
         guard metrics.contains(where: { $0.id == metricId }) else {
             throw unsupportedMetricError(metricId)
@@ -67,6 +84,7 @@ public struct AmpSource: AISource {
 
         let usages = try await Self.usageCache.usages {
             let output = try runCommand()
+            await Self.creditBalanceCache.set(parseCreditBalance(from: output))
             let parsed = parseUsageByMetric(from: output)
             guard !parsed.isEmpty else {
                 throw AmpFetchError.parseFailed(output: output)
@@ -361,6 +379,22 @@ public struct AmpSource: AISource {
         return usages
     }
 
+    public func parseCreditBalance(from output: String) -> AmpCreditBalance? {
+        let pattern =
+            #"(?im)^\s*(?:\*\*)?Individual\s+credits:(?:\*\*)?\s*\$([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s+USD)?\s+remaining\b"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(output.startIndex..., in: output)
+        guard let match = regex.firstMatch(in: output, range: range),
+            match.numberOfRanges == 2,
+            let amountRange = Range(match.range(at: 1), in: output),
+            let amount = Double(output[amountRange].replacingOccurrences(of: ",", with: "")),
+            amount.isFinite
+        else {
+            return nil
+        }
+        return AmpCreditBalance(amount: amount)
+    }
+
     private func parseAmpFreeUsage(from output: String) -> UsageResult? {
         let pattern = #"(?im)^\s*Amp Free:\s*([\d.]+)%\s+remaining\s+today\s*\(resets\s+daily\)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
@@ -421,6 +455,18 @@ public struct AmpSource: AISource {
             return todaysMidnight
         }
         return calendar.date(byAdding: .day, value: 1, to: todaysMidnight)
+    }
+}
+
+public struct AmpCreditBalance: Sendable, Equatable {
+    public let amount: Double
+
+    public init(amount: Double) {
+        self.amount = amount
+    }
+
+    public var formatted: String {
+        String(format: "$%.2f USD Balance", amount)
     }
 }
 
