@@ -2072,6 +2072,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func headerDetailText(for source: AISource) async -> String? {
+        if source.name == "AMP", let balance = await AmpSource.latestCreditBalance() {
+            return balance.formatted
+        }
+
         guard source.name == "Codex",
             let balance = await CodexSource.latestResetBalance(),
             balance.count > 0
