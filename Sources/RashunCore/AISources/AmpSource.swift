@@ -356,8 +356,8 @@ public struct AmpSource: AISource {
         // Amp has emitted percentage-first and allowance-first subscription lines.
         // Accept both while keeping support for its legacy headings and terminology.
         let subscriptionPatterns = [
-            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#,
-            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+Subscription):(?:\*\*)?\s*agent\s+usage\s+[^\r\n]*?\(([\d.]+)%\),\s*orb\s+usage\s+[^\r\n]*?\(([\d.]+)%\)"#,
+            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+(?:Subscription|Tier)):(?:\*\*)?\s*([\d.]+)%\s+(?:other|agent)\s+usage\s+and\s+([\d.]+)%\s+orb\s+usage\s+remaining\b"#,
+            #"(?im)^\s*(?:\*\*)?(?:Subscription\s+[^:\r\n]+|Amp\s+[^:\r\n]+\s+(?:Subscription|Tier)):(?:\*\*)?\s*agent\s+usage\s+[^\r\n]*?\(([\d.]+)%\),\s*orb\s+usage\s+[^\r\n]*?\(([\d.]+)%\)"#,
         ]
         for subscriptionPattern in subscriptionPatterns {
             guard let regex = try? NSRegularExpression(pattern: subscriptionPattern) else {
