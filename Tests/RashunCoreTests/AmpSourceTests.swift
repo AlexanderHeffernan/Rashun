@@ -111,8 +111,8 @@ final class AmpSourceTests: XCTestCase {
     func testParseUsageByMetric_allowanceFirstSubscriptionOutput() {
         let output = """
             Signed in as test@example.com (test)
-            **Amp Megawatt Subscription:** agent usage $13.96 of $20 remaining (70%), orb usage 698.1h of 750h a1.small orb hours remaining (93%) - period 2026-08-24 to 2026-09-24, resets upon renewal in 22 days
-            **Individual credits:** $34.82 remaining - https://ampcode.com/settings
+            **Amp Megawatt Tier:** agent usage $19.08 of $20 remaining (95%), orb usage 728.3h of 750h a1.small orb hours remaining (97%) - period 2026-08-24 to 2026-09-24, resets upon renewal in 14 days
+            **Individual credits:** $44.82 remaining (set up auto-reload to avoid running out) - https://ampcode.com/settings
 
             # Run `amp usage --details` for more detailed information.
             """
@@ -120,12 +120,12 @@ final class AmpSourceTests: XCTestCase {
         let usages = source.parseUsageByMetric(from: output)
         let creditBalance = source.parseCreditBalance(from: output)
 
-        XCTAssertEqual(usages["amp-agent-usage"]?.remaining, 70)
+        XCTAssertEqual(usages["amp-agent-usage"]?.remaining, 95)
         XCTAssertEqual(usages["amp-agent-usage"]?.limit, 100)
-        XCTAssertEqual(usages["amp-orb-usage"]?.remaining, 93)
+        XCTAssertEqual(usages["amp-orb-usage"]?.remaining, 97)
         XCTAssertEqual(usages["amp-orb-usage"]?.limit, 100)
-        XCTAssertEqual(creditBalance, AmpCreditBalance(amount: 34.82))
-        XCTAssertEqual(creditBalance?.formatted, "$34.82 USD Balance")
+        XCTAssertEqual(creditBalance, AmpCreditBalance(amount: 44.82))
+        XCTAssertEqual(creditBalance?.formatted, "$44.82 USD Balance")
     }
 
     func testParseCreditBalance_acceptsUSDAndThousandsSeparators() {
