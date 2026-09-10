@@ -112,18 +112,20 @@ final class UpdateManager {
         isInstalling = true
         NotificationCenter.default.post(name: .updateStatusChanged, object: nil)
 
-        do {
-            try installer.installUpdate(from: repo)
-        } catch {
-            isInstalling = false
-            NotificationCenter.default.post(name: .updateStatusChanged, object: nil)
-            return
-        }
-
-        // The install script will quit this app and reopen the new version.
-        // Give it a moment, then quit ourselves.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            NSApplication.shared.terminate(nil)
+        Task {
+            do {
+                try await installer.installUpdate(from: repo)
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.createsNewApplicationInstance = true
+                try await NSWorkspace.shared.openApplication(
+                    at: Bundle.main.bundleURL,
+                    configuration: configuration
+                )
+                NSApplication.shared.terminate(nil)
+            } catch {
+                isInstalling = false
+                NotificationCenter.default.post(name: .updateStatusChanged, object: nil)
+            }
         }
     }
 
@@ -136,16 +138,39 @@ final class UpdateManager {
 
 @MainActor
 struct MacOSShellUpdateInstaller: UpdateInstaller {
-    func installUpdate(from repository: String) throws {
+    func installUpdate(from repository: String) async throws {
         let installURL = "https://raw.githubusercontent.com/\(repository)/main/install.sh"
-        let script = """
-        curl -fsSL \(installURL) | bash -s -- --update
+        let command = "curl -fsSL \(installURL) | bash"
+        let appleScript = """
+        on run argv
+            do shell script (item 1 of argv) with administrator privileges
+        end run
         """
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", script]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", appleScript, command]
         process.qualityOfService = .userInitiated
         try process.run()
+
+        let status = await withCheckedContinuation { continuation in
+            process.terminationHandler = { process in
+                continuation.resume(returning: process.terminationStatus)
+            }
+        }
+        guard status == 0 else {
+            throw MacOSUpdateInstallError.nonZeroExit(code: status)
+        }
+    }
+}
+
+private enum MacOSUpdateInstallError: LocalizedError {
+    case nonZeroExit(code: Int32)
+
+    var errorDescription: String? {
+        switch self {
+        case let .nonZeroExit(code):
+            return "Installer exited with status \(code)."
+        }
     }
 }

@@ -84,7 +84,7 @@ struct UpdateCommand: AsyncParsableCommand {
         }
 
         do {
-            try CLIShellUpdateInstaller().installUpdate(from: Self.repository)
+            try await CLIShellUpdateInstaller().installUpdate(from: Self.repository)
             if global.json {
                 try JSONOutput.print(UpdateCheckResponse(
                     currentVersion: current,
@@ -125,7 +125,7 @@ struct UpdateCommand: AsyncParsableCommand {
 
 @MainActor
 private struct CLIShellUpdateInstaller: UpdateInstaller {
-    func installUpdate(from repository: String) throws {
+    func installUpdate(from repository: String) async throws {
         #if os(Windows)
         throw UpdateInstallError.unsupportedPlatform
         #else

@@ -35,7 +35,7 @@ public struct GitHubUpdateVersionFetcher: UpdateVersionFetching {
 
 public protocol UpdateInstaller {
     @MainActor
-    func installUpdate(from repository: String) throws
+    func installUpdate(from repository: String) async throws
 }
 
 @MainActor
