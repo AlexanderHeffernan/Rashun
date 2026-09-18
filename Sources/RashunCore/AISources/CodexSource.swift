@@ -53,13 +53,16 @@ public struct CodexSource: AISource {
     private static let resetBalanceCache = ResetBalanceCache()
 
     public let name = "Codex"
+    public let displayName = "ChatGPT"
     public let requirements =
-        "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
+        "OS support: macOS only. Requires Codex app/CLI login at ~/.codex/auth.json for Pro and Luna Reserve usage windows. Free weekly usage falls back to local session logs at ~/.codex/sessions."
     public let metrics = [
         AISourceMetric(
             id: "codex-free-weekly", title: "Free Weekly Usage", menuBarBadgeText: "Free"),
         AISourceMetric(id: "codex-pro-5h", title: "Pro 5 Hour", menuBarBadgeText: "5h"),
         AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly", menuBarBadgeText: "7d"),
+        AISourceMetric(
+            id: "codex-luna-reserve", title: "Luna Reserve", menuBarBadgeText: "Luna"),
     ]
     public let menuBarBrandColorHex: UInt32 = 0x3C35FF
     public var pacingBehavior: SourcePacingBehavior { .resetWindow }
@@ -186,7 +189,7 @@ public struct CodexSource: AISource {
         return sample
     }
 
-    private let usageURL = URL(string: "https://chatgpt.com/backend-api/codex/usage")!
+    private let usageURL = URL(string: "https://chatgpt.com/backend-api/wham/usage")!
     private let resetCreditsURL = URL(
         string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!
     private let tokenURL = URL(string: "https://auth.openai.com/oauth/token")!
@@ -231,6 +234,12 @@ public struct CodexSource: AISource {
                 let usage = parseUsageWindow(window)
             else { continue }
             parsed[metricId] = usage
+        }
+        if let reserve = response.additionalRateLimits?.first(where: { $0.isLunaReserve }),
+            let window = reserve.rateLimit?.primaryWindow ?? reserve.rateLimit?.secondaryWindow,
+            let usage = parseUsageWindow(window)
+        {
+            parsed["codex-luna-reserve"] = usage
         }
         return parsed
     }
@@ -569,6 +578,9 @@ public struct CodexSource: AISource {
             var request = URLRequest(url: usageURL)
             addCodexAPIHeaders(
                 to: &request, accessToken: accessToken, accountID: auth.tokens.accountID)
+            // Opt-in flag so the backend includes the Luna Reserve quota
+            // (matched from `additional_rate_limits`) for eligible accounts.
+            request.addValue("1", forHTTPHeaderField: "x-openai-codex-luna-reserve")
 
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else {
@@ -954,15 +966,47 @@ public struct CodexAuthTokens: Decodable {
 public struct CodexUsageResponse: Decodable {
     public let planType: String?
     public let rateLimit: CodexRateLimit?
+    public let additionalRateLimits: [CodexAdditionalRateLimit]?
 
-    public init(planType: String? = nil, rateLimit: CodexRateLimit? = nil) {
+    public init(
+        planType: String? = nil, rateLimit: CodexRateLimit? = nil,
+        additionalRateLimits: [CodexAdditionalRateLimit]? = nil
+    ) {
         self.planType = planType
         self.rateLimit = rateLimit
+        self.additionalRateLimits = additionalRateLimits
     }
 
     private enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
         case rateLimit = "rate_limit"
+        case additionalRateLimits = "additional_rate_limits"
+    }
+}
+
+public struct CodexAdditionalRateLimit: Decodable {
+    public let limitName: String?
+    public let meteredFeature: String?
+    public let rateLimit: CodexRateLimit?
+
+    public init(
+        limitName: String? = nil, meteredFeature: String? = nil, rateLimit: CodexRateLimit? = nil
+    ) {
+        self.limitName = limitName
+        self.meteredFeature = meteredFeature
+        self.rateLimit = rateLimit
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case limitName = "limit_name"
+        case meteredFeature = "metered_feature"
+        case rateLimit = "rate_limit"
+    }
+
+    /// Luna Reserve entries report the reserve quota for the hidden `gpt-reserve`
+    /// model; identify them by the stable names used by the first-party Codex client.
+    public var isLunaReserve: Bool {
+        meteredFeature == "base_model_inference" || limitName == "gpt-reserve"
     }
 }
 
