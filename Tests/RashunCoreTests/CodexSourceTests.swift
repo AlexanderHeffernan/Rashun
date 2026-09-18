@@ -16,13 +16,19 @@ final class CodexSourceTests: XCTestCase {
         XCTAssertEqual(sample?.primary?.resetsAt, 1_770_799_659)
     }
 
-    func testMetricsExposeFreeWeeklyAndProWindows() {
+    func testDisplayNameIsChatGPTWhileNameStaysStable() {
+        XCTAssertEqual(source.displayName, "ChatGPT")
+        XCTAssertEqual(source.name, "Codex")
+    }
+
+    func testMetricsExposeFreeWeeklyProWindowsAndLunaReserve() {
         XCTAssertEqual(
             source.metrics.map(\.id),
             [
                 "codex-free-weekly",
                 "codex-pro-5h",
                 "codex-pro-weekly",
+                "codex-luna-reserve",
             ])
         XCTAssertEqual(
             source.metrics.map(\.title),
@@ -30,6 +36,7 @@ final class CodexSourceTests: XCTestCase {
                 "Free Weekly Usage",
                 "Pro 5 Hour",
                 "Pro Weekly",
+                "Luna Reserve",
             ])
         XCTAssertEqual(
             source.metrics.map(\.menuBarBadgeText),
@@ -37,6 +44,7 @@ final class CodexSourceTests: XCTestCase {
                 "Free",
                 "5h",
                 "7d",
+                "Luna",
             ])
     }
 
@@ -98,6 +106,60 @@ final class CodexSourceTests: XCTestCase {
         XCTAssertEqual(usages["codex-pro-weekly"]?.remaining, 77)
         XCTAssertEqual(
             usages["codex-pro-weekly"]?.cycleStartDate?.timeIntervalSince1970, 1_778_521_600)
+    }
+
+    func testParseProUsageByMetricParsesLunaReserveFromAdditionalRateLimits() throws {
+        let data = Data(
+            """
+            {
+              "plan_type": "pro",
+              "rate_limit": {
+                "primary_window": { "used_percent": 37.5, "reset_at": 1780000000, "limit_window_seconds": 18000 }
+              },
+              "additional_rate_limits": [
+                {
+                  "limit_name": "gpt-reserve",
+                  "metered_feature": "base_model_inference",
+                  "normal_model_slug": "gpt-5.6-luna",
+                  "rate_limit": {
+                    "allowed": true,
+                    "limit_reached": false,
+                    "primary_window": { "used_percent": 48, "reset_at": 1786256000, "limit_window_seconds": 18000 }
+                  }
+                }
+              ]
+            }
+            """.utf8)
+
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+        let usages = source.parseProUsageByMetric(from: response)
+
+        XCTAssertEqual(usages["codex-luna-reserve"]?.remaining, 52)
+        XCTAssertEqual(usages["codex-luna-reserve"]?.limit, 100)
+        XCTAssertEqual(
+            usages["codex-luna-reserve"]?.resetDate?.timeIntervalSince1970, 1_786_256_000)
+        XCTAssertEqual(
+            usages["codex-luna-reserve"]?.cycleStartDate?.timeIntervalSince1970, 1_786_238_000)
+        XCTAssertEqual(usages["codex-pro-5h"]?.remaining, 62.5)
+    }
+
+    func testParseProUsageByMetricOmitsLunaReserveWhenAbsent() throws {
+        let data = Data(
+            """
+            {
+              "plan_type": "pro",
+              "rate_limit": {
+                "primary_window": { "used_percent": 10, "reset_at": 1780000000, "limit_window_seconds": 18000 }
+              },
+              "additional_rate_limits": []
+            }
+            """.utf8)
+
+        let response = try JSONDecoder().decode(CodexUsageResponse.self, from: data)
+        let usages = source.parseProUsageByMetric(from: response)
+
+        XCTAssertNil(usages["codex-luna-reserve"])
+        XCTAssertEqual(usages["codex-pro-5h"]?.remaining, 90)
     }
 
     func testParseResetBalanceParsesCreditsObject() throws {

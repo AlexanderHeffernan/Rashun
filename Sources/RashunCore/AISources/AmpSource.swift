@@ -56,8 +56,6 @@ public struct AmpSource: AISource {
         "OS support: macOS/Linux/Windows (where AMP CLI is available). Requires the amp CLI installed, signed in, and available on PATH (or at ~/.amp/bin/amp). Agent and orb usage require an Amp subscription."
     public let metrics = [
         AISourceMetric(
-            id: "amp-free", title: "Free", defaultEnabled: false, menuBarBadgeText: "Free"),
-        AISourceMetric(
             id: "amp-agent-usage", title: "Agent Usage", defaultEnabled: false,
             menuBarBadgeText: "Agent"),
         AISourceMetric(
@@ -131,7 +129,7 @@ public struct AmpSource: AISource {
                 return SourceFetchErrorPresentation(
                     shortMessage: "Could not parse AMP output",
                     detailedMessage:
-                        "Rashun could not parse AMP usage output. Run `~/.amp/bin/amp usage` in Terminal and confirm it reports Amp Free or subscription usage."
+                        "Rashun could not parse AMP usage output. Run `~/.amp/bin/amp usage` in Terminal and confirm it reports subscription usage."
                 )
             case .metricUnavailable(let unavailableMetricId):
                 let metricTitle =
@@ -217,9 +215,6 @@ public struct AmpSource: AISource {
     public func pacingLookbackStart(for metricId: String) -> (
         (_ current: UsageResult, _ history: [UsageSnapshot], _ now: Date) -> Date?
     )? {
-        if metricId == "amp-free" {
-            return { current, _, _ in current.cycleStartDate }
-        }
         guard isSubscriptionMetric(metricId) else { return nil }
         return { _, history, now in
             inferredSubscriptionCycle(history: history, now: now)?.start
@@ -249,13 +244,13 @@ public struct AmpSource: AISource {
     }
 
     public func forecastHistoryWindowHours(for metricId: String) -> Double? {
-        metricId == "amp-free" ? 24 : isSubscriptionMetric(metricId) ? 31 * 24 : nil
+        isSubscriptionMetric(metricId) ? 31 * 24 : nil
     }
 
     public func pacingAssessment(
         for metricId: String, current: UsageResult, history: [UsageSnapshot], now: Date
     ) -> UsagePacingAssessment? {
-        guard metricId == "amp-free" || isSubscriptionMetric(metricId) else { return nil }
+        guard isSubscriptionMetric(metricId) else { return nil }
         let resolved = resolvedUsage(
             for: metricId, current: current, history: history, now: now)
         guard let resetDate = resolved.resetDate else { return nil }
@@ -342,16 +337,8 @@ public struct AmpSource: AISource {
         }
     }
 
-    /// Backwards-compatible Amp Free parser used by existing callers.
-    public func parseUsage(from output: String) -> UsageResult? {
-        parseAmpFreeUsage(from: output)
-    }
-
     public func parseUsageByMetric(from output: String) -> [String: UsageResult] {
         var usages: [String: UsageResult] = [:]
-        if let freeUsage = parseAmpFreeUsage(from: output) {
-            usages["amp-free"] = freeUsage
-        }
 
         // Amp has emitted percentage-first and allowance-first subscription lines.
         // Accept both while keeping support for its legacy headings and terminology.
@@ -395,29 +382,6 @@ public struct AmpSource: AISource {
         return AmpCreditBalance(amount: amount)
     }
 
-    private func parseAmpFreeUsage(from output: String) -> UsageResult? {
-        let pattern = #"(?im)^\s*Amp Free:\s*([\d.]+)%\s+remaining\s+today\s*\(resets\s+daily\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-
-        let range = NSRange(output.startIndex..., in: output)
-        guard let match = regex.firstMatch(in: output, range: range),
-            match.numberOfRanges == 2,
-            let percentRange = Range(match.range(at: 1), in: output)
-        else {
-            return nil
-        }
-
-        guard let remaining = validPercentage(output[percentRange]),
-            let resetDate = dailyResetDate(),
-            let cycleStartDate = dailyCycleStartDate()
-        else {
-            return nil
-        }
-
-        return UsageResult(
-            remaining: remaining, limit: 100, resetDate: resetDate, cycleStartDate: cycleStartDate)
-    }
-
     private func validPercentage(_ value: Substring) -> Double? {
         guard let percentage = Double(value), percentage >= 0, percentage <= 100 else {
             return nil
@@ -425,37 +389,6 @@ public struct AmpSource: AISource {
         return percentage
     }
 
-    /// Amp reports only "today" and does not expose a reset timestamp.
-    /// Amp Free resets daily at midnight GMT (UTC).
-    private static let gmtTimeZone = TimeZone(identifier: "GMT") ?? TimeZone(secondsFromGMT: 0)!
-
-    /// Internal for tests — cycle start is the previous midnight GMT reset.
-    func dailyCycleStartDate(reference: Date = Date()) -> Date? {
-        guard let resetDate = dailyResetDate(reference: reference) else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = Self.gmtTimeZone
-        return calendar.date(byAdding: .day, value: -1, to: resetDate)
-    }
-
-    /// Internal for tests — next Amp Free reset at midnight GMT.
-    func dailyResetDate(reference: Date = Date()) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = Self.gmtTimeZone
-
-        var components = calendar.dateComponents([.year, .month, .day], from: reference)
-        components.hour = 0
-        components.minute = 0
-        components.second = 0
-        components.timeZone = Self.gmtTimeZone
-
-        guard let todaysMidnight = calendar.date(from: components) else { return nil }
-
-        // At or after today's midnight GMT, the next window opens tomorrow at midnight GMT.
-        if reference < todaysMidnight {
-            return todaysMidnight
-        }
-        return calendar.date(byAdding: .day, value: 1, to: todaysMidnight)
-    }
 }
 
 public struct AmpCreditBalance: Sendable, Equatable {
