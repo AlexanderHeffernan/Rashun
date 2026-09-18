@@ -62,7 +62,8 @@ public struct CodexSource: AISource {
         AISourceMetric(id: "codex-pro-5h", title: "Pro 5 Hour", menuBarBadgeText: "5h"),
         AISourceMetric(id: "codex-pro-weekly", title: "Pro Weekly", menuBarBadgeText: "7d"),
         AISourceMetric(
-            id: "codex-luna-reserve", title: "Luna Reserve", menuBarBadgeText: "Luna"),
+            id: "codex-luna-reserve", title: "Luna Reserve", defaultEnabled: false,
+            menuBarBadgeText: "Luna"),
     ]
     public let menuBarBrandColorHex: UInt32 = 0x3C35FF
     public var pacingBehavior: SourcePacingBehavior { .resetWindow }

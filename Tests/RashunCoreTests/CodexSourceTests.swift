@@ -46,6 +46,9 @@ final class CodexSourceTests: XCTestCase {
                 "7d",
                 "Luna",
             ])
+        // Luna Reserve is only granted to selected accounts, so it must be opt-in.
+        let luna = source.metrics.first { $0.id == "codex-luna-reserve" }
+        XCTAssertEqual(luna?.defaultEnabled, false)
     }
 
     func testParseProUsageByMetricParsesPrimaryAndSecondaryWindows() {
