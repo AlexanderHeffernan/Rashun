@@ -2,6 +2,7 @@
 // To add a new source, create a new file in Sources/RashunCore/AISources/.
 public let allSources: [AISource] = [
     AmpSource(),
+    ClaudeSource(),
     CodexSource(),
     CopilotSource(),
     CursorSource(),

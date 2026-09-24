@@ -159,6 +159,8 @@ struct ForecastCommand: AsyncParsableCommand {
             return "source_not_configured"
         case CopilotFetchError.ghNotInstalled, CopilotFetchError.ghNoToken:
             return "source_not_configured"
+        case ClaudeFetchError.credentialsMissing, ClaudeFetchError.accessTokenMissing:
+            return "source_not_configured"
         case CodexFetchError.sessionsDirectoryMissing, CodexFetchError.sessionsDirectoryUnreadable,
             CodexFetchError.noSessionFiles:
             return "source_not_configured"
