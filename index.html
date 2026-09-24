@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rashun — AI Usage Monitor for macOS + Cross-Platform CLI</title>
-  <meta name="description" content="Rashun is a macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Copilot, Codex, and Gemini." />
-  <meta name="keywords" content="Rashun, AI usage monitor, macOS menu bar app, cross-platform CLI, Linux Windows CLI, Copilot usage tracker, Amp usage, Codex usage, Gemini usage, AI token tracker, developer tools" />
+  <meta name="description" content="Rashun is a macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Claude, Copilot, Codex, and Gemini." />
+  <meta name="keywords" content="Rashun, AI usage monitor, macOS menu bar app, cross-platform CLI, Linux Windows CLI, Copilot usage tracker, Amp usage, Codex usage, Gemini usage, Claude usage, AI token tracker, developer tools" />
   <meta name="author" content="Alexander Heffernan" />
   <meta name="robots" content="index, follow" />
   <link rel="canonical" href="https://rashun.alexheffernan.dev" />
@@ -18,7 +18,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://rashun.alexheffernan.dev" />
   <meta property="og:title" content="Rashun — AI Usage Monitor for macOS + Cross-Platform CLI" />
-  <meta property="og:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Copilot, Codex, and Gemini." />
+  <meta property="og:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Claude, Copilot, Codex, and Gemini." />
   <meta property="og:image" content="https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg" />
   <meta property="og:image:alt" content="Rashun app icon" />
   <meta property="og:site_name" content="Rashun" />
@@ -28,7 +28,7 @@
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:url" content="https://rashun.alexheffernan.dev" />
   <meta name="twitter:title" content="Rashun — AI Usage Monitor for macOS + Cross-Platform CLI" />
-  <meta name="twitter:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Copilot, Codex, and Gemini." />
+  <meta name="twitter:description" content="A macOS menu bar app with a cross-platform CLI that tracks usage across Amp, Claude, Copilot, Codex, and Gemini." />
   <meta name="twitter:image" content="https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg" />
   <meta name="twitter:image:alt" content="Rashun app icon" />
   <meta name="twitter:creator" content="@AlexanderHeffernan" />
@@ -41,7 +41,7 @@
     "name": "Rashun",
     "operatingSystem": "macOS, Windows, Linux",
     "applicationCategory": "DeveloperApplication",
-    "description": "A macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Copilot, Codex, and Gemini.",
+    "description": "A macOS menu bar app with a cross-platform CLI that tracks AI coding tool usage across Amp, Claude, Copilot, Codex, and Gemini.",
     "url": "https://rashun.alexheffernan.dev",
     "image": "https://raw.githubusercontent.com/AlexanderHeffernan/Rashun/main/icon.jpg",
     "author": {
@@ -704,6 +704,14 @@
           <span><strong>OS:</strong> macOS / Linux / Windows (where AMP CLI is available)</span>
           <span><strong>Tested:</strong> AMP Free only (paid plans not verified)</span>
           <span><strong>Notes:</strong> Reads AMP CLI output and parses remaining quota.</span>
+        </div>
+      </div>
+      <div class="source-card fade-in fade-in-delay-3">
+        <div class="source-header"><span class="source-dot" style="background: #D97757;"></span> Claude</div>
+        <div class="source-meta">
+          <span><strong>OS:</strong> macOS / Linux / Windows (where Claude Code is available)</span>
+          <span><strong>Tested:</strong> Claude Max only (other plans not verified)</span>
+          <span><strong>Notes:</strong> Tracks 5-hour session and weekly limits via Claude Code's OAuth credentials.</span>
         </div>
       </div>
       <div class="source-card fade-in fade-in-delay-4">
