@@ -236,7 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func publishMobileUsagePresentation(enabledSources: [AISource]) {
-        let logoNames = Set(["amp", "codex", "copilot", "cursor", "gemini"])
+        let logoNames = Set(["amp", "claude", "codex", "copilot", "cursor", "gemini"])
         let appearance = SettingsStore.shared.menuBarAppearance
         let presentations = enabledSources.flatMap { source -> [MobileMetricPresentation] in
             let metrics = enabledMetrics(for: source)
@@ -1616,6 +1616,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for bundleURL in appBundleCandidates.compactMap({ $0 }).filter({
             FileManager.default.fileExists(atPath: $0.path)
         }) {
+            // Resolves both flat and nested (Contents/Resources) resource bundle layouts,
+            // which vary between SwiftPM toolchain versions.
+            if let resourceURL = Bundle(url: bundleURL)?.url(
+                forResource: assetBaseName, withExtension: "png"),
+                let image = NSImage(contentsOf: resourceURL)
+            {
+                return image
+            }
             let logoCandidates = [
                 bundleURL.appendingPathComponent("SourceLogos/\(assetBaseName).png"),
                 bundleURL.appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png"),

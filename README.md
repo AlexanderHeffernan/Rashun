@@ -22,7 +22,7 @@
 
 ---
 
-If you juggle multiple AI coding tools — Amp, GitHub Copilot, Codex, Gemini CLI — keeping track of how much quota you have left across all of them is a pain. You're deep in a project, it's day 22 of the month, and suddenly one of them cuts you off.
+If you juggle multiple AI coding tools — Amp, Claude Code, GitHub Copilot, Codex, Gemini CLI — keeping track of how much quota you have left across all of them is a pain. You're deep in a project, it's day 22 of the month, and suddenly one of them cuts you off.
 
 Rashun sits in your menu bar, polls each source on a timer, and gives you a single at-a-glance view of your remaining quota. It charts your usage history over time, forecasts when you'll run out, and nudges you with notifications before you hit zero.
 
@@ -81,7 +81,7 @@ irm https://raw.githubusercontent.com/alexanderheffernan/rashun/main/scripts/ins
 ## Features
 
 - **Menu bar at a glance** — Ring icons show remaining quota per metric, with your choice of monochrome or source-branded colors. Display the AI source's logo or the overall remaining usage percentage in the center.
-- **Five sources built in** — Ships with support for **Amp** (Free, subscription agent usage, and subscription orb usage), **GitHub Copilot**, **Codex** (free weekly plus paid-plan 5-hour/weekly windows), **Cursor**, and **Gemini CLI** (with per-model metric tracking for Gemini). Enable whichever ones you use.
+- **Six sources built in** — Ships with support for **Amp** (Free, subscription agent usage, and subscription orb usage), **Claude** (5-hour session, weekly, and Fable weekly limits), **GitHub Copilot**, **Codex** (free weekly plus paid-plan 5-hour/weekly windows), **Cursor**, and **Gemini CLI** (with per-model metric tracking for Gemini). Enable whichever ones you use.
 - **Usage history & charts** — A dedicated window charts your usage trends over time with selectable ranges (Day, Week, Month, All). Toggle individual sources on and off in the legend.
 - **Forecasting** — Each source projects when you'll run out based on your burn rate and reset window. Forecast curves appear as dashed lines on the chart alongside a summary of insights.
 - **Smart notifications** — Get alerted when remaining usage drops below a threshold, when you're burning through tokens unusually fast, or when you're on pace to run out before reset. All thresholds are configurable.
@@ -113,6 +113,7 @@ The CLI uses the same `RashunCore` sources and models, so command-line output an
 | Source | Metrics | How it fetches data |
 |---|---|---|
 | **Amp** | Free, Agent Usage, Orb Usage | Runs `~/.amp/bin/amp usage` and parses free and subscription usage percentages |
+| **Claude** | Session, Weekly, Fable Weekly | Reads Claude Code's OAuth token (macOS Keychain item `Claude Code-credentials`, or `~/.claude/.credentials.json`) and calls the Claude usage API that powers Claude Code's `/usage` command |
 | **Copilot** | Premium Interactions | Uses `gh auth token` for authentication, then hits the GitHub Copilot internal API |
 | **Codex** | Free Weekly Usage, Pro 5 Hour, Pro Weekly | Uses Codex OAuth credentials at `~/.codex/auth.json` to call the Codex usage API for paid-plan windows, with `~/.codex/sessions/*.jsonl` session logs as a local fallback/source for free weekly usage |
 | **Gemini** | 2.5-Flash, 2.5-Flash-Lite, 2.5-Pro, 3-Flash-Preview, 3-Pro-Preview | Uses local `~/.gemini/oauth_creds.json` auth to call Gemini Code Assist quota APIs and tracks each model's remaining usage independently |
@@ -130,6 +131,7 @@ Each source has its own requirements and OS support:
 | Source | OS support | What you need |
 |---|---|---|
 | **Amp** | macOS / Linux / Windows (where AMP CLI is available) | [Amp CLI](https://ampcode.com) installed and available on PATH (or at `~/.amp/bin/amp`) |
+| **Claude** | macOS / Linux / Windows | [Claude Code](https://claude.com/claude-code) installed and signed in with a Claude subscription (Pro/Max/Team). Rashun never refreshes the token itself, so open Claude Code occasionally to keep it fresh |
 | **Copilot** | macOS / Linux / Windows | [GitHub CLI (`gh`)](https://cli.github.com/) installed, authenticated (`gh auth login`), and available on PATH |
 | **Codex** | macOS only (Codex app/CLI currently macOS) | Codex app/CLI installed and signed in, with local auth at `~/.codex/auth.json` and session logs in `~/.codex/sessions` |
 | **Gemini** | macOS / Linux / Windows (where Gemini CLI is available) | Gemini CLI installed and authenticated (credentials at `~/.gemini/oauth_creds.json`) |
@@ -289,7 +291,7 @@ Sources can also customize their behavior by implementing any of these:
 ```
 Sources/
 ├── RashunCore/                        # Cross-platform logic and data model
-│   ├── AISources/                     # Amp, Copilot, Codex, Gemini source fetchers
+│   ├── AISources/                     # Amp, Claude, Copilot, Codex, Cursor, Gemini source fetchers
 │   ├── GeneratedSourceList.swift      # Auto-generated source registry (build.sh)
 │   ├── Notification*.swift            # Notification rules/models
 │   ├── UsageHistory*.swift            # Cross-platform history storage and transfer
@@ -323,7 +325,7 @@ Contributions are welcome — whether it's a new AI source, a new notification r
 5. Open a pull request
 
 Some ideas for contributions:
-- New AI sources (Claude, ChatGPT, Cursor, Windsurf, etc.)
+- New AI sources (Windsurf, etc.)
 - New notification rule types
 - Additional forecast models
 - UI improvements and accessibility
