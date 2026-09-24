@@ -1616,6 +1616,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         for bundleURL in appBundleCandidates.compactMap({ $0 }).filter({
             FileManager.default.fileExists(atPath: $0.path)
         }) {
+            // Resolves both flat and nested (Contents/Resources) resource bundle layouts,
+            // which vary between SwiftPM toolchain versions.
+            if let resourceURL = Bundle(url: bundleURL)?.url(
+                forResource: assetBaseName, withExtension: "png"),
+                let image = NSImage(contentsOf: resourceURL)
+            {
+                return image
+            }
             let logoCandidates = [
                 bundleURL.appendingPathComponent("SourceLogos/\(assetBaseName).png"),
                 bundleURL.appendingPathComponent("Resources/SourceLogos/\(assetBaseName).png"),
