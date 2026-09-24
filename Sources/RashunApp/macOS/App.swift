@@ -236,7 +236,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func publishMobileUsagePresentation(enabledSources: [AISource]) {
-        let logoNames = Set(["amp", "codex", "copilot", "cursor", "gemini"])
+        let logoNames = Set(["amp", "claude", "codex", "copilot", "cursor", "gemini"])
         let appearance = SettingsStore.shared.menuBarAppearance
         let presentations = enabledSources.flatMap { source -> [MobileMetricPresentation] in
             let metrics = enabledMetrics(for: source)
