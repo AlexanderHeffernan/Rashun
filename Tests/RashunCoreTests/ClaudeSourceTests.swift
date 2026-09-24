@@ -8,7 +8,7 @@ final class ClaudeSourceTests: XCTestCase {
         XCTAssertEqual(source.metrics.map(\.id), [
             "claude-session",
             "claude-weekly",
-            "claude-weekly-model",
+            "claude-weekly-fable",
         ])
     }
 
@@ -16,11 +16,11 @@ final class ClaudeSourceTests: XCTestCase {
         XCTAssertEqual(source.metrics.map(\.menuBarBadgeText), [
             "5h",
             "7d",
-            "Model",
+            "Fable",
         ])
     }
 
-    func testModelWeeklyMetricIsOptIn() {
+    func testFableWeeklyMetricIsOptIn() {
         XCTAssertEqual(source.metrics.map(\.defaultEnabled), [true, true, false])
     }
 
@@ -31,7 +31,6 @@ final class ClaudeSourceTests: XCTestCase {
               "five_hour": {"utilization": 12.0, "resets_at": "2026-09-25T03:09:59.621245+00:00"},
               "seven_day": {"utilization": 30.5, "resets_at": "2026-09-30T07:59:59.621272+00:00"},
               "seven_day_opus": null,
-              "seven_day_sonnet": null,
               "extra_usage": {"is_enabled": false},
               "limits": [
                 {"kind": "session", "percent": 12, "resets_at": "2026-09-25T03:09:59.621245+00:00"},
@@ -60,8 +59,8 @@ final class ClaudeSourceTests: XCTestCase {
             weeklyReset.addingTimeInterval(-7 * 24 * 60 * 60).timeIntervalSince1970,
             accuracy: 0.001)
 
-        let model = try XCTUnwrap(usages["claude-weekly-model"])
-        XCTAssertEqual(model.remaining, 55, accuracy: 0.001)
+        let fable = try XCTUnwrap(usages["claude-weekly-fable"])
+        XCTAssertEqual(fable.remaining, 55, accuracy: 0.001)
     }
 
     func testParseUsageByMetric_unstartedWindowHasNoResetDate() {
@@ -85,24 +84,32 @@ final class ClaudeSourceTests: XCTestCase {
         XCTAssertEqual(usages["claude-weekly"]?.remaining, 100)
     }
 
-    func testParseUsageByMetric_modelWeeklyFallsBackToLegacyFieldsAndPicksTightest() {
+    func testParseUsageByMetric_fableWeeklyIgnoresOtherModelScopes() {
         let response = ClaudeUsageResponse(
-            sevenDayOpus: ClaudeUsageWindow(utilization: 80, resetsAt: nil),
-            sevenDaySonnet: ClaudeUsageWindow(utilization: 20, resetsAt: nil)
+            limits: [
+                ClaudeUsageLimit(
+                    kind: "weekly_scoped", percent: 80, resetsAt: nil, modelDisplayName: "Opus"),
+                ClaudeUsageLimit(
+                    kind: "weekly_scoped", percent: 20, resetsAt: nil, modelDisplayName: "Fable"),
+            ]
         )
         let usages = source.parseUsageByMetric(from: response)
-        XCTAssertEqual(usages["claude-weekly-model"]?.remaining, 20)
+        XCTAssertEqual(usages["claude-weekly-fable"]?.remaining, 80)
         XCTAssertNil(usages["claude-session"])
         XCTAssertNil(usages["claude-weekly"])
     }
 
-    func testParseUsageByMetric_skipsMissingModelWeekly() {
+    func testParseUsageByMetric_skipsMissingFableWeekly() {
         let response = ClaudeUsageResponse(
             fiveHour: ClaudeUsageWindow(utilization: 1, resetsAt: nil),
-            limits: [ClaudeUsageLimit(kind: "session", percent: 1, resetsAt: nil)]
+            limits: [
+                ClaudeUsageLimit(kind: "session", percent: 1, resetsAt: nil),
+                ClaudeUsageLimit(
+                    kind: "weekly_scoped", percent: 10, resetsAt: nil, modelDisplayName: "Opus"),
+            ]
         )
         let usages = source.parseUsageByMetric(from: response)
-        XCTAssertNil(usages["claude-weekly-model"])
+        XCTAssertNil(usages["claude-weekly-fable"])
     }
 
     func testParseCredentials_validToken() throws {

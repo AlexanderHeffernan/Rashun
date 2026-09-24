@@ -15,9 +15,8 @@ import Foundation
 // Metrics:
 //   - Session: the rolling 5-hour window (`five_hour`).
 //   - Weekly: the all-models 7-day window (`seven_day`).
-//   - Model Weekly: the tightest model-scoped 7-day window (`limits[kind=weekly_scoped]`,
-//     falling back to `seven_day_opus` / `seven_day_sonnet`). Opt-in, since not every plan
-//     has one.
+//   - Fable Weekly: the Fable-scoped 7-day window (`limits[kind=weekly_scoped]` whose
+//     scope model is Fable). Opt-in, since not every plan has one.
 public struct ClaudeSource: AISource {
     /// Serialises fetches and throttles them against a cache on disk. The app, the CLI, and
     /// Claude Code itself all share one small per-account rate limit on the usage endpoint,
@@ -136,8 +135,8 @@ public struct ClaudeSource: AISource {
         AISourceMetric(id: "claude-session", title: "Session", menuBarBadgeText: "5h"),
         AISourceMetric(id: "claude-weekly", title: "Weekly", menuBarBadgeText: "7d"),
         AISourceMetric(
-            id: "claude-weekly-model", title: "Model Weekly", defaultEnabled: false,
-            menuBarBadgeText: "Model"),
+            id: "claude-weekly-fable", title: "Fable Weekly", defaultEnabled: false,
+            menuBarBadgeText: "Fable"),
     ]
     public let menuBarBrandColorHex: UInt32 = 0xD97757
     public var pacingBehavior: SourcePacingBehavior { .resetWindow }
@@ -205,23 +204,16 @@ public struct ClaudeSource: AISource {
             parsed["claude-weekly"] = usage
         }
 
-        let scopedLimits = (response.limits ?? []).filter { $0.kind == "weekly_scoped" }
-        let scopedUsages: [UsageResult]
-        if !scopedLimits.isEmpty {
-            scopedUsages = scopedLimits.compactMap {
-                parseWindow(
-                    utilization: $0.percent, resetsAt: $0.resetsAt,
-                    windowSeconds: Self.weeklyWindowSeconds)
-            }
-        } else {
-            scopedUsages = [response.sevenDayOpus, response.sevenDaySonnet].compactMap {
-                parseWindow(
-                    utilization: $0?.utilization, resetsAt: $0?.resetsAt,
-                    windowSeconds: Self.weeklyWindowSeconds)
-            }
+        let fableLimit = (response.limits ?? []).first {
+            $0.kind == "weekly_scoped"
+                && $0.modelDisplayName?.caseInsensitiveCompare("Fable") == .orderedSame
         }
-        if let tightest = scopedUsages.min(by: { $0.remaining < $1.remaining }) {
-            parsed["claude-weekly-model"] = tightest
+        if let fableLimit,
+            let usage = parseWindow(
+                utilization: fableLimit.percent, resetsAt: fableLimit.resetsAt,
+                windowSeconds: Self.weeklyWindowSeconds)
+        {
+            parsed["claude-weekly-fable"] = usage
         }
 
         return parsed
@@ -515,29 +507,21 @@ struct ClaudeCredentialsOAuth: Decodable {
 public struct ClaudeUsageResponse: Decodable {
     public let fiveHour: ClaudeUsageWindow?
     public let sevenDay: ClaudeUsageWindow?
-    public let sevenDayOpus: ClaudeUsageWindow?
-    public let sevenDaySonnet: ClaudeUsageWindow?
     public let limits: [ClaudeUsageLimit]?
 
     public init(
         fiveHour: ClaudeUsageWindow? = nil,
         sevenDay: ClaudeUsageWindow? = nil,
-        sevenDayOpus: ClaudeUsageWindow? = nil,
-        sevenDaySonnet: ClaudeUsageWindow? = nil,
         limits: [ClaudeUsageLimit]? = nil
     ) {
         self.fiveHour = fiveHour
         self.sevenDay = sevenDay
-        self.sevenDayOpus = sevenDayOpus
-        self.sevenDaySonnet = sevenDaySonnet
         self.limits = limits
     }
 
     private enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
-        case sevenDayOpus = "seven_day_opus"
-        case sevenDaySonnet = "seven_day_sonnet"
         case limits
     }
 }
@@ -561,16 +545,41 @@ public struct ClaudeUsageLimit: Decodable {
     public let kind: String?
     public let percent: Double?
     public let resetsAt: String?
+    /// `scope.model.display_name` for model-scoped limits (for example, "Fable").
+    public let modelDisplayName: String?
 
-    public init(kind: String?, percent: Double?, resetsAt: String?) {
+    public init(kind: String?, percent: Double?, resetsAt: String?, modelDisplayName: String? = nil) {
         self.kind = kind
         self.percent = percent
         self.resetsAt = resetsAt
+        self.modelDisplayName = modelDisplayName
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        percent = try container.decodeIfPresent(Double.self, forKey: .percent)
+        resetsAt = try container.decodeIfPresent(String.self, forKey: .resetsAt)
+        let scope = try? container.decodeIfPresent(Scope.self, forKey: .scope)
+        modelDisplayName = scope?.model?.displayName
     }
 
     private enum CodingKeys: String, CodingKey {
         case kind
         case percent
         case resetsAt = "resets_at"
+        case scope
+    }
+
+    private struct Scope: Decodable {
+        let model: Model?
+    }
+
+    private struct Model: Decodable {
+        let displayName: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case displayName = "display_name"
+        }
     }
 }
